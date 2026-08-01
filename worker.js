@@ -10,6 +10,10 @@
  *  GET  /rules?sub=ID           → list alert rules
  *  POST /rules                  → create/update an alert rule
  *  POST /rules/delete           → delete an alert rule
+ *  GET  /issues                 → active user reports (inspector/issue flags)
+ *  POST /issues                 → file (or renew) a report
+ *  POST /issues/delete          → withdraw a report (reporter-only)
+ *  GET  /metro/stations         → static Athens metro station list
  *  cron (every minute)          → check live arrivals, fire push alerts
  *
  * Alerts need a KV namespace bound as ALERTS and VAPID secrets; without
@@ -876,6 +880,7 @@ async function handleNearby(url, env, ctx) {
     s.arrivals = (Array.isArray(raw) ? raw : [])
       .map(a => ({
         code: String(pickField(a, "route_code", "RouteCode") || ""),
+        veh: String(pickField(a, "veh_code", "VEH_NO", "veh_no") || ""),
         min: parseInt(pickField(a, "btime2", "btime", "stop_time") || "", 10),
       }))
       .filter(a => isFinite(a.min))
@@ -897,6 +902,202 @@ async function handleNearby(url, env, ctx) {
   await cache.put(new Request(ck), res.clone());
   return res;
 }
+
+/* ====================== user reports (KV) ========================= *
+ * Community flags: "ticket inspector" (red) or a service issue
+ * (yellow) attached to a specific bus, stop, or metro station.
+ *
+ * Rules, straight from the spec:
+ *   - inspector (red) on a bus or stop      → expires after 15 min
+ *   - inspector (red) on a metro station    → expires after 2 h
+ *   - anything else (yellow), any target    → expires after 60 min
+ *   - re-reporting the same target+kind renews the flag
+ *   - a report can be withdrawn ONLY by the reporter who filed it
+ *     (or it simply expires). Reporter ids are random client-side
+ *     tokens and are never echoed back in GET /issues, so nobody can
+ *     forge someone else's withdrawal.
+ *
+ * Storage mirrors the alert rules: everything lives in ONE KV key,
+ * read with a plain get and pruned on every touch — zero list ops.
+ * ------------------------------------------------------------------ */
+const ISSUES_KEY = "issues:index";
+const ISSUE_KINDS = {
+  inspector: "red",     // ticket inspector sighted
+  breakdown: "yellow",  // vehicle broke down
+  incident:  "yellow",  // bus/stop drama, disturbance
+  delay:     "yellow",  // service badly delayed
+  other:     "yellow",
+};
+const ISSUE_TARGETS = new Set(["bus", "stop", "metro"]);
+const YELLOW_TTL = 3600;          // 60 min for every yellow flag
+const RED_TTL = 900;              // 15 min: inspectors hop off after a few stops
+const RED_METRO_TTL = 7200;       // 2 h on the metro, per spec
+const MAX_ACTIVE_PER_REPORTER = 10;
+
+function issueTtl(sev, targetType) {
+  if (sev !== "red") return YELLOW_TTL;
+  return targetType === "metro" ? RED_METRO_TTL : RED_TTL;
+}
+function issuesReady(env) { return !!(env && env.ALERTS); }
+
+async function readIssues(env, now) {
+  const all = await env.ALERTS.get(ISSUES_KEY, "json");
+  if (!Array.isArray(all)) return [];
+  return all.filter(r => r && r.target &&
+    r.ts + issueTtl(r.severity, r.target.type) > now);
+}
+async function writeIssues(env, list) {
+  await env.ALERTS.put(ISSUES_KEY, JSON.stringify(list));
+}
+// What clients see: everything except the reporter token.
+function publicIssue(r, now) {
+  const ttl = issueTtl(r.severity, r.target.type);
+  return {
+    id: r.id, kind: r.kind, severity: r.severity, target: r.target,
+    ts: r.ts, ageSec: now - r.ts, expiresIn: r.ts + ttl - now,
+  };
+}
+
+async function handleIssues(req, url, env) {
+  if (!issuesReady(env)) return json({ error: "reports not configured" }, 501);
+  const now = Math.floor(Date.now() / 1000);
+
+  if (req.method === "GET") {
+    const active = await readIssues(env, now);
+    return json({ generated: now, issues: active.map(r => publicIssue(r, now)) });
+  }
+
+  const b = await req.json().catch(() => null);
+  if (!b) return json({ error: "bad body" }, 400);
+  const reporter = String(b.reporter || "");
+  if (reporter.length < 8 || reporter.length > 80) return json({ error: "reporter required" }, 400);
+
+  const active = await readIssues(env, now);
+
+  if (url.pathname.replace(/\/+$/, "").endsWith("/issues/delete")) {
+    const i = active.findIndex(r => r.id === b.id);
+    if (i < 0) return json({ error: "not found" }, 404);
+    if (active[i].reporter !== reporter) return json({ error: "not yours" }, 403);
+    active.splice(i, 1);
+    await writeIssues(env, active);
+    return json({ ok: true });
+  }
+
+  // create / renew
+  const t = b.target || {};
+  const type = String(t.type || "");
+  const tid = String(t.id || "").slice(0, 40);
+  const kind = String(b.kind || "");
+  if (!ISSUE_TARGETS.has(type) || !tid) return json({ error: "bad target" }, 400);
+  if (!(kind in ISSUE_KINDS)) return json({ error: "bad kind" }, 400);
+  const lat = Number(t.lat), lng = Number(t.lng);
+  if (!isFinite(lat) || !isFinite(lng)) return json({ error: "target lat/lng required" }, 400);
+
+  const target = {
+    type, id: tid, lat, lng,
+    label: String(t.label || "").slice(0, 120),
+    line: t.line != null ? String(t.line).slice(0, 20) : null,
+    routeCode: t.routeCode != null ? String(t.routeCode).slice(0, 20) : null,
+  };
+  const severity = ISSUE_KINDS[kind];
+
+  // Same reporter re-flagging the same thing renews it; a different
+  // reporter files their own record (which also keeps the flag alive,
+  // and keeps withdrawal rights separate per user).
+  const mine = active.find(r =>
+    r.reporter === reporter && r.kind === kind &&
+    r.target.type === type && r.target.id === tid);
+  if (mine) {
+    mine.ts = now;
+    mine.target = target;
+    await writeIssues(env, active);
+    return json({ ok: true, renewed: true, issue: publicIssue(mine, now) });
+  }
+  if (active.filter(r => r.reporter === reporter).length >= MAX_ACTIVE_PER_REPORTER) {
+    return json({ error: "too many active reports" }, 429);
+  }
+  const rec = { id: crypto.randomUUID(), reporter, kind, severity, target, ts: now };
+  active.push(rec);
+  await writeIssues(env, active);
+  return json({ ok: true, issue: publicIssue(rec, now) });
+}
+
+/* ===================== Athens metro stations ====================== *
+ * Static list (lines M1/M2/M3) so reports can be pinned to a metro
+ * station too. Coordinates are close approximations of the station
+ * entrances — tweak freely, nothing else depends on them.
+ * ------------------------------------------------------------------ */
+const METRO_STATIONS = [
+  // Line 1 (ISAP, green): Piraeus → Kifissia
+  { id: "m-peiraias",        el: "Πειραιάς",             en: "Piraeus",              lines: ["1", "3"], lat: 37.9481, lng: 23.6430 },
+  { id: "m-faliro",          el: "Φάληρο",               en: "Faliro",               lines: ["1"], lat: 37.9451, lng: 23.6653 },
+  { id: "m-moschato",        el: "Μοσχάτο",              en: "Moschato",             lines: ["1"], lat: 37.9550, lng: 23.6800 },
+  { id: "m-kallithea",       el: "Καλλιθέα",             en: "Kallithea",            lines: ["1"], lat: 37.9603, lng: 23.6973 },
+  { id: "m-tavros",          el: "Ταύρος",               en: "Tavros",               lines: ["1"], lat: 37.9626, lng: 23.7035 },
+  { id: "m-petralona",       el: "Πετράλωνα",            en: "Petralona",            lines: ["1"], lat: 37.9686, lng: 23.7093 },
+  { id: "m-thiseio",         el: "Θησείο",               en: "Thiseio",              lines: ["1"], lat: 37.9767, lng: 23.7207 },
+  { id: "m-monastiraki",     el: "Μοναστηράκι",          en: "Monastiraki",          lines: ["1", "3"], lat: 37.9761, lng: 23.7256 },
+  { id: "m-omonoia",         el: "Ομόνοια",              en: "Omonia",               lines: ["1", "2"], lat: 37.9843, lng: 23.7281 },
+  { id: "m-viktoria",        el: "Βικτώρια",             en: "Victoria",             lines: ["1"], lat: 37.9932, lng: 23.7304 },
+  { id: "m-attiki",          el: "Αττική",               en: "Attiki",               lines: ["1", "2"], lat: 37.9994, lng: 23.7223 },
+  { id: "m-agios-nikolaos",  el: "Άγιος Νικόλαος",       en: "Agios Nikolaos",       lines: ["1"], lat: 38.0069, lng: 23.7275 },
+  { id: "m-kato-patisia",    el: "Κάτω Πατήσια",         en: "Kato Patisia",         lines: ["1"], lat: 38.0111, lng: 23.7288 },
+  { id: "m-agios-eleftherios", el: "Άγιος Ελευθέριος",   en: "Agios Eleftherios",    lines: ["1"], lat: 38.0177, lng: 23.7318 },
+  { id: "m-ano-patisia",     el: "Άνω Πατήσια",          en: "Ano Patisia",          lines: ["1"], lat: 38.0238, lng: 23.7360 },
+  { id: "m-perissos",        el: "Περισσός",             en: "Perissos",             lines: ["1"], lat: 38.0326, lng: 23.7448 },
+  { id: "m-pefkakia",        el: "Πευκάκια",             en: "Pefkakia",             lines: ["1"], lat: 38.0370, lng: 23.7500 },
+  { id: "m-nea-ionia",       el: "Νέα Ιωνία",            en: "Nea Ionia",            lines: ["1"], lat: 38.0413, lng: 23.7550 },
+  { id: "m-irakleio",        el: "Ηράκλειο",             en: "Irakleio",             lines: ["1"], lat: 38.0462, lng: 23.7660 },
+  { id: "m-eirini",          el: "Ειρήνη",               en: "Irini",                lines: ["1"], lat: 38.0437, lng: 23.7830 },
+  { id: "m-neratziotissa",   el: "Νερατζιώτισσα",        en: "Neratziotissa",        lines: ["1"], lat: 38.0450, lng: 23.7929 },
+  { id: "m-marousi",         el: "Μαρούσι",              en: "Marousi",              lines: ["1"], lat: 38.0560, lng: 23.8080 },
+  { id: "m-kat",             el: "ΚΑΤ",                  en: "KAT",                  lines: ["1"], lat: 38.0660, lng: 23.8040 },
+  { id: "m-kifisia",         el: "Κηφισιά",              en: "Kifisia",              lines: ["1"], lat: 38.0736, lng: 23.8080 },
+  // Line 2 (red): Anthoupoli → Elliniko
+  { id: "m-anthoupoli",      el: "Ανθούπολη",            en: "Anthoupoli",           lines: ["2"], lat: 38.0170, lng: 23.6910 },
+  { id: "m-peristeri",       el: "Περιστέρι",            en: "Peristeri",            lines: ["2"], lat: 38.0130, lng: 23.6960 },
+  { id: "m-agios-antonios",  el: "Άγιος Αντώνιος",       en: "Agios Antonios",       lines: ["2"], lat: 38.0067, lng: 23.6997 },
+  { id: "m-sepolia",         el: "Σεπόλια",              en: "Sepolia",              lines: ["2"], lat: 38.0025, lng: 23.7134 },
+  { id: "m-stathmos-larisis", el: "Σταθμός Λαρίσης",     en: "Larissa Station",      lines: ["2"], lat: 37.9922, lng: 23.7210 },
+  { id: "m-metaxourgeio",    el: "Μεταξουργείο",         en: "Metaxourgeio",         lines: ["2"], lat: 37.9862, lng: 23.7211 },
+  { id: "m-panepistimio",    el: "Πανεπιστήμιο",         en: "Panepistimio",         lines: ["2"], lat: 37.9802, lng: 23.7330 },
+  { id: "m-syntagma",        el: "Σύνταγμα",             en: "Syntagma",             lines: ["2", "3"], lat: 37.9755, lng: 23.7353 },
+  { id: "m-akropoli",        el: "Ακρόπολη",             en: "Acropoli",             lines: ["2"], lat: 37.9686, lng: 23.7295 },
+  { id: "m-syngrou-fix",     el: "Συγγρού-Φιξ",          en: "Syngrou-Fix",          lines: ["2"], lat: 37.9642, lng: 23.7265 },
+  { id: "m-neos-kosmos",     el: "Νέος Κόσμος",          en: "Neos Kosmos",          lines: ["2"], lat: 37.9578, lng: 23.7285 },
+  { id: "m-agios-ioannis",   el: "Άγιος Ιωάννης",        en: "Agios Ioannis",        lines: ["2"], lat: 37.9569, lng: 23.7345 },
+  { id: "m-dafni",           el: "Δάφνη",                en: "Dafni",                lines: ["2"], lat: 37.9493, lng: 23.7373 },
+  { id: "m-agios-dimitrios", el: "Άγιος Δημήτριος",      en: "Agios Dimitrios",      lines: ["2"], lat: 37.9403, lng: 23.7407 },
+  { id: "m-ilioupoli",       el: "Ηλιούπολη",            en: "Ilioupoli",            lines: ["2"], lat: 37.9302, lng: 23.7448 },
+  { id: "m-alimos",          el: "Άλιμος",               en: "Alimos",               lines: ["2"], lat: 37.9180, lng: 23.7449 },
+  { id: "m-argyroupoli",     el: "Αργυρούπολη",          en: "Argyroupoli",          lines: ["2"], lat: 37.9032, lng: 23.7458 },
+  { id: "m-elliniko",        el: "Ελληνικό",             en: "Elliniko",             lines: ["2"], lat: 37.8927, lng: 23.7473 },
+  // Line 3 (blue): Dimotiko Theatro → Airport
+  { id: "m-dimotiko-theatro", el: "Δημοτικό Θέατρο",     en: "Dimotiko Theatro",     lines: ["3"], lat: 37.9429, lng: 23.6468 },
+  { id: "m-maniatika",       el: "Μανιάτικα",            en: "Maniatika",            lines: ["3"], lat: 37.9535, lng: 23.6400 },
+  { id: "m-nikaia",          el: "Νίκαια",               en: "Nikaia",               lines: ["3"], lat: 37.9655, lng: 23.6470 },
+  { id: "m-korydallos",      el: "Κορυδαλλός",           en: "Korydallos",           lines: ["3"], lat: 37.9767, lng: 23.6516 },
+  { id: "m-agia-varvara",    el: "Αγία Βαρβάρα",         en: "Agia Varvara",         lines: ["3"], lat: 37.9855, lng: 23.6597 },
+  { id: "m-agia-marina",     el: "Αγία Μαρίνα",          en: "Agia Marina",          lines: ["3"], lat: 37.9970, lng: 23.6666 },
+  { id: "m-aigaleo",         el: "Αιγάλεω",              en: "Egaleo",               lines: ["3"], lat: 37.9917, lng: 23.6817 },
+  { id: "m-elaionas",        el: "Ελαιώνας",             en: "Eleonas",              lines: ["3"], lat: 37.9877, lng: 23.6944 },
+  { id: "m-kerameikos",      el: "Κεραμεικός",           en: "Kerameikos",           lines: ["3"], lat: 37.9785, lng: 23.7115 },
+  { id: "m-evangelismos",    el: "Ευαγγελισμός",         en: "Evangelismos",         lines: ["3"], lat: 37.9764, lng: 23.7472 },
+  { id: "m-megaro-mousikis", el: "Μέγαρο Μουσικής",      en: "Megaro Moussikis",     lines: ["3"], lat: 37.9793, lng: 23.7527 },
+  { id: "m-ampelokipoi",     el: "Αμπελόκηποι",          en: "Ambelokipi",           lines: ["3"], lat: 37.9872, lng: 23.7570 },
+  { id: "m-panormou",        el: "Πανόρμου",             en: "Panormou",             lines: ["3"], lat: 37.9932, lng: 23.7637 },
+  { id: "m-katechaki",       el: "Κατεχάκη",             en: "Katehaki",             lines: ["3"], lat: 37.9938, lng: 23.7763 },
+  { id: "m-ethniki-amyna",   el: "Εθνική Άμυνα",         en: "Ethniki Amyna",        lines: ["3"], lat: 38.0003, lng: 23.7857 },
+  { id: "m-cholargos",       el: "Χολαργός",             en: "Holargos",             lines: ["3"], lat: 38.0044, lng: 23.7946 },
+  { id: "m-nomismatokopeio", el: "Νομισματοκοπείο",      en: "Nomismatokopio",       lines: ["3"], lat: 38.0095, lng: 23.8055 },
+  { id: "m-agia-paraskevi",  el: "Αγία Παρασκευή",       en: "Agia Paraskevi",       lines: ["3"], lat: 38.0173, lng: 23.8128 },
+  { id: "m-chalandri",       el: "Χαλάνδρι",             en: "Halandri",             lines: ["3"], lat: 38.0215, lng: 23.8207 },
+  { id: "m-doukissis-plakentias", el: "Δουκίσσης Πλακεντίας", en: "Doukissis Plakentias", lines: ["3"], lat: 38.0243, lng: 23.8337 },
+  { id: "m-pallini",         el: "Παλλήνη",              en: "Pallini",              lines: ["3"], lat: 38.0057, lng: 23.8697 },
+  { id: "m-paiania-kantza",  el: "Παιανία-Κάντζα",       en: "Paiania-Kantza",       lines: ["3"], lat: 37.9840, lng: 23.8698 },
+  { id: "m-koropi",          el: "Κορωπί",               en: "Koropi",               lines: ["3"], lat: 37.9128, lng: 23.8963 },
+  { id: "m-aerodromio",      el: "Αεροδρόμιο",           en: "Airport",              lines: ["3"], lat: 37.9364, lng: 23.9445 },
+];
 
 /* ============================ routing ============================= */
 
@@ -932,6 +1133,20 @@ export default {
       n.searchParams.set("addressdetails", "1");
       n.searchParams.set("accept-language", url.searchParams.get("lang") || "el");
       return proxy(n.toString(), GEO_CACHE);
+    }
+
+    if (p.endsWith("/metro/stations")) {
+      return new Response(JSON.stringify(METRO_STATIONS), {
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "public, max-age=86400",
+          ...CORS,
+        },
+      });
+    }
+
+    if (p.endsWith("/issues") || p.endsWith("/issues/delete")) {
+      return handleIssues(req, url, env);
     }
 
     if (p.endsWith("/push/key")) {

@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
+<title>Στάση — live arrivals</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon.svg">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #111418; --card: #1a1f26; --card2: #212831; --ink: #e8e6e1;
+    --dim: #9aa3ad; --amber: #f0a933; --red: #e6493f; --yellow: #e8c33c;
+    --line: #2c343f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: 40px;
+  }
+  /* thin refresh countdown bar */
+  #bar { position: fixed; top: 0; left: 0; height: 3px; background: var(--amber);
+         width: 100%; z-index: 60; transition: width 1s linear; }
+
+  header { display: flex; align-items: center; gap: 10px; padding: 16px 14px 6px; }
+  header h1 { font-size: 22px; margin: 0; letter-spacing: .3px; }
+  header .sub { color: var(--dim); font-size: 12px; margin-top: 2px; }
+  .spacer { flex: 1; }
+  .hbtn {
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    border-radius: 10px; padding: 8px 10px; font-size: 14px; cursor: pointer;
+  }
+  /* THE red exclamation mark (replaces the old line-stats button) */
+  #reportBtn {
+    position: relative; width: 40px; height: 40px; border-radius: 50%;
+    border: none; background: var(--red); color: #fff; font-size: 20px;
+    font-weight: 800; cursor: pointer; box-shadow: 0 2px 10px rgba(230,73,63,.45);
+  }
+  #reportBtn .cnt {
+    position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px;
+    border-radius: 9px; background: #fff; color: var(--red); font-size: 11px;
+    font-weight: 700; line-height: 18px; padding: 0 4px; display: none;
+  }
+  #search { display: flex; gap: 8px; padding: 8px 14px; }
+  #search input {
+    flex: 1; background: var(--card); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 10px; padding: 9px 12px; font-size: 15px; outline: none;
+  }
+  #status { padding: 4px 16px 0; color: var(--dim); font-size: 13px; }
+
+  main { padding: 8px 12px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .stop {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 12px 14px; min-width: 0; overflow: hidden;
+  }
+  .stop h2 { margin: 0; font-size: 16px; display: flex; align-items: baseline; gap: 8px; }
+  .stop h2 .dist { color: var(--dim); font-size: 12px; font-weight: 400; }
+  .rows { margin-top: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row .body { flex: 1; min-width: 0; }
+  .pill {
+    background: var(--amber); color: #201400; font-weight: 700; border-radius: 8px;
+    padding: 2px 8px; font-size: 14px; min-width: 42px; text-align: center;
+  }
+  .dest { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .eta { font-weight: 700; font-size: 16px; color: var(--amber); white-space: nowrap; }
+  /* report annotations under the direction line */
+  .flag { font-size: 12.5px; font-weight: 600; margin-top: 1px; }
+  .flag.red { color: var(--red); }
+  .flag.yellow { color: var(--yellow); }
+  .empty { color: var(--dim); font-size: 13px; margin-top: 6px; }
+
+  /* ------------- report overlay ------------- */
+  #overlay {
+    position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.55);
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  #overlay[hidden] { display: none; }
+  .sheet {
+    background: var(--bg); width: 100%; max-width: 640px; max-height: 94vh;
+    border-radius: 18px 18px 0 0; overflow-y: auto; border: 1px solid var(--line);
+  }
+  .sheet-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 16px 8px;
+    position: sticky; top: 0; background: var(--bg); z-index: 5;
+  }
+  .sheet-head h2 { margin: 0; font-size: 18px; }
+  .x { margin-left: auto; background: none; border: none; color: var(--dim);
+       font-size: 24px; cursor: pointer; line-height: 1; }
+  #rmap { height: 46vh; min-height: 260px; margin: 0 12px; border-radius: 12px;
+          border: 1px solid var(--line); }
+  .legend { display: flex; gap: 16px; padding: 8px 18px; color: var(--dim); font-size: 12.5px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+         margin-right: 5px; vertical-align: -1px; }
+  .dot.red { background: var(--red); } .dot.yellow { background: var(--yellow); }
+  .dot.metro { background: #7f8b98; }
+
+  #mine { padding: 0 16px; }
+  #mine .mrow { display: flex; align-items: center; gap: 8px; font-size: 13.5px;
+                padding: 6px 0; border-top: 1px solid var(--line); }
+  #mine .mrow:first-child { border-top: none; }
+  #mine .del { margin-left: auto; background: var(--card2); border: 1px solid var(--line);
+               color: var(--ink); border-radius: 8px; padding: 3px 10px; cursor: pointer; }
+
+  .cta {
+    display: block; width: calc(100% - 32px); margin: 10px 16px 16px;
+    background: var(--red); color: #fff; font-size: 16px; font-weight: 700;
+    border: none; border-radius: 12px; padding: 13px; cursor: pointer;
+  }
+  form#rform { padding: 0 16px 24px; display: grid; gap: 10px; }
+  .seg { display: flex; gap: 6px; }
+  .seg button {
+    flex: 1; background: var(--card); border: 1px solid var(--line); color: var(--ink);
+    padding: 9px 4px; border-radius: 10px; font-size: 13.5px; cursor: pointer;
+  }
+  .seg button.on { background: var(--amber); color: #201400; font-weight: 700;
+                   border-color: var(--amber); }
+  select, .fbtn {
+    width: 100%; background: var(--card); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; font-size: 15px;
+  }
+  #formMsg { font-size: 13.5px; color: var(--dim); min-height: 18px; }
+  #formMsg.err { color: var(--red); }
+  #formMsg.ok { color: #6fbf73; }
+  .note { color: var(--dim); font-size: 12px; padding: 0 18px 18px; }
+  footer { color: var(--dim); font-size: 11.5px; text-align: center; padding: 18px 20px; }
+  /* colored markers on the report map */
+  .mk { border-radius: 50%; border: 2px solid #fff3; }
+  .mk.red { background: var(--red); box-shadow: 0 0 10px var(--red); }
+  .mk.yellow { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+  .mk.metro { background: #55606c; }
+</style>
+</head>
+<body>
+<div id="bar"></div>
+
+<header>
+  <div>
+    <h1>Στάση</h1>
+    <div class="sub" id="subTitle">live arrivals</div>
+  </div>
+  <div class="spacer"></div>
+  <button class="hbtn" id="langBtn">EN</button>
+  <button class="hbtn" id="locBtn" title="location">⌖</button>
+  <button id="reportBtn" title="Reports" aria-label="Reports">!<span class="cnt" id="issueCnt"></span></button>
+</header>
+
+<div id="search">
+  <input id="q" type="search" autocomplete="off">
+  <button class="hbtn" id="qGo">🔍</button>
+</div>
+<div id="status"></div>
+<main id="stops"></main>
+<footer id="foot"></footer>
+
+<div id="overlay" hidden>
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2 id="ovTitle"></h2>
+      <button class="x" id="ovClose">×</button>
+    </div>
+    <div id="rmap"></div>
+    <div class="legend">
+      <span><span class="dot red"></span><span id="lgRed"></span></span>
+      <span><span class="dot yellow"></span><span id="lgYellow"></span></span>
+      <span><span class="dot metro"></span><span id="lgMetro"></span></span>
+    </div>
+    <div id="mine"></div>
+    <button class="cta" id="openForm"></button>
+    <form id="rform" hidden>
+      <div class="seg" id="whereSeg">
+        <button type="button" data-w="bus"></button>
+        <button type="button" data-w="stop"></button>
+        <button type="button" data-w="metro"></button>
+      </div>
+      <select id="targetSel"></select>
+      <select id="kindSel"></select>
+      <button class="cta" style="margin:4px 0 0; width:100%" type="submit" id="sendBtn"></button>
+      <div id="formMsg"></div>
+    </form>
+    <div class="note" id="ovNote"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ================================================================== */
+const CONFIG = {
+  proxyBase: "",        // "" = same origin (the Worker serves this page). Or your worker URL.
+  refreshMs: 30000,     // arrivals + reports refresh
+  maxStops: 6,          // stops shown in the list
+  maxRows: 6,           // arrivals per stop
+  radius: 600,          // nearby search radius (m)
+  busPickRadius: 1500,  // how far away a bus can be and still be flagged (m)
+};
+const FALLBACK = { lat: 37.9755, lng: 23.7348 };  // Syntagma
+
+/* ------------------------------ i18n ------------------------------ */
+const T = {
+  el: {
+    sub: "αφίξεις σε πραγματικό χρόνο", search: "Διεύθυνση ή περιοχή…",
+    locating: "Εντοπισμός θέσης…", locFail: "Χωρίς τοποθεσία — δείχνω Σύνταγμα.",
+    locManual: "Θέση από αναζήτηση", locMine: "Η θέση μου", noStops: "Δεν βρέθηκαν στάσεις εδώ.",
+    noArr: "Καμία άφιξη αυτή τη στιγμή", inMin: "′", m: "μ",
+    reports: "Αναφορές", reportIssue: "Αναφορά προβλήματος",
+    onBus: "Σε λεωφορείο", atStop: "Σε στάση", metroSt: "Σταθμός μετρό",
+    kinds: { inspector: "Ελεγκτής εισιτηρίων", breakdown: "Βλάβη οχήματος",
+             incident: "Συμβάν / φασαρία", delay: "Μεγάλη καθυστέρηση", other: "Άλλο" },
+    ago: n => `πριν ${n}′`, agoH: n => `πριν ${n} ω`,
+    inspectorAgo: n => `Ελεγκτής ${n <= 1 ? "μόλις τώρα" : "πριν " + n + "′"}`,
+    send: "Αποστολή", sending: "Αποστολή…", sent: "Καταχωρήθηκε ✓",
+    pickTarget: "— διάλεξε —", loadingBuses: "Φόρτωση λεωφορείων κοντά σου…",
+    noBuses: "Κανένα λεωφορείο κοντά σου αυτή τη στιγμή.",
+    myReports: "Οι αναφορές μου", withdraw: "Ακύρωση",
+    lgRed: "Ελεγκτής", lgYellow: "Πρόβλημα", lgMetro: "Σταθμός μετρό",
+    ovNote: "Οι κόκκινες σημάνσεις (ελεγκτής) σβήνουν μετά από 15′ σε λεωφορεία/στάσεις και 2 ώρες στο μετρό· οι κίτρινες μετά από 60′. Μόνο εσύ μπορείς να ακυρώσεις δική σου αναφορά.",
+    foot: "Ανεπίσημα δεδομένα ΟΑΣΑ · οι χρόνοι είναι εκτιμήσεις.",
+    err: "Κάτι πήγε στραβά — δοκίμασε ξανά.",
+  },
+  en: {
+    sub: "live arrivals", search: "Address or area…",
+    locating: "Locating…", locFail: "No location — showing Syntagma.",
+    locManual: "Location from search", locMine: "My location", noStops: "No stops found here.",
+    noArr: "No arrivals right now", inMin: "′", m: "m",
+    reports: "Reports", reportIssue: "Report an issue",
+    onBus: "On a bus", atStop: "At a stop", metroSt: "Metro station",
+    kinds: { inspector: "Ticket inspector", breakdown: "Vehicle broke down",
+             incident: "Incident / disturbance", delay: "Severe delay", other: "Other" },
+    ago: n => `${n} min ago`, agoH: n => `${n} h ago`,
+    inspectorAgo: n => `Ticket inspector ${n <= 1 ? "just now" : n + " min ago"}`,
+    send: "Send", sending: "Sending…", sent: "Reported ✓",
+    pickTarget: "— choose —", loadingBuses: "Loading buses near you…",
+    noBuses: "No buses near you right now.",
+    myReports: "My reports", withdraw: "Withdraw",
+    lgRed: "Inspector", lgYellow: "Issue", lgMetro: "Metro station",
+    ovNote: "Red flags (inspector) expire after 15 min on buses/stops and 2 h on metro stations; yellow ones after 60 min. Only you can withdraw your own report.",
+    foot: "Unofficial OASA data · times are estimates.",
+    err: "Something went wrong — try again.",
+  },
+};
+let lang = localStorage.getItem("lang") || "el";
+const t = () => T[lang];
+
+/* ----------------------------- state ------------------------------ */
+const S = {
+  pos: null, manual: false,
+  stops: [],            // /nearby result
+  issues: [],           // active reports
+  metro: [],            // metro stations
+  myIds: JSON.parse(localStorage.getItem("myReports") || "[]"),
+  reporter: localStorage.getItem("reporter") ||
+    (localStorage.setItem("reporter", crypto.randomUUID()), localStorage.getItem("reporter")),
+  where: "bus", busCands: [], map: null, mapLayer: null, timer: null,
+};
+const $ = id => document.getElementById(id);
+const api = p => fetch(CONFIG.proxyBase + p).then(r => r.json());
+const post = (p, body) => fetch(CONFIG.proxyBase + p, {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+}).then(r => r.json().then(j => ({ ok: r.ok, ...j })));
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function hav(a1, o1, a2, o2) {
+  const R = 6371000, r = x => x * Math.PI / 180;
+  const h = Math.sin(r(a2 - a1) / 2) ** 2 +
+    Math.cos(r(a1)) * Math.cos(r(a2)) * Math.sin(r(o2 - o1) / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+function agoText(sec) {
+  const m = Math.max(0, Math.round(sec / 60));
+  return m >= 90 ? t().agoH(Math.round(m / 60)) : t().ago(m);
+}
+
+/* -------------------------- static labels ------------------------- */
+function applyLabels() {
+  $("subTitle").textContent = t().sub;
+  $("q").placeholder = t().search;
+  $("langBtn").textContent = lang === "el" ? "EN" : "EL";
+  $("ovTitle").textContent = "❗ " + t().reports;
+  $("openForm").textContent = t().reportIssue;
+  $("lgRed").textContent = t().lgRed;
+  $("lgYellow").textContent = t().lgYellow;
+  $("lgMetro").textContent = t().lgMetro;
+  $("ovNote").textContent = t().ovNote;
+  $("foot").textContent = t().foot;
+  $("sendBtn").textContent = t().send;
+  const seg = $("whereSeg").children;
+  seg[0].textContent = "🚌 " + t().onBus;
+  seg[1].textContent = "🚏 " + t().atStop;
+  seg[2].textContent = "Ⓜ " + t().metroSt;
+  fillKinds();
+}
+function fillKinds() {
+  $("kindSel").innerHTML = Object.entries(t().kinds)
+    .map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+}
+
+/* --------------------------- countdown ---------------------------- */
+function armBar() {
+  const bar = $("bar");
+  bar.style.transition = "none"; bar.style.width = "100%";
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    bar.style.transition = `width ${CONFIG.refreshMs}ms linear`;
+    bar.style.width = "0%";
+  }));
+}
+
+/* ------------------------- data loading --------------------------- */
+async function loadAll() {
+  if (!S.pos) return;
+  armBar();
+  const [nearby, issues] = await Promise.all([
+    api(`/nearby?lat=${S.pos.lat}&lng=${S.pos.lng}&radius=${CONFIG.radius}&limit=${CONFIG.maxStops}`)
+      .catch(() => null),
+    api(`/issues`).catch(() => null),
+  ]);
+  if (nearby && Array.isArray(nearby.stops)) S.stops = nearby.stops;
+  S.issues = (issues && Array.isArray(issues.issues)) ? issues.issues : S.issues;
+  renderStops();
+  renderIssueCount();
+  if (S.map) drawMap();
+  renderMine();
+}
+async function loadMetro() {
+  if (S.metro.length) return;
+  const m = await api("/metro/stations").catch(() => null);
+  if (Array.isArray(m)) S.metro = m;
+}
+
+/* --------------------------- rendering ---------------------------- */
+function issueFor(pred) {
+  // newest matching active report wins
+  return S.issues.filter(pred).sort((a, b) => b.ts - a.ts)[0] || null;
+}
+function flagHtml(iss) {
+  if (!iss) return "";
+  const mins = Math.max(0, Math.round(iss.ageSec / 60));
+  const txt = iss.kind === "inspector"
+    ? t().inspectorAgo(mins)
+    : `${t().kinds[iss.kind] || t().kinds.other} · ${agoText(iss.ageSec)}`;
+  return `<div class="flag ${iss.severity}">${iss.severity === "red" ? "‼" : "⚠"} ${esc(txt)}</div>`;
+}
+function renderStops() {
+  const main = $("stops");
+  if (!S.stops.length) { main.innerHTML = `<div class="empty">${esc(t().noStops)}</div>`; return; }
+  main.innerHTML = S.stops.slice(0, CONFIG.maxStops).map(s => {
+    const name = lang === "el" ? (s.name_el || s.name_en) : (s.name_en || s.name_el);
+    const stopIss = issueFor(i => i.target.type === "stop" && i.target.id === String(s.code));
+    const byCode = {};
+    (s.routes || []).forEach(r => byCode[r.code] = r);
+    const rows = (s.arrivals || []).slice(0, CONFIG.maxRows).map(a => {
+      const r = byCode[a.code] || {};
+      const line = r.id || a.code;
+      const dest = (lang === "el" ? (r.el || r.en) : (r.en || r.el)) || "";
+      // exact vehicle match when the feed gives us one; otherwise fall
+      // back to "a bus of this route is flagged"
+      const busIss = issueFor(i => i.target.type === "bus" &&
+        (a.veh ? i.target.id === String(a.veh)
+               : i.target.routeCode === String(a.code)));
+      return `<div class="row">
+        <span class="pill">${esc(line)}</span>
+        <span class="body"><span class="dest">${esc(dest)}</span>${flagHtml(busIss)}</span>
+        <span class="eta">${a.min}${t().inMin}</span>
+      </div>`;
+    }).join("");
+    return `<section class="stop">
+      <h2>${esc(name)} <span class="dist">${Math.round(s.dist)} ${t().m}</span></h2>
+      ${flagHtml(stopIss)}
+      <div class="rows">${rows || `<div class="empty">${esc(t().noArr)}</div>`}</div>
+    </section>`;
+  }).join("");
+}
+function renderIssueCount() {
+  const el = $("issueCnt");
+  const n = S.issues.length;
+  el.style.display = n ? "block" : "none";
+  el.textContent = n > 99 ? "99+" : String(n);
+}
+
+/* ------------------------ report overlay -------------------------- */
+async function openOverlay() {
+  $("overlay").hidden = false;
+  document.body.style.overflow = "hidden";
+  await loadMetro();
+  const issues = await api("/issues").catch(() => null);
+  if (issues && Array.isArray(issues.issues)) S.issues = issues.issues;
+  renderIssueCount(); renderMine();
+  if (!S.map) {
+    S.map = L.map("rmap", { zoomControl: true }).setView([37.9838, 23.7275], 11);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "© OpenStreetMap",
+    }).addTo(S.map);
+    S.mapLayer = L.layerGroup().addTo(S.map);
+  }
+  setTimeout(() => S.map.invalidateSize(), 60);
+  drawMap();
+}
+function closeOverlay() {
+  $("overlay").hidden = true;
+  document.body.style.overflow = "";
+  $("rform").hidden = true;
+  $("openForm").style.display = "block";
+  $("formMsg").textContent = ""; $("formMsg").className = "";
+}
+function mkIcon(cls, size) {
+  return L.divIcon({ className: `mk ${cls}`, iconSize: [size, size] });
+}
+function drawMap() {
+  if (!S.mapLayer) return;
+  S.mapLayer.clearLayers();
+  const flaggedMetro = {};
+  for (const i of S.issues) if (i.target.type === "metro") flaggedMetro[i.target.id] = true;
+  // all metro stations, small and grey — flagged ones get the big colored pin below
+  for (const m of S.metro) {
+    if (flaggedMetro[m.id]) continue;
+    L.marker([m.lat, m.lng], { icon: mkIcon("metro", 9), interactive: true })
+      .bindTooltip(`Ⓜ ${lang === "el" ? m.el : m.en} (${m.lines.join("·")})`)
+      .addTo(S.mapLayer);
+  }
+  // every flagged bus / stop / metro station
+  for (const i of S.issues) {
+    const tgt = i.target;
+    if (!isFinite(tgt.lat) || !isFinite(tgt.lng)) continue;
+    const icon = { bus: "🚌", stop: "🚏", metro: "Ⓜ" }[tgt.type] || "";
+    const kind = t().kinds[i.kind] || i.kind;
+    L.marker([tgt.lat, tgt.lng], { icon: mkIcon(i.severity, 18) })
+      .bindPopup(`<b>${icon} ${esc(tgt.label || tgt.id)}</b>` +
+        (tgt.line ? ` · ${esc(tgt.line)}` : "") +
+        `<br>${esc(kind)} — ${esc(agoText(i.ageSec))}`)
+      .addTo(S.mapLayer);
+  }
+  if (S.pos) {
+    L.circleMarker([S.pos.lat, S.pos.lng],
+      { radius: 6, color: "#4c8dff", fillColor: "#4c8dff", fillOpacity: .9 })
+      .bindTooltip(t().locMine).addTo(S.mapLayer);
+  }
+}
+function renderMine() {
+  const mine = S.issues.filter(i => S.myIds.includes(i.id));
+  const box = $("mine");
+  if (!mine.length) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="mrow" style="color:var(--dim)">${esc(t().myReports)}</div>` +
+    mine.map(i => `<div class="mrow">
+      <span class="dot ${i.severity}"></span>
+      <span>${esc(i.target.label || i.target.id)} · ${esc(t().kinds[i.kind] || i.kind)} · ${esc(agoText(i.ageSec))}</span>
+      <button class="del" data-id="${i.id}">${esc(t().withdraw)}</button>
+    </div>`).join("");
+  box.querySelectorAll(".del").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const res = await post("/issues/delete", { id: b.dataset.id, reporter: S.reporter })
+      .catch(() => ({ ok: false }));
+    if (res.ok || res.error === "not found") {
+      S.myIds = S.myIds.filter(x => x !== b.dataset.id);
+      localStorage.setItem("myReports", JSON.stringify(S.myIds));
+      S.issues = S.issues.filter(i => i.id !== b.dataset.id);
+      renderMine(); renderIssueCount(); drawMap(); renderStops();
+    } else b.disabled = false;
+  });
+}
+
+/* -------------------------- report form --------------------------- */
+function setWhere(w) {
+  S.where = w;
+  [...$("whereSeg").children].forEach(b => b.classList.toggle("on", b.dataset.w === w));
+  fillTargets();
+}
+async function fillTargets() {
+  const sel = $("targetSel");
+  const opt = (v, txt) => `<option value="${v}">${esc(txt)}</option>`;
+  sel.innerHTML = opt("", t().pickTarget);
+  const pos = S.pos || FALLBACK;
+
+  if (S.where === "stop") {
+    const stops = S.stops.slice().sort((a, b) => a.dist - b.dist).slice(0, 30);
+    sel.innerHTML += stops.map(s => opt("s:" + s.code,
+      `${lang === "el" ? (s.name_el || s.name_en) : (s.name_en || s.name_el)} · ${Math.round(s.dist)} ${t().m}`)).join("");
+  } else if (S.where === "metro") {
+    await loadMetro();
+    const ms = S.metro.slice()
+      .map(m => ({ ...m, d: hav(pos.lat, pos.lng, m.lat, m.lng) }))
+      .sort((a, b) => a.d - b.d);
+    sel.innerHTML += ms.map(m => opt("m:" + m.id,
+      `Ⓜ ${lang === "el" ? m.el : m.en} (${m.lines.join("·")}) · ${m.d < 9000 ? Math.round(m.d) + " " + t().m : "—"}`)).join("");
+  } else {   // bus: live vehicles on routes serving the nearby stops
+    sel.innerHTML = opt("", t().loadingBuses);
+    const routes = {};
+    for (const s of S.stops) for (const r of (s.routes || [])) {
+      if (!routes[r.code]) routes[r.code] = r;
+      if (Object.keys(routes).length >= 14) break;
+    }
+    const cands = [];
+    await Promise.all(Object.values(routes).map(async r => {
+      const buses = await api(`/api?act=getBusLocation&p1=${encodeURIComponent(r.code)}`)
+        .catch(() => null);
+      for (const b of (Array.isArray(buses) ? buses : [])) {
+        const la = Number(b.CS_LAT ?? b.cs_lat), ln = Number(b.CS_LNG ?? b.cs_lng);
+        const veh = String(b.VEH_NO ?? b.veh_no ?? b.VEH_CODE ?? "");
+        if (!veh || !isFinite(la) || !isFinite(ln)) continue;
+        const d = hav(pos.lat, pos.lng, la, ln);
+        if (d > CONFIG.busPickRadius) continue;
+        cands.push({ veh, route: r, lat: la, lng: ln, d });
+      }
+    }));
+    cands.sort((a, b) => a.d - b.d);
+    S.busCands = cands.slice(0, 25);
+    sel.innerHTML = S.busCands.length
+      ? opt("", t().pickTarget) + S.busCands.map((c, i) => opt("b:" + i,
+          `🚌 ${c.route.id} · ${(lang === "el" ? (c.route.el || c.route.en) : (c.route.en || c.route.el)) || ""} · ${Math.round(c.d)} ${t().m}`)).join("")
+      : opt("", t().noBuses);
+  }
+}
+async function submitReport(ev) {
+  ev.preventDefault();
+  const msg = $("formMsg");
+  const v = $("targetSel").value;
+  if (!v) return;
+  let target = null;
+  if (v.startsWith("s:")) {
+    const s = S.stops.find(x => String(x.code) === v.slice(2));
+    if (s) target = { type: "stop", id: String(s.code), lat: s.lat, lng: s.lng,
+      label: s.name_el || s.name_en, line: null, routeCode: null };
+  } else if (v.startsWith("m:")) {
+    const m = S.metro.find(x => x.id === v.slice(2));
+    if (m) target = { type: "metro", id: m.id, lat: m.lat, lng: m.lng,
+      label: `${m.el} (M${m.lines.join("/M")})`, line: m.lines.join("/"), routeCode: null };
+  } else if (v.startsWith("b:")) {
+    const c = S.busCands[+v.slice(2)];
+    if (c) target = { type: "bus", id: c.veh, lat: c.lat, lng: c.lng,
+      label: `${c.route.id} · ${c.route.el || c.route.en || ""}`.trim(),
+      line: c.route.id, routeCode: String(c.route.code) };
+  }
+  if (!target) return;
+  msg.className = ""; msg.textContent = t().sending;
+  $("sendBtn").disabled = true;
+  const res = await post("/issues", { reporter: S.reporter, target, kind: $("kindSel").value })
+    .catch(() => ({ ok: false }));
+  $("sendBtn").disabled = false;
+  if (res.ok && res.issue) {
+    if (!S.myIds.includes(res.issue.id)) {
+      S.myIds.push(res.issue.id);
+      localStorage.setItem("myReports", JSON.stringify(S.myIds));
+    }
+    msg.className = "ok"; msg.textContent = t().sent;
+    const list = await api("/issues").catch(() => null);
+    if (list && Array.isArray(list.issues)) S.issues = list.issues;
+    renderIssueCount(); renderMine(); drawMap(); renderStops();
+    setTimeout(() => { $("rform").hidden = true; $("openForm").style.display = "block"; }, 700);
+  } else {
+    msg.className = "err";
+    msg.textContent = res.error === "too many active reports"
+      ? res.error : t().err;
+  }
+}
+
+/* --------------------------- location ----------------------------- */
+function setPos(lat, lng, manual) {
+  S.pos = { lat, lng }; S.manual = !!manual;
+  $("status").textContent = manual ? t().locManual : "";
+  loadAll();
+}
+function locate() {
+  $("status").textContent = t().locating;
+  if (!navigator.geolocation) { $("status").textContent = t().locFail; setPos(FALLBACK.lat, FALLBACK.lng, true); return; }
+  navigator.geolocation.getCurrentPosition(
+    p => setPos(p.coords.latitude, p.coords.longitude, false),
+    () => { $("status").textContent = t().locFail; setPos(FALLBACK.lat, FALLBACK.lng, true); },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+}
+async function search() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  $("status").textContent = t().locating;
+  const res = await api(`/geocode?q=${encodeURIComponent(q)}&lang=${lang}`).catch(() => null);
+  if (Array.isArray(res) && res.length) {
+    setPos(parseFloat(res[0].lat), parseFloat(res[0].lon), true);
+    $("status").textContent = t().locManual + ": " + (res[0].display_name || q).split(",")[0];
+  } else $("status").textContent = t().locFail;
+}
+
+/* ----------------------------- wiring ----------------------------- */
+$("langBtn").onclick = () => {
+  lang = lang === "el" ? "en" : "el";
+  localStorage.setItem("lang", lang);
+  applyLabels(); renderStops(); renderMine(); if (S.map) drawMap();
+  if (!$("rform").hidden) fillTargets();
+};
+$("locBtn").onclick = locate;
+$("qGo").onclick = search;
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+$("reportBtn").onclick = openOverlay;
+$("ovClose").onclick = closeOverlay;
+$("overlay").addEventListener("click", e => { if (e.target === $("overlay")) closeOverlay(); });
+$("openForm").onclick = () => {
+  $("openForm").style.display = "none";
+  $("rform").hidden = false;
+  setWhere(S.where);
+};
+[...$("whereSeg").children].forEach(b => b.onclick = () => setWhere(b.dataset.w));
+$("rform").addEventListener("submit", submitReport);
+
+applyLabels();
+locate();
+S.timer = setInterval(loadAll, CONFIG.refreshMs);
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
+</script>
+</body>
+</html>

@@ -6,6 +6,12 @@ that stream computes headway regularity, bunching, and missing trips.
 
 The app works fine without this. Stats simply report "tracking isn't configured".
 
+> **v18 note:** the line-stats screen in the app was replaced by the community
+> reports feature (the red ❗). Tracking still runs and collects data exactly as
+> described here, but its numbers are now only reachable through the Worker's
+> `/stats`, `/stats/bunching` and `/stats/missing` endpoints (curl or browser),
+> not from the UI.
+
 ---
 
 ## ⚠️ First: don't overwrite your wrangler.toml

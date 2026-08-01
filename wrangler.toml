@@ -13,7 +13,8 @@ directory = "./public"
 crons = ["* * * * *"]
 
 # ---------------------------------------------------------------------
-# ALERTS STORAGE — required only for push notifications.
+# ALERTS STORAGE — required for push notifications AND the community
+# reports (red/yellow flags); reports live in a single key in here.
 # Create it once:
 #     npx wrangler kv:namespace create ALERTS
 # Copy the printed id below, then UNCOMMENT these three lines and deploy.

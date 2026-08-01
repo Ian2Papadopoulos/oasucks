@@ -85,6 +85,9 @@ https://oasa-stop.<your-subdomain>.workers.dev
   blocked — tap **Αλλαγή / Change** and allow location, or in Chrome: site settings →
   Location → Allow.
 - **Language:** top-right toggles EL / EN.
+- **Reports:** tap the red **!** — the Athens map opens with any flagged buses/stops/
+  metro stations, and **Report an issue** underneath lets you file one. Withdraw your
+  own report from the list under the map; it disappears for everyone.
 
 ### If something's off
 - **Empty boards / "no arrivals":** normal late at night or on quiet lines — check a
@@ -92,7 +95,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v1"` to `v2` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v2"` to `v3` in `public/sw.js` and redeploy to force an update.
 
 ---
 
