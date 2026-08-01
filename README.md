@@ -3,7 +3,13 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. Installs on Android like a native app.
 
-**New in v19 — community reports.** The line-stats button is gone; in its place sits a
+**New in v20.** The top bar is down to three buttons — reports ❗, alerts 🔔, and a ☰
+menu holding everything else: [look up a line](#find-a-line) and preview its route,
+a [live map](#live-buses) of the buses running around you, the EL/EN switch (moved out
+of the header), and About. Reporting a bus now requires you to be within **100 m** of
+it.
+
+**Community reports.** The line-stats button is gone; in its place sits a
 red exclamation mark. Tap it and a problem map of Athens opens — only the buses and
 metro stations that currently carry a flag, red for a ticket inspector, yellow for
 anything else. Under the map, **Report an issue** lets you flag the bus you are
@@ -82,6 +88,32 @@ JSON to host at `/.well-known/assetlinks.json`.
 Field names in the API are inconsistent (mixed casing), so the parsing is defensive —
 if line-mapping fails it degrades to the route code and still shows the countdown.
 
+## The ☰ menu
+
+Everything that isn't "what's coming to my stop" lives behind the hamburger, so the
+header stays down to the two things you tap in a hurry (reports and alerts).
+
+### Find a line
+
+Type a line number or name — `22` finds **022** before **220**, because matching is
+ranked exact → prefix → substring → description text. Pick a line, pick a direction,
+and you get the same route preview as long-pressing a line in the arrivals list: the
+route drawn over Athens streets, every stop on it, and the buses currently running it.
+The only difference is that without a boarding stop the *whole* route is highlighted
+instead of just the stretch ahead of you, and the strip lists all its stops.
+
+The line catalogue comes from the Worker's `/lines` (cached a day); directions come
+from `getRoutesForLine`.
+
+### Live buses
+
+A map of the buses actually moving, each pin labelled with its line. "Every bus in
+Athens at once" would be one API call per route — hundreds, far past a Worker's
+subrequest budget — so `/live?lat=&lng=` resolves the lines that serve the area around
+the map centre (≤10 stop lookups, ≤28 routes) and returns every vehicle on them,
+cached 15 s. Pan the map and tap **↻** to load another area. Tune the ceilings in
+`LIVE` in `worker.js`.
+
 ## Reports (red exclamation mark)
 
 The ❗ button in the header opens the reports view. The map is a **problem map**: it
@@ -107,7 +139,8 @@ You can't pick a line off a list any more — the app has to identify the vehicl
 sitting in, which is hard downtown where six buses share one jam. It runs two passes:
 
 1. **Proximity.** Every live vehicle on the lines serving the stops around you, kept
-   only if it's within **400 m** of your GPS fix, ranked nearest-first.
+   only if it's within **100 m** of your GPS fix, ranked nearest-first. That's tight
+   enough that a bus you're merely watching go past usually won't qualify.
 2. **Co-movement.** A second position sample ~6 s later. If you're on board, your GPS
    and the bus move the same way — similar heading, similar distance covered — and the
    gap between you stays small. Those get marked **"moving with you"** and jump to the
@@ -145,7 +178,7 @@ configured". Metro stations (lines M1/M2/M3) are a static list served by the Wor
 
 In `public/index.html` → `CONFIG`: `refreshMs` (refresh interval), `listStops` (how
 many stops in the list), `maxRows` (arrivals per stop) — the search radius has its own
-slider in the map view. Reporting reach lives in `ONBOARD`: `busRadius` (400 m),
+slider in the map view. Reporting reach lives in `ONBOARD`: `busRadius` (100 m),
 `metroRadius` (600 m), `refineMs` (how long the co-movement pass waits) and `minMove`
 (how far you must travel for that pass to have an opinion); the per-category issue
 menus are `TYPES_BY_KIND`. In `worker.js`: `ACT_TTL` cache times, `ALLOWED_ACTS` if you

@@ -65,6 +65,33 @@
     padding:7px 8px;cursor:pointer;font-weight:700;letter-spacing:.08em;flex:none;border-radius:2px}
   .lang b{color:var(--toner)}
 
+  /* hamburger + the small menu it drops */
+  .bars{display:grid;gap:3px;width:14px}
+  .bars i{height:1.5px;background:var(--toner);display:block}
+  .iconbtn[aria-expanded="true"]{background:var(--toner)}
+  .iconbtn[aria-expanded="true"] .bars i{background:var(--paper)}
+  .menu{margin-top:9px;border:1px solid var(--toner);background:var(--card);border-radius:2px;
+    overflow:hidden;animation:drop .16s ease-out}
+  .menu[hidden]{display:none}
+  @keyframes drop{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+  .menu-item{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);
+    border:none;border-top:1px dashed var(--rule);color:var(--toner);font-family:var(--mono);
+    font-size:12px;font-weight:700;letter-spacing:.02em;padding:11px 12px;cursor:pointer;text-align:left}
+  .menu-item:first-child{border-top:none}
+  .menu-item:active{background:var(--paper)}
+  .menu-item .mi{width:18px;height:18px;display:grid;place-items:center;flex:none;
+    border:1px solid var(--rule);font-size:10.5px;font-weight:700;border-radius:2px}
+  .menu-item .mi-side{margin-left:auto;color:var(--ink3);font-size:10px;letter-spacing:.1em}
+  @media (prefers-reduced-motion:reduce){ .menu{animation:none} }
+
+  #livemap{flex:1;min-height:190px;position:relative;z-index:0;background:#EDEDEA}
+  .livebus{min-width:26px;height:18px;padding:0 4px;background:var(--toner);color:var(--paper);
+    font-size:9.5px;font-weight:700;display:grid;place-items:center;border-radius:2px;
+    border:1.5px solid var(--paper);letter-spacing:.02em}
+  .ab p{margin:0 0 10px;color:var(--ink2);font-size:11.5px;line-height:1.6;font-family:var(--sans)}
+  .ab b{color:var(--toner)}
+  .ab .sec-label{margin-top:14px}
+
   .locbar{display:flex;align-items:center;gap:7px;margin-top:11px;color:var(--ink2);font-size:11.5px}
   .locbar .dot{width:6px;height:6px;border-radius:50%;background:var(--toner);flex:none}
   .locbar .where{color:var(--toner);font-weight:700;white-space:nowrap;overflow:hidden;
@@ -386,8 +413,16 @@
       <div class="spacer"></div>
       <button class="iconbtn alert" id="reportbtn">❗<span class="badge" id="repcount" style="display:none">0</span></button>
       <button class="iconbtn" id="bell">🔔<span class="badge" id="bellcount" style="display:none">0</span></button>
-      <button class="lang" id="lang"><b>EL</b> / EN</button>
+      <button class="iconbtn" id="menubtn" aria-label="menu" aria-expanded="false">
+        <span class="bars"><i></i><i></i><i></i></span></button>
     </div>
+    <nav class="menu" id="menu" hidden>
+      <button class="menu-item" id="m-line"><span class="mi">⌕</span><span id="m-line-t"></span></button>
+      <button class="menu-item" id="m-live"><span class="mi">🗺</span><span id="m-live-t"></span></button>
+      <button class="menu-item" id="m-lang"><span class="mi">⇄</span><span id="m-lang-t"></span>
+        <span class="mi-side" id="m-lang-v"></span></button>
+      <button class="menu-item" id="m-about"><span class="mi">i</span><span id="m-about-t"></span></button>
+    </nav>
     <div class="locbar">
       <span class="dot"></span><span id="locwhere" class="where">…</span>
       <button id="change">Αλλαγή</button>
@@ -411,7 +446,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v19</span></div>
+  <div class="foot"><span class="ver">v20</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -465,6 +500,29 @@
   <div id="repmap"></div>
   <div class="rp-strip" id="rep-strip"></div>
 </div>
+
+<div class="sheet-bg" id="linebg"><div class="sheet">
+  <h3 id="ln-h">Γραμμή</h3><p id="ln-p"></p>
+  <div class="search"><input id="lnq" autocomplete="off" inputmode="search" /><button id="lngo">→</button></div>
+  <div class="results" id="lnres"></div>
+</div></div>
+
+<div class="rp" id="live">
+  <div class="rp-hd">
+    <div class="rp-tile" id="live-tile">🚌</div>
+    <div class="rp-txt"><div class="rp-title" id="live-title">Ζωντανά</div>
+      <div class="rp-sub" id="live-sub"></div></div>
+    <button class="rp-x" id="live-r">↻</button>
+    <button class="rp-x" id="live-x">✕</button>
+  </div>
+  <div id="livemap"></div>
+  <div class="rp-strip" id="live-hint"></div>
+</div>
+
+<div class="sheet-bg" id="aboutbg"><div class="sheet">
+  <h3 id="ab-h">Σχετικά</h3>
+  <div id="ab-body"></div>
+</div></div>
 
 <div class="cyc" id="cyc"><div class="cycbox">
   <div class="cyc-tile" id="cyc-tile">—</div>
@@ -540,6 +598,7 @@ async function withLimit(tasks,n){
 
 /* ------------------------------- i18n ------------------------------ */
 let LANG="el";
+try{ const v=localStorage.getItem("lang"); if(v==="el"||v==="en") LANG=v; }catch(_){}
 const T={
  el:{title:"Στάση",sub:"ΖΩΝΤΑΝΕΣ ΑΦΙΞΕΙΣ · OASA",change:"Αλλαγή",nobus:"Καμία άφιξη τα επόμενα λεπτά",
   now:"τώρα",min:"λεπτά",to:"προς",err:"Δεν φορτώθηκαν δεδομένα.",retry:"Δοκίμασε ξανά",
@@ -562,6 +621,28 @@ const T={
   onboardNote:"Μόνο για το λεωφορείο που είσαι μέσα.",
   metroNote:"Μόνο για σταθμούς σε 600 μ. από εσένα.",
   back:"← Πίσω",
+  mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
+  lineH:"Αναζήτηση γραμμής",
+  lineP:"Γράψε αριθμό ή όνομα γραμμής (π.χ. 022) και δες τη διαδρομή και τις στάσεις της.",
+  linePh:"022, Α1, Σύνταγμα…", noLine:"Καμία γραμμή με αυτό το όνομα.",
+  pickDir:"Διάλεξε κατεύθυνση", wholeRoute:"Όλη η διαδρομή", allStops:"Στάσεις",
+  liveH:"Ζωντανά λεωφορεία", liveLoading:"Φόρτωση ζωντανών θέσεων…",
+  liveCount:n=>`${n} λεωφορεία σε κίνηση`, liveNone:"Κανένα λεωφορείο σε κίνηση εδώ.",
+  liveHint:"Δείχνει τα λεωφορεία των γραμμών γύρω από το κέντρο του χάρτη. Μετακίνησε τον χάρτη και πάτα ↻.",
+  aboutH:"Σχετικά",
+  aboutBody:`<p><b>OASUCKS</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
+    γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
+    <p><b>Αναφορές.</b> Οι επιβάτες σημαίνουν τι βλέπουν: ελεγκτής (κόκκινο) ή πρόβλημα (κίτρινο).
+    Μπορείς να σημάνεις μόνο το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι κόκκινες
+    σημάνσεις σβήνουν μετά από 15′ στα λεωφορεία και 2 ώρες στο μετρό, οι κίτρινες μετά από 60′.
+    Μόνο όποιος έκανε μια αναφορά μπορεί να τη σβήσει νωρίτερα.</p>
+    <p><b>Ιδιωτικότητα.</b> Χωρίς λογαριασμό και χωρίς παρακολούθηση. Η τοποθεσία σου μένει στη
+    συσκευή — στέλνεται μόνο η θέση αυτού που αναφέρεις. Οι αναφορές συνδέονται με ένα ανώνυμο
+    τυχαίο αναγνωριστικό που φυλάσσεται τοπικά.</p>
+    <p><b>Τα δεδομένα.</b> Ανεπίσημα, από τον ΟΑΣΑ. Οι χρόνοι είναι δικές τους εκτιμήσεις και
+    πέφτουν έξω. Χάρτες © OpenStreetMap, © CARTO.</p>`,
+  aboutTip:"Μικρά κόλπα", aboutTips:`<p>Κράτα πατημένη μια γραμμή στη λίστα για προεπισκόπηση
+    διαδρομής. Κράτα πατημένη μια στάση στον χάρτη για να δεις πού πάνε τα λεωφορεία της.</p>`,
   ti_inspector:"Ελεγκτής", ti_breakdown:"Βλάβη", ti_crowded:"Υπερπλήρες",
   ti_delay:"Καθυστέρηση", ti_incident:"Επεισόδιο", ti_no_show:"Δεν πέρασε",
   ti_detour:"Παράκαμψη", ti_other:"Άλλο", reportSent:"Καταχωρήθηκε ✓",
@@ -601,6 +682,27 @@ const T={
   onboardNote:"Only for the bus you're riding.",
   metroNote:"Only for stations within 600 m of you.",
   back:"← Back",
+  mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
+  lineH:"Find a line",
+  lineP:"Type a line number or name (e.g. 022) to preview its route and stops.",
+  linePh:"022, A1, Syntagma…", noLine:"No line by that name.",
+  pickDir:"Pick a direction", wholeRoute:"Whole route", allStops:"Stops",
+  liveH:"Live buses", liveLoading:"Loading live positions…",
+  liveCount:n=>`${n} buses running`, liveNone:"No buses running here.",
+  liveHint:"Shows buses on the lines around the centre of the map. Pan the map and tap ↻.",
+  aboutH:"About",
+  aboutBody:`<p><b>OASUCKS</b> shows live bus and trolley arrivals for the stops around you,
+    using the unofficial OASA telematics API.</p>
+    <p><b>Reports.</b> Riders flag what they see: a ticket inspector (red) or a problem (yellow).
+    You can only flag the bus you are riding or a metro station within 600 m. Red flags expire
+    after 15 min on buses and 2 hours on the metro, yellow ones after 60 min. Only the person who
+    filed a report can clear it early.</p>
+    <p><b>Privacy.</b> No account, no tracking. Your location stays on the device — only the
+    position of what you report is sent. Reports are tied to an anonymous random id kept locally.</p>
+    <p><b>The data.</b> Unofficial, from OASA. The times are their own estimates and they are
+    often wrong. Maps © OpenStreetMap, © CARTO.</p>`,
+  aboutTip:"Hidden bits", aboutTips:`<p>Long-press a line in the list to preview its route.
+    Long-press a stop on the map to see where its buses go.</p>`,
   ti_inspector:"Ticket inspector", ti_breakdown:"Breakdown", ti_crowded:"Overcrowded",
   ti_delay:"Delayed", ti_incident:"Incident", ti_no_show:"Never arrived",
   ti_detour:"Detour", ti_other:"Other", reportSent:"Reported ✓",
@@ -659,8 +761,8 @@ const PRESETS=[
 
 /* ------------------------------ state ------------------------------ */
 let here={lat:37.9755,lng:23.7348,label:null,gps:false};
-const state={view:"list",stops:[],reports:[],metro:[],radius:600,dark:false,mapFitted:false,_mapCodes:null,
-  rules:[],subId:null};
+const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},radius:600,
+  dark:false,mapFitted:false,_mapCodes:null,rules:[],subId:null};
 let timer=null,progTimer=null,loading=false;
 
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
@@ -709,7 +811,10 @@ function onLongPress(el,fn,ms=430){
 function applyStatics(){
   document.documentElement.lang=LANG;
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
-  $("#lang").innerHTML=LANG==="el"?"<b>EL</b> / EN":"EL / <b>EN</b>";
+  $("#m-line-t").textContent=t("mLine"); $("#m-live-t").textContent=t("mLive");
+  $("#m-lang-t").textContent=t("mLang"); $("#m-about-t").textContent=t("mAbout");
+  $("#m-lang-v").textContent=LANG==="el"?"ΕΛ → EN":"EN → ΕΛ";
+  $("#live-title").textContent=t("liveH");
   $("#s-h").textContent=t("sheetH"); $("#s-p").textContent=t("sheetP");
   $("#s-gps").textContent=t("gps"); $("#s-pick").textContent=t("pick");
   $("#s-quick").textContent=t("quick");
@@ -1093,12 +1198,19 @@ function nearestIdx(pl,pt){ let bi=0,bd=Infinity;
   for(let i=0;i<pl.length;i++){ const d=(pl[i][0]-pt[0])**2+(pl[i][1]-pt[1])**2; if(d<bd){bd=d;bi=i;} }
   return bi; }
 
-async function openRoutePreview(stop,routeCode,minutes){
-  const info=stop.routeMap[routeCode]||{};
+/* Route preview. Opened two ways, and the only difference is whether we
+   have a boarding stop: from the arrivals list we do (highlight the bit
+   of the journey ahead of you), from the line search we don't (show the
+   whole route end to end). `meta` carries the line labels in that second
+   case, since there is no stop.routeMap to read them from. */
+async function openRoutePreview(stop,routeCode,minutes,meta){
+  const info=stop?(stop.routeMap[routeCode]||{}):(meta||{});
   $("#rp").classList.add("on");
   $("#rp-tile").textContent=info.line||routeCode;
   $("#rp-title").textContent=destOf(LANG==="en"?(info.en||info.el):(info.el||info.en))||"";
-  $("#rp-sub").textContent=`${stopName(stop)} · ${minutes<=1?t("now"):minutes+"′"}`;
+  $("#rp-sub").textContent=stop
+    ? `${stopName(stop)} · ${minutes<=1?t("now"):minutes+"′"}`
+    : t("wholeRoute");
   $("#rp-strip").innerHTML=`<div class="res-msg" style="color:var(--muted);font-size:13px;padding:8px 2px">${t("searching")}</div>`;
   if(!rmap){
     rmap=L.map("rpmap",{zoomControl:true});
@@ -1122,12 +1234,20 @@ async function openRoutePreview(stop,routeCode,minutes){
     lng:Number(pick(x,"StopLng","StopX","stop_lng"))
   })).filter(x=>isFinite(x.lat)&&isFinite(x.lng));
 
-  let idx=list.findIndex(x=>x.code===String(stop.code));
-  if(idx<0&&list.length) idx=nearestIdx(list.map(x=>[x.lat,x.lng]),[stop.lat,stop.lng]);
+  let idx=-1;
+  if(stop){
+    idx=list.findIndex(x=>x.code===String(stop.code));
+    if(idx<0&&list.length) idx=nearestIdx(list.map(x=>[x.lat,x.lng]),[stop.lat,stop.lng]);
+  }
   const onward = idx>=0 ? list.slice(idx,idx+CONFIG.onward+1) : [];
 
-  // full route faint, onward segment bright
+  // with a boarding stop: full route faint, the journey ahead bright.
+  // without one: the whole line is the subject, so draw it all bright.
   if(pl.length){
+    if(!stop){
+      L.polyline(pl,{color:"#FFFFFF",weight:9,opacity:.95}).addTo(rlayer);
+      L.polyline(pl,{color:"#17171A",weight:4.5,opacity:1}).addTo(rlayer);
+    } else {
     L.polyline(pl,{color:"#B4B4AE",weight:3,opacity:.9}).addTo(rlayer);
     if(onward.length>1){
       const i0=nearestIdx(pl,[onward[0].lat,onward[0].lng]);
@@ -1137,10 +1257,17 @@ async function openRoutePreview(stop,routeCode,minutes){
         L.polyline(pl.slice(i0,i1+1),{color:"#17171A",weight:4.5,opacity:1}).addTo(rlayer);
       }
     }
+    }
   }
-  // every stop on the route as a faint dot, so the grey stretches aren't blank
+  // every stop on the route as a dot, so the plain stretches aren't blank
   list.forEach((x,i)=>{
     if(idx>=0 && i>=idx && i<=idx+CONFIG.onward) return;   // those get numbered markers below
+    if(!stop){
+      L.marker([x.lat,x.lng],{icon:L.divIcon({className:"",html:'<div class="nstop"></div>',
+        iconSize:[11,11],iconAnchor:[5.5,5.5]})}).addTo(rlayer)
+        .bindTooltip(`${i+1}. ${x.name}`,{direction:"top"});
+      return;
+    }
     L.circleMarker([x.lat,x.lng],{radius:2.5,color:"#5A6B8C",weight:1,
       fillColor:"#8A97AD",fillOpacity:.85}).addTo(rlayer).bindTooltip(x.name,{direction:"top"});
   });
@@ -1149,7 +1276,7 @@ async function openRoutePreview(stop,routeCode,minutes){
     L.marker([x.lat,x.lng],{icon:L.divIcon({className:"",html:'<div class="nstop"></div>',
       iconSize:[11,11],iconAnchor:[5.5,5.5]})}).addTo(rlayer).bindTooltip(`${i}. ${x.name}`,{direction:"top"});
   });
-  if(isFinite(stop.lat)) L.marker([stop.lat,stop.lng],{icon:L.divIcon({className:"",
+  if(stop&&isFinite(stop.lat)) L.marker([stop.lat,stop.lng],{icon:L.divIcon({className:"",
     html:'<div class="board"></div>',iconSize:[20,20],iconAnchor:[10,10]}),zIndexOffset:600})
     .addTo(rlayer).bindTooltip(stopName(stop),{direction:"top",permanent:false});
   L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:700}).addTo(rlayer);
@@ -1159,16 +1286,23 @@ async function openRoutePreview(stop,routeCode,minutes){
       html:'<div class="busm">🚌</div>',iconSize:[22,22],iconAnchor:[11,11]}),zIndexOffset:500}).addTo(rlayer);
   });
 
-  // zoom to the part of the journey that matters
+  // zoom: to the part of the journey that matters, or to the whole line
   const b=L.latLngBounds([]);
-  onward.forEach(x=>b.extend([x.lat,x.lng]));
-  b.extend([here.lat,here.lng]);
-  if(isFinite(stop.lat)) b.extend([stop.lat,stop.lng]);
-  if(b.isValid()) rmap.fitBounds(b,{padding:[45,45],maxZoom:15});
+  if(stop){
+    onward.forEach(x=>b.extend([x.lat,x.lng]));
+    b.extend([here.lat,here.lng]);
+    if(isFinite(stop.lat)) b.extend([stop.lat,stop.lng]);
+    if(b.isValid()) rmap.fitBounds(b,{padding:[45,45],maxZoom:15});
+  } else {
+    (pl.length?pl:list.map(x=>[x.lat,x.lng])).forEach(p=>b.extend(p));
+    if(b.isValid()) rmap.fitBounds(b,{padding:[30,30]});
+  }
 
-  $("#rp-strip").innerHTML = onward.length
-    ? `<div class="sec-label">${t("nextStops")}</div>` + onward.map((x,i)=>
-        `<div class="ns${i===0?" first":""}"><div class="n">${i===0?"▶":i}</div>
+  const strip = stop ? onward : list;
+  $("#rp-strip").innerHTML = strip.length
+    ? `<div class="sec-label">${stop?t("nextStops"):`${t("allStops")} · ${list.length}`}</div>`
+      + strip.map((x,i)=>
+        `<div class="ns${stop&&i===0?" first":""}"><div class="n">${stop?(i===0?"▶":i):(i+1)}</div>
           <div class="nm">${esc(x.name||("#"+x.code))}</div></div>`).join("")
     : `<div class="note">${t("noRoute")}</div>`;
 }
@@ -1230,7 +1364,7 @@ function stopCycle(quiet){
 const TYPES_BY_KIND={ bus:["breakdown","crowded","inspector"], metro:["inspector"] };
 /* You may only flag the vehicle you are inside, or a station you are
    standing at — these two numbers are what "inside" and "at" mean. */
-const ONBOARD={ busRadius:400, metroRadius:600, maxRoutes:14,
+const ONBOARD={ busRadius:100, metroRadius:600, maxRoutes:14,
   refineMs:6000, minMove:20 };
 const isRed=r=>r.type==="inspector";
 function agoTxt(sec){
@@ -1615,6 +1749,176 @@ function openReportForm(){
   step1();
 }
 
+/* =========================== the menu ============================= *
+ * Everything that isn't "what's coming to my stop" lives behind the ☰:
+ * look up a line, watch the buses move, switch language, read about it.
+ * ------------------------------------------------------------------ */
+function menuOpen(){ return !$("#menu").hidden; }
+function toggleMenu(force){
+  const open = force!=null?force:!menuOpen();
+  $("#menu").hidden=!open;
+  $("#menubtn").setAttribute("aria-expanded",open?"true":"false");
+}
+document.addEventListener("click",e=>{
+  if(!menuOpen()) return;
+  if(e.target.closest("#menu")||e.target.closest("#menubtn")) return;
+  toggleMenu(false);
+});
+
+/* ------------------------ line lookup ------------------------------ */
+async function loadLines(){
+  if(state.lines&&state.lines.length) return state.lines;
+  if(hasBackend()){
+    try{ const r=await fetch(base()+"/lines",{cache:"no-store"});
+      if(r.ok){ const j=await r.json(); if(Array.isArray(j)&&j.length){ state.lines=j; return j; } } }catch(_){}
+  }
+  // no backend (or the endpoint failed): go straight to OASA
+  const raw=await oasa("webGetLines").catch(()=>null);
+  state.lines=(Array.isArray(raw)?raw:[]).map(l=>({
+    code:String(pick(l,"LineCode","line_code")||""),
+    id:String(pick(l,"LineID","line_id")||""),
+    el:pick(l,"LineDescr","line_descr")||"", en:pick(l,"LineDescrEng","line_descr_eng")||"",
+  })).filter(l=>l.code&&l.id);
+  return state.lines;
+}
+function openLineSearch(){
+  toggleMenu(false);
+  $("#ln-h").textContent=t("lineH"); $("#ln-p").textContent=t("lineP");
+  $("#lnq").placeholder=t("linePh");
+  $("#lnres").innerHTML="";
+  $("#linebg").classList.add("on");
+  $("#lnq").value=""; setTimeout(()=>$("#lnq").focus(),80);
+  loadLines();
+}
+function closeLineSearch(){ $("#linebg").classList.remove("on"); }
+/* "22" should find 022 and Α22 but not 220 — so: exact, then prefix,
+   then anywhere, and only fall back to the description text after that. */
+function matchLines(lines,q){
+  const s=q.trim().toLowerCase();
+  if(!s) return [];
+  const norm=x=>String(x||"").toLowerCase().replace(/^0+/,"");
+  const ns=norm(s);
+  const score=l=>{
+    const id=l.id.toLowerCase(), nid=norm(id);
+    if(id===s||nid===ns) return 0;
+    if(id.startsWith(s)||nid.startsWith(ns)) return 1;
+    if(id.includes(s)) return 2;
+    if((l.el+" "+l.en).toLowerCase().includes(s)) return 3;
+    return 9;
+  };
+  return lines.map(l=>({l,r:score(l)})).filter(x=>x.r<9)
+    .sort((a,b)=>a.r-b.r||String(a.l.id).localeCompare(String(b.l.id),undefined,{numeric:true}))
+    .slice(0,25).map(x=>x.l);
+}
+async function doLineSearch(){
+  const box=$("#lnres"), q=$("#lnq").value;
+  if(!q.trim()) return;
+  box.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
+  const lines=await loadLines();
+  const hits=matchLines(lines,q);
+  if(!hits.length){ box.innerHTML=`<div class="res-msg">${t("noLine")}</div>`; return; }
+  box.innerHTML="";
+  hits.forEach(l=>{
+    const b=document.createElement("button"); b.className="res";
+    const d=destOf(LANG==="en"?(l.en||l.el):(l.el||l.en));
+    b.innerHTML=`<b class="num">${esc(l.id)}</b> · ${esc((LANG==="en"?(l.en||l.el):(l.el||l.en))||"")}`;
+    b.onclick=()=>pickLineDirection(l);
+    box.appendChild(b);
+  });
+}
+/* A line has two directions (and sometimes more variants); each is its
+   own route code, and a route code is what the preview needs. */
+async function pickLineDirection(line){
+  const box=$("#lnres");
+  box.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
+  const raw=await oasa("getRoutesForLine",line.code).catch(()=>null);
+  const routes=(Array.isArray(raw)?raw:[]).map(r=>({
+    code:String(pick(r,"RouteCode","route_code")||""),
+    el:pick(r,"RouteDescr","route_descr")||line.el,
+    en:pick(r,"RouteDescrEng","route_descr_eng")||line.en,
+  })).filter(r=>r.code);
+  if(!routes.length){ box.innerHTML=`<div class="res-msg">${t("noRoute")}</div>`; return; }
+  const show=r=>{ closeLineSearch();
+    openRoutePreview(null,r.code,null,{line:line.id,el:r.el,en:r.en}); };
+  if(routes.length===1){ show(routes[0]); return; }
+  box.innerHTML=`<div class="res-msg">${t("pickDir")}</div>`;
+  routes.slice(0,6).forEach(r=>{
+    const b=document.createElement("button"); b.className="res";
+    b.innerHTML=`<b class="num">${esc(line.id)}</b> · ${esc(destOf((LANG==="en"?(r.en||r.el):(r.el||r.en))||""))}`;
+    b.onclick=()=>show(r);
+    box.appendChild(b);
+  });
+}
+
+/* ---------------------- live bus map -------------------------------
+ * "Every bus in Athens" is more subrequests than a Worker gets in one
+ * go, so the map is honest about it: it loads the lines around the map
+ * centre and draws every vehicle running on them. Pan and hit ↻ to load
+ * another area. */
+let lmap=null,llayer=null,liveBusy=false;
+function openLiveMap(){
+  toggleMenu(false);
+  $("#live").classList.add("on");
+  $("#live-title").textContent=t("liveH");
+  if(!lmap){
+    lmap=L.map("livemap",{zoomControl:true}).setView([here.lat,here.lng],14);
+    L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true,attribution:TILE_ATTR}).addTo(lmap);
+    llayer=L.layerGroup().addTo(lmap);
+  }
+  $("#live-hint").innerHTML=`<div class="shint">${t("liveHint")}</div>`;
+  setTimeout(()=>lmap.invalidateSize(),70);
+  loadLive();
+}
+function closeLiveMap(){ $("#live").classList.remove("on"); }
+async function loadLive(){
+  if(liveBusy||!lmap) return;
+  liveBusy=true;
+  $("#live-sub").textContent=t("liveLoading");
+  const c=lmap.getCenter();
+  let buses=[];
+  try{
+    if(hasBackend()){
+      const r=await fetch(`${base()}/live?lat=${c.lat.toFixed(4)}&lng=${c.lng.toFixed(4)}`,{cache:"no-store"});
+      if(r.ok){ const j=await r.json(); buses=Array.isArray(j.buses)?j.buses:[]; }
+    } else {
+      // no backend: fan out over the routes we already know about
+      const routes=[]; (state.stops||[]).forEach(s=>(s.routes||[]).forEach(x=>{
+        if(!routes.some(y=>y.code===x.code)) routes.push(x); }));
+      await withLimit(routes.slice(0,10).map(rt=>async()=>{
+        const arr=await oasa("getBusLocation",rt.code).catch(()=>null);
+        (Array.isArray(arr)?arr:[]).forEach(v=>buses.push({
+          veh:String(pick(v,"VEH_NO","veh_no")||""), line:rt.id, routeCode:rt.code,
+          el:rt.el, en:rt.en,
+          lat:Number(pick(v,"CS_LAT","cs_lat")), lng:Number(pick(v,"CS_LNG","cs_lng"))}));
+      }),5);
+    }
+  }catch(_){}
+  llayer.clearLayers();
+  L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:900}).addTo(llayer);
+  let n=0;
+  buses.forEach(v=>{
+    if(!isFinite(v.lat)||!isFinite(v.lng)) return;
+    n++;
+    const dest=destOf((LANG==="en"?(v.en||v.el):(v.el||v.en))||"");
+    L.marker([v.lat,v.lng],{icon:L.divIcon({className:"",
+      html:`<div class="livebus num">${esc(v.line||"")}</div>`,iconSize:[30,20],iconAnchor:[15,10]})})
+      .addTo(llayer).bindTooltip(`${v.line||""}${dest?" · "+dest:""}`,{direction:"top"});
+  });
+  $("#live-sub").textContent = n?t("liveCount")(n):t("liveNone");
+  liveBusy=false;
+}
+
+/* ----------------------------- about ------------------------------- */
+function openAbout(){
+  toggleMenu(false);
+  $("#ab-h").textContent=t("aboutH");
+  $("#ab-body").innerHTML=`<div class="ab">${t("aboutBody")}
+    <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
+    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v20</p></div>`;
+  $("#aboutbg").classList.add("on");
+}
+function closeAbout(){ $("#aboutbg").classList.remove("on"); }
+
 /* ====================== tracking & stats UI ======================= */
 let statRoute=null, statDays=7;
 function openStats(){ $("#statbg").classList.add("on"); renderStats(); }
@@ -1873,13 +2177,26 @@ function renderForm(){
 }
 
 /* ------------------------------ wire ------------------------------- */
-$("#lang").onclick=()=>{
+function switchLang(){
   LANG=LANG==="el"?"en":"el";
+  try{ localStorage.setItem("lang",LANG); }catch(_){}
   if(here.gps) here.label=t("you");
   else if(here.label){ const p=PRESETS.find(x=>x.el===here.label||x.en===here.label);
     if(p) here.label=LANG==="el"?p.el:p.en; }
   applyStatics(); updateRadiusLabel(); renderView();
-};
+  if($("#rep").classList.contains("on")){ drawReportMap(); renderReportList(); }
+}
+$("#menubtn").onclick=()=>toggleMenu();
+$("#m-line").onclick=openLineSearch;
+$("#m-live").onclick=openLiveMap;
+$("#m-lang").onclick=()=>{ switchLang(); toggleMenu(false); };
+$("#m-about").onclick=openAbout;
+$("#lngo").onclick=doLineSearch;
+$("#lnq").addEventListener("keydown",e=>{ if(e.key==="Enter") doLineSearch(); });
+$("#linebg").onclick=e=>{ if(e.target.id==="linebg") closeLineSearch(); };
+$("#aboutbg").onclick=e=>{ if(e.target.id==="aboutbg") closeAbout(); };
+$("#live-x").onclick=closeLiveMap;
+$("#live-r").onclick=loadLive;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;
 $("#addrgo").onclick=doSearch;

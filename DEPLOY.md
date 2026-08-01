@@ -84,7 +84,8 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **Location:** if the board shows Syntagma instead of where you are, location was
   blocked — tap **Αλλαγή / Change** and allow location, or in Chrome: site settings →
   Location → Allow.
-- **Language:** top-right toggles EL / EN.
+- **Language:** ☰ menu → Γλώσσα / Language.
+- **☰ menu:** find a line and preview its route, live bus map, language, about.
 - **Reports:** tap the red **!** — the map shows only what's currently flagged (buses
   and metro stations), and **Report an issue** underneath lets you file one. Test it
   from a bus: pick *On a bus*, wait for the candidate list, confirm your vehicle, pick
@@ -97,7 +98,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v5"` to `v6` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v7"` to `v8` in `public/sw.js` and redeploy to force an update.
 
 ---
 

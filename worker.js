@@ -14,6 +14,8 @@
  *  POST /reports                → file (or renew) a report
  *  POST /reports/delete         → withdraw a report (reporter-only)
  *  GET  /metro                  → static Athens metro station list
+ *  GET  /lines                  → every OASA line (id, code, description)
+ *  GET  /live?lat=&lng=         → live vehicle positions around a point
  *  cron (every minute)          → check live arrivals, fire push alerts
  *
  * Alerts need a KV namespace bound as ALERTS and VAPID secrets; without
@@ -42,6 +44,7 @@ const ACT_TTL = {
   getStopNameAndXY: 86400,
   webGetRoutes: 86400,
   getRoutesForLine: 86400,
+  webGetLines: 86400,
 };
 const ALLOWED_ACTS = new Set(Object.keys(ACT_TTL));
 
@@ -1108,6 +1111,95 @@ const METRO_STATIONS = [
   { id: "m-aerodromio",      el: "Αεροδρόμιο",           en: "Airport",              lines: ["3"], lat: 37.9364, lng: 23.9445 },
 ];
 
+/* ======================= lines & live map ========================= */
+
+// The whole line catalogue, trimmed to what the picker needs and cached
+// for a day at the edge — it changes about once a timetable season.
+async function handleLines() {
+  const raw = await getJSON(`${OASA}?act=webGetLines`, ACT_TTL.webGetLines);
+  const lines = (Array.isArray(raw) ? raw : []).map(l => ({
+    code: String(pickField(l, "LineCode", "line_code") || ""),
+    id: String(pickField(l, "LineID", "line_id") || ""),
+    el: pickField(l, "LineDescr", "line_descr") || "",
+    en: pickField(l, "LineDescrEng", "line_descr_eng") || "",
+  })).filter(l => l.code && l.id);
+  lines.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+  return new Response(JSON.stringify(lines), {
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": `public, max-age=${ACT_TTL.webGetLines}`,
+      ...CORS,
+    },
+  });
+}
+
+/* Live positions around a point. "Every bus in Athens" would be one
+ * getBusLocation call per route — hundreds, far past the subrequest cap
+ * — so we resolve the lines that actually serve the area and fetch those.
+ * Budget: <=5 stop-list calls + <=10 route lookups + <=28 vehicle calls.
+ * Cached 15s on a coarse key, so panning around is cheap for everyone. */
+const LIVE = { radius: 900, stopProbe: 10, maxRoutes: 28, cache: 15 };
+
+async function handleLive(url, env) {
+  const lat = parseFloat(url.searchParams.get("lat"));
+  const lng = parseFloat(url.searchParams.get("lng"));
+  if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
+
+  const ck = `https://live/?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}`;
+  const cache = caches.default;
+  const hit = await cache.match(new Request(ck));
+  if (hit) return withCors(hit);
+
+  const lists = await Promise.all(samplePts(lat, lng, LIVE.radius).slice(0, 5).map(p =>
+    getJSON(`${OASA}?act=getClosestStops&p1=${p[0]}&p2=${p[1]}`, ACT_TTL.getClosestStops)));
+  const stops = [];
+  const seen = new Set();
+  for (const arr of lists) {
+    if (!Array.isArray(arr)) continue;
+    for (const s of arr) {
+      const code = String(pickField(s, "StopCode", "StopID", "stop_code") || "");
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      const la = Number(pickField(s, "StopLat", "StopY", "stop_lat"));
+      const ln = Number(pickField(s, "StopLng", "StopX", "stop_lng"));
+      stops.push({ code, d: (isFinite(la) && isFinite(ln)) ? hav(lat, lng, la, ln) : Infinity });
+    }
+  }
+  stops.sort((a, b) => a.d - b.d);
+
+  const routes = new Map();
+  await pool(stops.slice(0, LIVE.stopProbe).map(s => async () => {
+    const r = await fetchStopRoutes(s.code);
+    if (!r) return;
+    for (const rt of r.routes) if (!routes.has(rt.code)) routes.set(rt.code, rt);
+  }), 5);
+
+  const buses = [];
+  await pool([...routes.values()].slice(0, LIVE.maxRoutes).map(rt => async () => {
+    const arr = await getJSON(
+      `${OASA}?act=getBusLocation&p1=${encodeURIComponent(rt.code)}`, ACT_TTL.getBusLocation);
+    for (const v of (Array.isArray(arr) ? arr : [])) {
+      const la = Number(pickField(v, "CS_LAT", "cs_lat"));
+      const ln = Number(pickField(v, "CS_LNG", "cs_lng"));
+      const veh = String(pickField(v, "VEH_NO", "veh_no", "VEH_CODE") || "");
+      if (!veh || !isFinite(la) || !isFinite(ln)) continue;
+      buses.push({ veh, line: rt.id, routeCode: rt.code, el: rt.el, en: rt.en, lat: la, lng: ln });
+    }
+  }), 6);
+
+  const res = new Response(JSON.stringify({
+    origin: { lat, lng }, routes: routes.size, buses,
+  }), {
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": `public, max-age=${LIVE.cache}`,
+      ...CORS,
+    },
+  });
+  await cache.put(new Request(ck), res.clone());
+  return res;
+}
+
 /* ============================ routing ============================= */
 
 export default {
@@ -1159,6 +1251,10 @@ export default {
     if (p.endsWith("/reports") || p.endsWith("/reports/delete")) {
       return handleReports(req, url, env);
     }
+
+    if (p.endsWith("/lines")) return handleLines();
+
+    if (p.endsWith("/live")) return handleLive(url, env);
 
     if (p.endsWith("/push/key")) {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
