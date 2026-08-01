@@ -68,7 +68,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 
 1. Open **Chrome** on your phone and go to your `…workers.dev` URL.
 2. When it asks, tap **Allow** for location. Your nearest stops appear with live
-   countdowns; the thin amber bar at the top is the 30-second refresh.
+   countdowns; the thin bar at the very top is the 30-second refresh.
 3. Install it like an app: Chrome menu (⋮) → **Add to Home screen** → Add. It now opens
    full-screen with its own icon, no browser bars.
 
@@ -95,7 +95,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v2"` to `v3` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v5"` to `v6` in `public/sw.js` and redeploy to force an update.
 
 ---
 

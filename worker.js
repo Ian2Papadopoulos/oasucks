@@ -10,10 +10,10 @@
  *  GET  /rules?sub=ID           → list alert rules
  *  POST /rules                  → create/update an alert rule
  *  POST /rules/delete           → delete an alert rule
- *  GET  /issues                 → active user reports (inspector/issue flags)
- *  POST /issues                 → file (or renew) a report
- *  POST /issues/delete          → withdraw a report (reporter-only)
- *  GET  /metro/stations         → static Athens metro station list
+ *  GET  /reports?by=ID          → active user reports (inspector/issue flags)
+ *  POST /reports                → file (or renew) a report
+ *  POST /reports/delete         → withdraw a report (reporter-only)
+ *  GET  /metro                  → static Athens metro station list
  *  cron (every minute)          → check live arrivals, fire push alerts
  *
  * Alerts need a KV namespace bound as ALERTS and VAPID secrets; without
@@ -890,8 +890,16 @@ async function handleNearby(url, env, ctx) {
 
   for (const s of stops) { delete s.resolved; delete s.lineCount; }
 
+  // Piggy-back the active community flags so the app can badge and
+  // annotate rows without a second request. Public view only — the
+  // response is edge-cached and shared, so no `mine` marking here.
+  let reports = [];
+  if (env && env.ALERTS) {
+    try { reports = (await readReports(env, now)).map(r => publicReport(r, "")); } catch (_) { }
+  }
+
   const res = new Response(JSON.stringify({
-    origin: { lat, lng }, radius, generated: now, hidden, stops,
+    origin: { lat, lng }, radius, generated: now, hidden, stops, reports,
   }), {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -911,115 +919,112 @@ async function handleNearby(url, env, ctx) {
  *   - inspector (red) on a bus or stop      → expires after 15 min
  *   - inspector (red) on a metro station    → expires after 2 h
  *   - anything else (yellow), any target    → expires after 60 min
- *   - re-reporting the same target+kind renews the flag
+ *   - re-reporting the same target+type renews the flag
  *   - a report can be withdrawn ONLY by the reporter who filed it
- *     (or it simply expires). Reporter ids are random client-side
- *     tokens and are never echoed back in GET /issues, so nobody can
- *     forge someone else's withdrawal.
+ *     (or it simply expires). Reporter ids ("by") are random
+ *     client-side tokens and are never echoed back — GET /reports only
+ *     marks the caller's own rows with mine:true — so nobody can forge
+ *     someone else's withdrawal.
  *
  * Storage mirrors the alert rules: everything lives in ONE KV key,
  * read with a plain get and pruned on every touch — zero list ops.
  * ------------------------------------------------------------------ */
-const ISSUES_KEY = "issues:index";
-const ISSUE_KINDS = {
-  inspector: "red",     // ticket inspector sighted
-  breakdown: "yellow",  // vehicle broke down
-  incident:  "yellow",  // bus/stop drama, disturbance
-  delay:     "yellow",  // service badly delayed
-  other:     "yellow",
-};
-const ISSUE_TARGETS = new Set(["bus", "stop", "metro"]);
+const REPORTS_KEY = "reports:index";
+const REPORT_KINDS = new Set(["bus", "stop", "metro"]);   // what the flag is attached to
+const REPORT_TYPES = new Set(["inspector", "breakdown", "crowded", "delay",
+  "incident", "no_show", "detour", "other"]);             // inspector = red, rest = yellow
 const YELLOW_TTL = 3600;          // 60 min for every yellow flag
 const RED_TTL = 900;              // 15 min: inspectors hop off after a few stops
 const RED_METRO_TTL = 7200;       // 2 h on the metro, per spec
 const MAX_ACTIVE_PER_REPORTER = 10;
 
-function issueTtl(sev, targetType) {
-  if (sev !== "red") return YELLOW_TTL;
-  return targetType === "metro" ? RED_METRO_TTL : RED_TTL;
+function reportTtl(r) {
+  if (r.type !== "inspector") return YELLOW_TTL;
+  return r.kind === "metro" ? RED_METRO_TTL : RED_TTL;
 }
-function issuesReady(env) { return !!(env && env.ALERTS); }
+function reportsReady(env) { return !!(env && env.ALERTS); }
 
-async function readIssues(env, now) {
-  const all = await env.ALERTS.get(ISSUES_KEY, "json");
+async function readReports(env, now) {
+  const all = await env.ALERTS.get(REPORTS_KEY, "json");
   if (!Array.isArray(all)) return [];
-  return all.filter(r => r && r.target &&
-    r.ts + issueTtl(r.severity, r.target.type) > now);
+  return all.filter(r => r && r.at + reportTtl(r) > now);
 }
-async function writeIssues(env, list) {
-  await env.ALERTS.put(ISSUES_KEY, JSON.stringify(list));
+async function writeReports(env, list) {
+  await env.ALERTS.put(REPORTS_KEY, JSON.stringify(list));
 }
 // What clients see: everything except the reporter token.
-function publicIssue(r, now) {
-  const ttl = issueTtl(r.severity, r.target.type);
-  return {
-    id: r.id, kind: r.kind, severity: r.severity, target: r.target,
-    ts: r.ts, ageSec: now - r.ts, expiresIn: r.ts + ttl - now,
+function publicReport(r, by) {
+  const out = {
+    id: r.id, kind: r.kind, type: r.type,
+    veh: r.veh || null, routeCode: r.routeCode || null, lineId: r.lineId || null,
+    targetId: r.targetId, targetName: r.targetName || "",
+    lat: r.lat, lng: r.lng, at: r.at, expires: r.at + reportTtl(r),
   };
+  if (by && r.by === by) out.mine = true;
+  return out;
 }
 
-async function handleIssues(req, url, env) {
-  if (!issuesReady(env)) return json({ error: "reports not configured" }, 501);
+async function handleReports(req, url, env) {
+  if (!reportsReady(env)) return json({ error: "reports not configured" }, 501);
   const now = Math.floor(Date.now() / 1000);
 
   if (req.method === "GET") {
-    const active = await readIssues(env, now);
-    return json({ generated: now, issues: active.map(r => publicIssue(r, now)) });
+    const by = url.searchParams.get("by") || "";
+    const active = await readReports(env, now);
+    return json(active.map(r => publicReport(r, by)));
   }
 
   const b = await req.json().catch(() => null);
   if (!b) return json({ error: "bad body" }, 400);
-  const reporter = String(b.reporter || "");
-  if (reporter.length < 8 || reporter.length > 80) return json({ error: "reporter required" }, 400);
+  const by = String(b.by || "");
+  if (by.length < 8 || by.length > 80) return json({ error: "by required" }, 400);
 
-  const active = await readIssues(env, now);
+  const active = await readReports(env, now);
 
-  if (url.pathname.replace(/\/+$/, "").endsWith("/issues/delete")) {
+  if (url.pathname.replace(/\/+$/, "").endsWith("/reports/delete")) {
     const i = active.findIndex(r => r.id === b.id);
     if (i < 0) return json({ error: "not found" }, 404);
-    if (active[i].reporter !== reporter) return json({ error: "not yours" }, 403);
+    if (active[i].by !== by) return json({ error: "not yours" }, 403);
     active.splice(i, 1);
-    await writeIssues(env, active);
+    await writeReports(env, active);
     return json({ ok: true });
   }
 
   // create / renew
-  const t = b.target || {};
-  const type = String(t.type || "");
-  const tid = String(t.id || "").slice(0, 40);
   const kind = String(b.kind || "");
-  if (!ISSUE_TARGETS.has(type) || !tid) return json({ error: "bad target" }, 400);
-  if (!(kind in ISSUE_KINDS)) return json({ error: "bad kind" }, 400);
-  const lat = Number(t.lat), lng = Number(t.lng);
-  if (!isFinite(lat) || !isFinite(lng)) return json({ error: "target lat/lng required" }, 400);
+  const type = String(b.type || "");
+  const targetId = String(b.targetId || "").slice(0, 60);
+  if (!REPORT_KINDS.has(kind) || !targetId) return json({ error: "bad target" }, 400);
+  if (!REPORT_TYPES.has(type)) return json({ error: "bad type" }, 400);
+  const lat = Number(b.lat), lng = Number(b.lng);
+  if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
 
-  const target = {
-    type, id: tid, lat, lng,
-    label: String(t.label || "").slice(0, 120),
-    line: t.line != null ? String(t.line).slice(0, 20) : null,
-    routeCode: t.routeCode != null ? String(t.routeCode).slice(0, 20) : null,
+  const fields = {
+    kind, type, targetId, lat, lng,
+    targetName: String(b.targetName || "").slice(0, 120),
+    veh: b.veh ? String(b.veh).slice(0, 20) : null,
+    routeCode: b.routeCode ? String(b.routeCode).slice(0, 20) : null,
+    lineId: b.lineId ? String(b.lineId).slice(0, 20) : null,
   };
-  const severity = ISSUE_KINDS[kind];
+  // (No free-text note in this version — anything sent is ignored.)
 
   // Same reporter re-flagging the same thing renews it; a different
   // reporter files their own record (which also keeps the flag alive,
   // and keeps withdrawal rights separate per user).
   const mine = active.find(r =>
-    r.reporter === reporter && r.kind === kind &&
-    r.target.type === type && r.target.id === tid);
+    r.by === by && r.kind === kind && r.type === type && r.targetId === targetId);
   if (mine) {
-    mine.ts = now;
-    mine.target = target;
-    await writeIssues(env, active);
-    return json({ ok: true, renewed: true, issue: publicIssue(mine, now) });
+    Object.assign(mine, fields, { at: now });
+    await writeReports(env, active);
+    return json(publicReport(mine, by));
   }
-  if (active.filter(r => r.reporter === reporter).length >= MAX_ACTIVE_PER_REPORTER) {
+  if (active.filter(r => r.by === by).length >= MAX_ACTIVE_PER_REPORTER) {
     return json({ error: "too many active reports" }, 429);
   }
-  const rec = { id: crypto.randomUUID(), reporter, kind, severity, target, ts: now };
+  const rec = { id: crypto.randomUUID(), by, at: now, ...fields };
   active.push(rec);
-  await writeIssues(env, active);
-  return json({ ok: true, issue: publicIssue(rec, now) });
+  await writeReports(env, active);
+  return json(publicReport(rec, by));
 }
 
 /* ===================== Athens metro stations ====================== *
@@ -1135,8 +1140,10 @@ export default {
       return proxy(n.toString(), GEO_CACHE);
     }
 
-    if (p.endsWith("/metro/stations")) {
-      return new Response(JSON.stringify(METRO_STATIONS), {
+    if (p.endsWith("/metro")) {
+      return new Response(JSON.stringify(METRO_STATIONS.map(m => ({
+        id: m.id, name: m.el, name_en: m.en, lines: m.lines, lat: m.lat, lng: m.lng,
+      }))), {
         headers: {
           "Content-Type": "application/json; charset=utf-8",
           "Cache-Control": "public, max-age=86400",
@@ -1145,8 +1152,8 @@ export default {
       });
     }
 
-    if (p.endsWith("/issues") || p.endsWith("/issues/delete")) {
-      return handleIssues(req, url, env);
+    if (p.endsWith("/reports") || p.endsWith("/reports/delete")) {
+      return handleReports(req, url, env);
     }
 
     if (p.endsWith("/push/key")) {

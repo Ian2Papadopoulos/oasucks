@@ -16,7 +16,7 @@ the bus you're riding, a nearby stop, or a metro station. See
 |---|---|
 | `public/index.html` | The whole app (UI + logic). No build step, no framework. |
 | `worker.js` | Cloudflare Worker — serves the app, proxies the OASA API, stores reports. |
-| `public/manifest.webmanifest`, `public/sw.js`, `public/icon.svg` | PWA install + offline shell. |
+| `public/manifest.webmanifest`, `public/sw.js`, `public/icon-*.png` | PWA install + offline shell. |
 
 ## The one thing you must understand
 
@@ -24,11 +24,15 @@ The OASA API (`http://telematics.oasa.gr/api/`) is **HTTP-only and sends no CORS
 headers**. A browser on an HTTPS page therefore *cannot call it directly* — it fails
 on mixed-content + CORS. So every web client needs a small proxy in front of it.
 
+The app auto-detects its backend at startup:
+
 - **Default:** the Worker serves `public/index.html` itself, so the app and its proxy
-  share one URL — `CONFIG.proxyBase` stays `""` (same origin) and everything just works.
+  share one URL — the same-origin backend is detected and everything just works.
 - **Split hosting:** if you host the static files elsewhere, set `CONFIG.proxyBase` in
-  `public/index.html` to your Worker URL. Every request is HTTPS, CORS-clean, and
-  cached ~12s at the edge either way.
+  `public/index.html` to your Worker URL.
+- **No backend at all** (e.g. opened as a local file): it falls back to public CORS
+  proxies — fine for a quick look, but rate-limited and flaky, and the extra features
+  (reports, alerts, stats) need the Worker. Don't ship on that.
 
 ## Deploy in ~5 minutes
 
@@ -72,8 +76,8 @@ JSON to host at `/.well-known/assetlinks.json`.
    out to `getClosestStops`, `webRoutesForStop` and `getStopArrivals` at the edge and
    returns stops + line names + live arrivals in a single response, so a row reads
    **608 · to Voula · 4 min** instead of a raw route code.
-2. Auto-refreshes every 30s (the thin amber bar up top is the countdown), pulling fresh
-   arrivals *and* the current report flags together.
+2. Auto-refreshes every 30s (the thin progress bar up top is the countdown), pulling
+   fresh arrivals *and* the current report flags together.
 
 Field names in the API are inconsistent (mixed casing), so the parsing is defensive —
 if line-mapping fails it degrades to the route code and still shows the countdown.
@@ -86,12 +90,12 @@ everything else — plus a **Report an issue** button underneath.
 
 Filing a report is three taps, no free-text comments in this version:
 
-1. **Where:** *On a bus* / *At a stop* / *Metro station*. Your location narrows the
-   candidates — buses currently driving near you (picked from live positions of the
-   lines serving your nearby stops), the stops around you sorted by distance, or the
-   nearest metro stations.
-2. **What:** a dropdown — *Ticket inspector* (red), or *vehicle broke down*,
-   *incident/disturbance*, *severe delay*, *other* (all yellow).
+1. **Where:** *On a bus* / *At a stop* / *At a metro station*. Your location narrows
+   the candidates — the lines serving your nearby stops (the report is pinned to the
+   actual vehicle nearest you on that line), the stops around you sorted by distance,
+   or the nearest metro stations.
+2. **What:** a dropdown — *Ticket inspector* (red), or *breakdown*, *overcrowded*,
+   *delayed*, *incident*, *never arrived*, *detour*, *other* (all yellow).
 3. **Send.**
 
 Flags then show up everywhere: on the reports map, and inline in the list view — a
@@ -112,17 +116,17 @@ it (the app keeps an anonymous device token in `localStorage`; the server never 
 it, so withdrawals can't be forged).
 
 Reports live in the same KV namespace as the alert rules (`ALERTS`), in a single key —
-no extra setup. Without a KV binding the app still runs; reporting just returns
-"not configured". Metro stations (lines M1/M2/M3) are a static list served by the
-Worker at `/metro/stations`; their coordinates are close approximations you can tweak
-freely in `worker.js`.
+no extra setup (`GET/POST /reports`, `POST /reports/delete`). Without a KV binding the
+app still runs; reporting just returns "not configured". Metro stations (lines
+M1/M2/M3) are a static list served by the Worker at `/metro`; their coordinates are
+close approximations you can tweak freely in `worker.js`.
 
 ## Tuning
 
-In `public/index.html` → `CONFIG`: `refreshMs` (refresh interval), `maxStops` (how many
-stops), `maxRows` (arrivals per stop), `busPickRadius` (how far a bus can be and still
-be flagged). In `worker.js`: `ACT_TTL` cache times, `ALLOWED_ACTS` if you add more
-endpoints, and the report lifetimes `RED_TTL` / `RED_METRO_TTL` / `YELLOW_TTL`.
+In `public/index.html` → `CONFIG`: `refreshMs` (refresh interval), `listStops` (how
+many stops in the list), `maxRows` (arrivals per stop) — the search radius has its own
+slider in the map view. In `worker.js`: `ACT_TTL` cache times, `ALLOWED_ACTS` if you
+add more endpoints, and the report lifetimes `RED_TTL` / `RED_METRO_TTL` / `YELLOW_TTL`.
 
 ## Note
 
