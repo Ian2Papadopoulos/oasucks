@@ -3,12 +3,12 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. Installs on Android like a native app.
 
-**New in v18 — community reports.** The line-stats button is gone; in its place sits a
-red exclamation mark. Tap it and a map of Athens opens showing every bus, stop and metro
-station currently flagged by users — red for a ticket inspector, yellow for any other
-issue (breakdown, incident, delay…). Under the map, **Report an issue** lets you flag
-the bus you're riding, a nearby stop, or a metro station. See
-[Reports](#reports-red-exclamation-mark) below for the exact rules.
+**New in v19 — community reports.** The line-stats button is gone; in its place sits a
+red exclamation mark. Tap it and a problem map of Athens opens — only the buses and
+metro stations that currently carry a flag, red for a ticket inspector, yellow for
+anything else. Under the map, **Report an issue** lets you flag the bus you are
+actually riding (the app works out which one that is) or a metro station you are
+standing at. See [Reports](#reports-red-exclamation-mark) for the exact rules.
 
 ## Files
 
@@ -84,31 +84,50 @@ if line-mapping fails it degrades to the route code and still shows the countdow
 
 ## Reports (red exclamation mark)
 
-The ❗ button in the header opens the reports view: a map of Athens with every currently
-flagged bus, stop and metro station — **red** for a ticket inspector, **yellow** for
-everything else — plus a **Report an issue** button underneath.
+The ❗ button in the header opens the reports view. The map is a **problem map**: it
+shows *only* what is currently flagged — the flagged buses (following their live
+positions, so a reported bus keeps moving on the map) and the flagged metro stations,
+**red** for a ticket inspector and **yellow** for anything else. Nothing that is fine
+is drawn. The full list of active reports sits underneath, newest first, above a
+**Report an issue** button.
 
-Filing a report is three taps, no free-text comments in this version:
+You can only report what you are actually next to — two categories, no free text:
 
-1. **Where:** *On a bus* / *At a stop* / *At a metro station*. Your location narrows
-   the candidates — the lines serving your nearby stops (the report is pinned to the
-   actual vehicle nearest you on that line), the stops around you sorted by distance,
-   or the nearest metro stations.
-2. **What:** a dropdown — *Ticket inspector* (red), or *breakdown*, *overcrowded*,
-   *delayed*, *incident*, *never arrived*, *detour*, *other* (all yellow).
-3. **Send.**
+| Category | Who can report it | What can be reported |
+|---|---|---|
+| **On a bus** | only the vehicle you're riding (see below) | breakdown · overcrowded · ticket inspector |
+| **At a metro station** | stations within **600 m** of you | ticket inspector |
 
-Flags then show up everywhere: on the reports map, and inline in the list view — a
-flagged bus gets red **"Ticket inspector X minutes ago"** (or a yellow issue line)
-under its direction, and a flagged stop gets the same under its name.
+The issue menu changes with the category, so a metro station only ever offers
+*ticket inspector*.
+
+### Which bus am I on?
+
+You can't pick a line off a list any more — the app has to identify the vehicle you're
+sitting in, which is hard downtown where six buses share one jam. It runs two passes:
+
+1. **Proximity.** Every live vehicle on the lines serving the stops around you, kept
+   only if it's within **400 m** of your GPS fix, ranked nearest-first.
+2. **Co-movement.** A second position sample ~6 s later. If you're on board, your GPS
+   and the bus move the same way — similar heading, similar distance covered — and the
+   gap between you stays small. Those get marked **"moving with you"** and jump to the
+   top of the list. If nobody moved (bus stuck at a light, no GPS change), the pass
+   stays quiet and plain proximity order holds.
+
+You always confirm with a tap — the app ranks, it never picks for you. If no bus is
+within range it says so and refuses the report rather than guessing.
+
+Flags then show up on the reports map and inline in the list view: a flagged bus gets
+red **"Ticket inspector X minutes ago"** (or a yellow issue line) under its direction,
+matched to that exact vehicle, so the other bus on the same line stays clean.
 
 The rules:
 
 | Flag | Expires after |
 |---|---|
-| Red (inspector) on a bus or stop | **15 min** — inspectors ride a few stops and hop off |
+| Red (inspector) on a bus | **15 min** — inspectors ride a few stops and hop off |
 | Red (inspector) on a metro station | **2 h** |
-| Yellow (any other issue), any target | **60 min** |
+| Yellow (breakdown / overcrowded) | **60 min** |
 
 Re-reporting the same thing renews the timer. Nobody can cancel someone else's report:
 a flag disappears only when it expires or when **the reporter who filed it** withdraws
@@ -116,17 +135,22 @@ it (the app keeps an anonymous device token in `localStorage`; the server never 
 it, so withdrawals can't be forged).
 
 Reports live in the same KV namespace as the alert rules (`ALERTS`), in a single key —
-no extra setup (`GET/POST /reports`, `POST /reports/delete`). Without a KV binding the
-app still runs; reporting just returns "not configured". Metro stations (lines
-M1/M2/M3) are a static list served by the Worker at `/metro`; their coordinates are
-close approximations you can tweak freely in `worker.js`.
+no extra setup (`GET/POST /reports`, `POST /reports/delete`). The Worker enforces the
+same rules as the UI: only `bus` and `metro` categories, and only the types each one
+allows. Without a KV binding the app still runs; reporting just returns "not
+configured". Metro stations (lines M1/M2/M3) are a static list served by the Worker at
+`/metro`; their coordinates are close approximations you can tweak in `worker.js`.
 
 ## Tuning
 
 In `public/index.html` → `CONFIG`: `refreshMs` (refresh interval), `listStops` (how
 many stops in the list), `maxRows` (arrivals per stop) — the search radius has its own
-slider in the map view. In `worker.js`: `ACT_TTL` cache times, `ALLOWED_ACTS` if you
-add more endpoints, and the report lifetimes `RED_TTL` / `RED_METRO_TTL` / `YELLOW_TTL`.
+slider in the map view. Reporting reach lives in `ONBOARD`: `busRadius` (400 m),
+`metroRadius` (600 m), `refineMs` (how long the co-movement pass waits) and `minMove`
+(how far you must travel for that pass to have an opinion); the per-category issue
+menus are `TYPES_BY_KIND`. In `worker.js`: `ACT_TTL` cache times, `ALLOWED_ACTS` if you
+add more endpoints, `REPORT_TYPES` (the same menus, enforced server-side), and the
+report lifetimes `RED_TTL` / `RED_METRO_TTL` / `YELLOW_TTL`.
 
 ## Note
 

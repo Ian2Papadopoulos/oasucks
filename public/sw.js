@@ -1,4 +1,4 @@
-/* Service worker (v4)
+/* Service worker (v5)
  *
  * Caching rule is an ALLOWLIST, not a blacklist. Previously any path that
  * wasn't explicitly named as "live" got cached forever — which silently
@@ -7,7 +7,7 @@
  * anything with a query string, anything cross-origin) goes to the network
  * every time. New endpoints are safe by default.
  */
-const SHELL = "stop-shell-v5";
+const SHELL = "stop-shell-v6";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest"];
 const STATIC_RE = /\.(png|jpe?g|svg|ico|css|woff2?|webmanifest)$/i;
 

@@ -85,9 +85,11 @@ https://oasa-stop.<your-subdomain>.workers.dev
   blocked — tap **Αλλαγή / Change** and allow location, or in Chrome: site settings →
   Location → Allow.
 - **Language:** top-right toggles EL / EN.
-- **Reports:** tap the red **!** — the Athens map opens with any flagged buses/stops/
-  metro stations, and **Report an issue** underneath lets you file one. Withdraw your
-  own report from the list under the map; it disappears for everyone.
+- **Reports:** tap the red **!** — the map shows only what's currently flagged (buses
+  and metro stations), and **Report an issue** underneath lets you file one. Test it
+  from a bus: pick *On a bus*, wait for the candidate list, confirm your vehicle, pick
+  the issue. Withdraw your own report from the list under the map; it disappears for
+  everyone. You can't report a bus you're not on, or a station more than 600 m away.
 
 ### If something's off
 - **Empty boards / "no arrivals":** normal late at night or on quiet lines — check a

@@ -283,6 +283,23 @@
   .flagline{font-size:10.5px;font-weight:700;margin-top:3px;letter-spacing:.02em}
   .flagline.red{color:#C42B1C}
   .flagline.yellow{color:#8A6D0B;background:var(--marker);display:inline-block;padding:0 4px}
+  /* candidate pickers: "which bus are you on / which station" */
+  .cands{display:flex;flex-direction:column;gap:5px}
+  .cand{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
+    background:var(--card);border:1px solid var(--rule);color:var(--toner);
+    padding:8px 10px;cursor:pointer;font-family:var(--mono);border-radius:2px}
+  .cand:active{border-color:var(--toner)}
+  .cand.hot{border-color:var(--toner);border-width:2px;padding:7px 9px}
+  .cand-tile{min-width:42px;height:26px;padding:0 6px;background:var(--toner);color:var(--paper);
+    font-weight:700;font-size:12px;display:grid;place-items:center;flex:none;border-radius:2px}
+  .cand-txt{flex:1;min-width:0;display:block}
+  .cand-dest{display:block;font-size:11.5px;font-weight:700;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .cand-meta{display:block;color:var(--ink3);font-size:10px;margin-top:2px;
+    text-transform:uppercase;letter-spacing:.08em}
+  .cand.hot .cand-meta{color:var(--toner)}
+  .picked{display:flex;align-items:center;gap:9px;background:var(--card);
+    border:1px solid var(--toner);padding:8px 10px;border-radius:2px}
   .rep-cta{width:100%;background:#C42B1C;color:#fff;border:none;padding:12px;font-weight:700;
     font-size:11.5px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;
     letter-spacing:.12em;border-radius:2px;margin-bottom:10px}
@@ -394,7 +411,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v18</span></div>
+  <div class="foot"><span class="ver">v19</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -536,7 +553,15 @@ const T={
   whichLine:"Ποια γραμμή;", whichStop:"Ποια στάση;", whichStation:"Ποιος σταθμός;",
   issueType:"Τι συμβαίνει;", noteOpt:"Σχόλιο (προαιρετικό)", send:"Αποστολή",
   noReports:"Καμία ενεργή αναφορά.", agoShort:"πριν", mineOnly:"Μόνο εσύ μπορείς να τη σβήσεις",
-  legendOk:"εντάξει", legendIssue:"θέμα", legendInsp:"ελεγκτής",
+  legendIssue:"θέμα", legendInsp:"ελεγκτής",
+  confirmBus:"Σε ποιο λεωφορείο είσαι;", scanBus:"Εντοπισμός λεωφορείων γύρω σου…",
+  scanRefine:"Έλεγχος ποιο κινείται μαζί σου…", withYou:"κινείται μαζί σου",
+  noBusNear:"Κανένα λεωφορείο δίπλα σου. Η αναφορά γίνεται μόνο από μέσα στο όχημα.",
+  rescan:"↻ Νέα σάρωση", nearestStation:"Ποιος σταθμός;",
+  noMetroNear:"Κανένας σταθμός μετρό σε 600 μ. από εσένα.",
+  onboardNote:"Μόνο για το λεωφορείο που είσαι μέσα.",
+  metroNote:"Μόνο για σταθμούς σε 600 μ. από εσένα.",
+  back:"← Πίσω",
   ti_inspector:"Ελεγκτής", ti_breakdown:"Βλάβη", ti_crowded:"Υπερπλήρες",
   ti_delay:"Καθυστέρηση", ti_incident:"Επεισόδιο", ti_no_show:"Δεν πέρασε",
   ti_detour:"Παράκαμψη", ti_other:"Άλλο", reportSent:"Καταχωρήθηκε ✓",
@@ -567,7 +592,15 @@ const T={
   whichLine:"Which line?", whichStop:"Which stop?", whichStation:"Which station?",
   issueType:"What's happening?", noteOpt:"Note (optional)", send:"Send",
   noReports:"No active reports.", agoShort:"ago", mineOnly:"Only you can clear it",
-  legendOk:"ok", legendIssue:"issue", legendInsp:"inspector",
+  legendIssue:"issue", legendInsp:"inspector",
+  confirmBus:"Which bus are you on?", scanBus:"Finding buses around you…",
+  scanRefine:"Checking which one moves with you…", withYou:"moving with you",
+  noBusNear:"No bus next to you. You can only report from on board.",
+  rescan:"↻ Scan again", nearestStation:"Which station?",
+  noMetroNear:"No metro station within 600 m of you.",
+  onboardNote:"Only for the bus you're riding.",
+  metroNote:"Only for stations within 600 m of you.",
+  back:"← Back",
   ti_inspector:"Ticket inspector", ti_breakdown:"Breakdown", ti_crowded:"Overcrowded",
   ti_delay:"Delayed", ti_incident:"Incident", ti_no_show:"Never arrived",
   ti_detour:"Detour", ti_other:"Other", reportSent:"Reported ✓",
@@ -720,8 +753,7 @@ function renderList(){
   shown.forEach(s=>{
     const w=walkMin(s.dist);
     const card=document.createElement("div"); card.className="stop";
-    const sf=reportForStop(s.code);
-    card.innerHTML=`<div class="stop-hd"><div class="name">${esc(stopName(s))}${flagLine(sf)}</div>
+    card.innerHTML=`<div class="stop-hd"><div class="name">${esc(stopName(s))}</div>
       <div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}<span class="num">${fmtDist(s.dist)}</span></div></div>`;
     const rows=document.createElement("div"); rows.className="rows";
     if(!s.arrLoaded){ rows.innerHTML='<div class="skel"></div><div class="skel"></div>'; }
@@ -1193,7 +1225,13 @@ function stopCycle(quiet){
  * because inspectors ride a few stops and get off). Yellow = anything
  * else. Reports clear themselves when they expire; only the person who
  * filed one can remove it early. */
-const ISSUE_TYPES=["inspector","breakdown","crowded","delay","incident","no_show","detour","other"];
+/* What can be reported, per category. Buses get the three things a rider
+   actually sees from a seat; a metro station only ever gets inspectors. */
+const TYPES_BY_KIND={ bus:["breakdown","crowded","inspector"], metro:["inspector"] };
+/* You may only flag the vehicle you are inside, or a station you are
+   standing at — these two numbers are what "inside" and "at" mean. */
+const ONBOARD={ busRadius:400, metroRadius:600, maxRoutes:14,
+  refineMs:6000, minMove:20 };
 const isRed=r=>r.type==="inspector";
 function agoTxt(sec){
   const m=Math.max(0,Math.round(sec/60));
@@ -1219,8 +1257,8 @@ function reportForArrival(a){
       || rs.find(r=>!r.veh && r.routeCode===a.code)
       || null;
 }
-function reportForStop(code){
-  return activeReports().find(r=>(r.kind==="stop"||r.kind==="metro")&&r.targetId===String(code))||null;
+function reportForMetro(id){
+  return activeReports().find(r=>r.kind==="metro"&&r.targetId===String(id))||null;
 }
 function flagLine(r){
   if(!r) return "";
@@ -1240,11 +1278,13 @@ function openReports(){
     repmap.setView([here.lat,here.lng],14);
   }
   setTimeout(()=>repmap.invalidateSize(),70);
-  loadMetro().then(drawReportMap);
+  loadMetro();
   drawReportMap(); renderReportList();
   /* /nearby piggy-backs the public list; re-fetch with ?by= so our own
      rows come back marked mine:true and show their ✕ button. */
-  refreshReports().then(()=>{ drawReportMap(); if(!$("#rf-send")) renderReportList(); });
+  refreshReports()
+    .then(()=>{ drawReportMap(); if(!reportForm.open) renderReportList(); })
+    .then(refreshFlagPositions).then(drawReportMap);
 }
 function closeReports(){ $("#rep").classList.remove("on"); }
 
@@ -1259,44 +1299,43 @@ function flagIcon(kind,level){
   return L.divIcon({className:"",html:`<div class="flag ${level} ${kind}"></div>`,
     iconSize:[17,17],iconAnchor:[8,8],popupAnchor:[0,-10]});
 }
+/* A flagged bus keeps driving after it was reported, so the pin has to
+   follow it. We re-read live positions for the flagged vehicles only —
+   a handful of routes, not the whole network. */
+async function refreshFlagPositions(){
+  const reps=activeReports().filter(r=>r.kind==="bus"&&r.routeCode&&r.veh);
+  const codes=[...new Set(reps.map(r=>r.routeCode))].slice(0,8);
+  if(!codes.length) return;
+  const pos={};
+  await withLimit(codes.map(c=>async()=>{
+    const buses=await oasa("getBusLocation",c).catch(()=>null);
+    (Array.isArray(buses)?buses:[]).forEach(v=>{
+      const veh=String(pick(v,"VEH_NO","veh_no","VEH_CODE")||"");
+      const la=Number(pick(v,"CS_LAT","cs_lat")), ln=Number(pick(v,"CS_LNG","cs_lng"));
+      if(veh&&isFinite(la)&&isFinite(ln)) pos[veh]={lat:la,lng:ln};
+    });
+  }),4);
+  state.busPos=Object.assign(state.busPos||{},pos);
+}
+
+/* The map is a problem map: only buses and metro stations that carry an
+   active flag are drawn. Nothing "ok" appears — if it's on here, it's a
+   problem. (Your own dot stays, purely so the pins have a reference.) */
 function drawReportMap(){
   if(!repmap) return;
   replayer.clearLayers();
-  const reps=activeReports();
-  const lvlFor=id=>{ const r=reps.find(x=>x.targetId===String(id));
-    return r?(isRed(r)?"red":"yellow"):""; };
   const b=L.latLngBounds([]);
   L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:900}).addTo(replayer);
   b.extend([here.lat,here.lng]);
-  /* Context layer: the stops around you and every metro station, grey
-     when nothing is flagged. `drawn` remembers which target ids these
-     cover, so the pass below can add the far-away flags on top. */
-  const drawn=new Set();
-  (state.stops||[]).forEach(s=>{
-    if(!isFinite(s.lat)) return;
-    const lv=lvlFor(s.code); drawn.add(String(s.code));
-    L.marker([s.lat,s.lng],{icon:flagIcon("stop",lv),zIndexOffset:lv?400:0})
-      .addTo(replayer).bindTooltip(stopName(s),{direction:"top"});
-    b.extend([s.lat,s.lng]);
-  });
-  (state.metro||[]).forEach(m=>{
-    const lv=lvlFor(m.id);
-    if(!lv&&haversine(m.lat,m.lng,here.lat,here.lng)>4000) return;
-    drawn.add(String(m.id));
-    L.marker([m.lat,m.lng],{icon:flagIcon("metro",lv),zIndexOffset:lv?400:0})
-      .addTo(replayer).bindTooltip("Ⓜ "+(LANG==="en"?(m.name_en||m.name):m.name),{direction:"top"});
-    b.extend([m.lat,m.lng]);
-  });
-  /* Every active flag, all over Athens — buses always (they aren't in
-     any context layer), stops/metro only when outside it. */
-  reps.forEach(r=>{
-    if(!isFinite(r.lat)) return;
-    if(r.kind!=="bus"&&drawn.has(String(r.targetId))) return;
-    const name=r.kind==="bus"?`${r.lineId||""} · ${issueLabel(r.type)}`
-      :`${r.kind==="metro"?"Ⓜ ":""}${r.targetName||""} · ${issueLabel(r.type)}`;
-    L.marker([r.lat,r.lng],{icon:flagIcon(r.kind,isRed(r)?"red":"yellow"),zIndexOffset:600})
-      .addTo(replayer).bindTooltip(name,{direction:"top"});
-    b.extend([r.lat,r.lng]);
+  activeReports().forEach(r=>{
+    const live=(r.kind==="bus"&&r.veh&&state.busPos)?state.busPos[r.veh]:null;
+    const la=live?live.lat:r.lat, ln=live?live.lng:r.lng;
+    if(!isFinite(la)||!isFinite(ln)) return;
+    const name=r.kind==="bus"?`🚌 ${r.lineId||""} · ${issueLabel(r.type)}`
+      :`Ⓜ ${r.targetName||""} · ${issueLabel(r.type)}`;
+    L.marker([la,ln],{icon:flagIcon(r.kind,isRed(r)?"red":"yellow"),zIndexOffset:600})
+      .addTo(replayer).bindTooltip(`${name} · ${agoTxt(Date.now()/1000-r.at)}`,{direction:"top"});
+    b.extend([la,ln]);
   });
   if(b.isValid()) repmap.fitBounds(b,{padding:[40,40],maxZoom:15});
 }
@@ -1306,7 +1345,7 @@ function renderReportList(){
   const reps=activeReports().sort((a,b)=>b.at-a.at);
   $("#rep-sub").textContent=`${reps.length} ${t("reports").toLowerCase()}`;
   const legend=`<div class="rep-legend">
-    <span><i></i>${t("legendOk")}</span><span><i class="yellow"></i>${t("legendIssue")}</span>
+    <span><i class="yellow"></i>${t("legendIssue")}</span>
     <span><i class="red"></i>${t("legendInsp")}</span></div>`;
   const items=reps.length?reps.map(r=>{
     const cls=isRed(r)?"red":"yellow";
@@ -1344,85 +1383,236 @@ function repBadge(){
   b.textContent=n; b.style.display=n?"grid":"none";
 }
 
+/* ---------------- "which bus am I on?" -----------------------------
+ * You can only flag the vehicle you are actually inside, so the app has
+ * to work out which one that is. Two passes:
+ *
+ *  1. PROXIMITY. Every live vehicle on the lines that serve the stops
+ *     around you, kept only if it is within busRadius of your GPS fix.
+ *     From a seat that is a handful of metres; from the pavement the
+ *     bus you are watching drive past also qualifies — which is why
+ *     you always confirm by tapping, and why the list is ranked, not
+ *     auto-picked.
+ *
+ *  2. CO-MOVEMENT (the tie-breaker downtown, where six buses sit in the
+ *     same jam). A second position sample ~6s later: if you are on
+ *     board, your GPS and the vehicle move the same way — similar
+ *     heading, similar distance covered — and the gap between you stays
+ *     small. Those get flagged "moving with you" and float to the top.
+ *     If nobody moved, the pass simply says nothing and proximity order
+ *     stands.
+ * ------------------------------------------------------------------ */
+async function sampleBuses(){
+  const routes=[];
+  (state.stops||[]).forEach(s=>(s.routes||[]).forEach(r=>{
+    if(!routes.some(x=>x.code===r.code)) routes.push(r); }));
+  const out=[];
+  await withLimit(routes.slice(0,ONBOARD.maxRoutes).map(r=>async()=>{
+    const buses=await oasa("getBusLocation",r.code).catch(()=>null);
+    (Array.isArray(buses)?buses:[]).forEach(v=>{
+      const veh=String(pick(v,"VEH_NO","veh_no","VEH_CODE")||"");
+      const la=Number(pick(v,"CS_LAT","cs_lat")), ln=Number(pick(v,"CS_LNG","cs_lng"));
+      if(!veh||!isFinite(la)||!isFinite(ln)) return;
+      out.push({veh,route:r,lat:la,lng:ln});
+    });
+  }),6);
+  return out;
+}
+function myPosition(){
+  return new Promise(res=>{
+    if(!navigator.geolocation) return res({lat:here.lat,lng:here.lng});
+    navigator.geolocation.getCurrentPosition(
+      p=>res({lat:p.coords.latitude,lng:p.coords.longitude}),
+      ()=>res({lat:here.lat,lng:here.lng}),
+      {enableHighAccuracy:true,timeout:6000,maximumAge:0});
+  });
+}
+/* metres east/north between two points — small-angle flat projection,
+   which is plenty over the few dozen metres travelled in 6 seconds. */
+function vec(a,b){
+  const k=Math.cos(a.lat*Math.PI/180);
+  return [(b.lng-a.lng)*111320*k,(b.lat-a.lat)*111320];
+}
+function len(v){ return Math.hypot(v[0],v[1]); }
+function cosAngle(u,v){
+  const l=len(u)*len(v);
+  return l?((u[0]*v[0]+u[1]*v[1])/l):0;
+}
+async function findMyBus(){
+  const p0=await myPosition();
+  const first=await sampleBuses();
+  const near={};
+  first.forEach(c=>{
+    const d=haversine(c.lat,c.lng,p0.lat,p0.lng);
+    if(d>ONBOARD.busRadius) return;
+    // the same vehicle can surface on two route variants — keep the closest
+    if(!near[c.veh]||d<near[c.veh].d) near[c.veh]={...c,d,p0:{lat:c.lat,lng:c.lng}};
+  });
+  return { p0, list:Object.values(near).sort((a,b)=>a.d-b.d) };
+}
+async function refineMyBus(cands,p0){
+  await new Promise(r=>setTimeout(r,ONBOARD.refineMs));
+  const [p1,second]=await Promise.all([myPosition(),sampleBuses()]);
+  const now={}; second.forEach(c=>{ now[c.veh]=c; });
+  const mine=vec(p0,p1), myMove=len(mine);
+  cands.forEach(c=>{
+    const cur=now[c.veh]; if(!cur) return;
+    c.lat=cur.lat; c.lng=cur.lng;
+    c.d=haversine(cur.lat,cur.lng,p1.lat,p1.lng);
+    const theirs=vec(c.p0,{lat:cur.lat,lng:cur.lng}), theirMove=len(theirs);
+    if(myMove<ONBOARD.minMove||theirMove<ONBOARD.minMove) return;   // nobody moved: no verdict
+    const sameWay=cosAngle(mine,theirs)>0.6;
+    const samePace=Math.abs(theirMove-myMove)<Math.max(60,myMove*0.5);
+    c.withYou=sameWay&&samePace&&c.d<=ONBOARD.busRadius;
+  });
+  return cands.sort((a,b)=>(b.withYou?1:0)-(a.withYou?1:0)||a.d-b.d);
+}
+
+/* -------------------- report form (2 steps) ------------------------ */
+const reportForm={open:false};
 function openReportForm(){
   const box=$("#rep-strip");
-  let kind="bus", target=null, type="inspector";
-  const stops=(state.stops||[]).slice(0,12);
-  const metro=(state.metro||[]).map(m=>({...m,d:haversine(m.lat,m.lng,here.lat,here.lng)}))
-    .sort((a,b)=>a.d-b.d).slice(0,10);
-  const lines=[];
-  stops.forEach(s=>(s.routes||[]).forEach(r=>{
-    if(!lines.some(x=>x.code===r.code)) lines.push(r); }));
+  reportForm.open=true;
+  let kind="bus", target=null, type=TYPES_BY_KIND.bus[0], busy=false;
 
-  function render(){
-    const opts = kind==="bus"
-      ? lines.map(r=>`<option value="${esc(r.code)}">${esc(r.id)} · ${esc(destOf((LANG==="en"?(r.en||r.el):(r.el||r.en))||""))}</option>`).join("")
-      : kind==="stop"
-        ? stops.map(s=>`<option value="${esc(s.code)}">${esc(stopName(s))}</option>`).join("")
-        : metro.map(m=>`<option value="${esc(m.id)}">${esc(LANG==="en"?(m.name_en||m.name):m.name)}</option>`).join("");
-    const lbl = kind==="bus"?t("whichLine"):kind==="stop"?t("whichStop"):t("whichStation");
+  const close=()=>{ reportForm.open=false; drawReportMap(); renderReportList(); };
+  const kindChips=()=>`<div class="field"><label>${t("reportWhere")}</label>
+    <div class="chips" id="rf-kind">
+      <button class="chip${kind==="bus"?" on":""}" data-k="bus">${t("onBus")}</button>
+      <button class="chip${kind==="metro"?" on":""}" data-k="metro">${t("atMetro")}</button>
+    </div></div>`;
+  const wireKind=()=>box.querySelectorAll("#rf-kind .chip").forEach(c=>c.onclick=()=>{
+    if(busy||c.dataset.k===kind) return;
+    kind=c.dataset.k; type=TYPES_BY_KIND[kind][0]; target=null; step1();
+  });
+
+  /* ---- step 1: what are you on / at? ---- */
+  function step1(){
+    box.innerHTML=kindChips()+
+      `<div class="note" id="rf-body">${kind==="bus"?t("scanBus"):t("searching")}</div>
+       <button class="ghost" id="rf-cancel">${t("cancel")}</button>`;
+    wireKind(); $("#rf-cancel").onclick=close;
+    kind==="bus"?pickBus():pickMetro();
+  }
+
+  async function pickBus(){
+    busy=true;
+    const myKind=kind;
+    let found;
+    try{ found=await findMyBus(); }catch(_){ found={p0:here,list:[]}; }
+    busy=false;
+    if(!reportForm.open||kind!==myKind) return;
+    if(!found.list.length){
+      box.innerHTML=kindChips()+
+        `<div class="note">${t("noBusNear")}</div>
+         <button class="ghost" id="rf-again">${t("rescan")}</button>
+         <button class="ghost" id="rf-cancel">${t("cancel")}</button>`;
+      wireKind(); $("#rf-again").onclick=step1; $("#rf-cancel").onclick=close;
+      return;
+    }
+    const cands=found.list.slice(0,8);
+    drawCands(cands,true);
+    // second opinion arrives a few seconds later and re-ranks in place
+    refineMyBus(cands,found.p0).then(list=>{
+      if(reportForm.open&&kind===myKind&&!target) drawCands(list,false);
+    }).catch(()=>{});
+
+    function drawCands(list,pending){
+      box.innerHTML=kindChips()+
+        `<div class="field"><label>${t("confirmBus")}</label>
+          <div class="cands" id="rf-cands">${list.map((c,i)=>{
+            const dest=destOf((LANG==="en"?(c.route.en||c.route.el):(c.route.el||c.route.en))||"");
+            return `<button class="cand${c.withYou?" hot":""}" data-i="${i}">
+              <span class="cand-tile num">${esc(c.route.id||"")}</span>
+              <span class="cand-txt"><span class="cand-dest">${esc(dest)}</span>
+                <span class="cand-meta">${fmtDist(c.d)}${c.withYou?` · ✓ ${t("withYou")}`:""}</span></span>
+            </button>`; }).join("")}</div></div>
+         <div class="shint">${pending?t("scanRefine"):t("onboardNote")}</div>
+         <button class="ghost" id="rf-again">${t("rescan")}</button>
+         <button class="ghost" id="rf-cancel">${t("cancel")}</button>`;
+      wireKind(); $("#rf-again").onclick=step1; $("#rf-cancel").onclick=close;
+      box.querySelectorAll(".cand").forEach(b=>b.onclick=()=>{
+        const c=list[+b.dataset.i];
+        target={ id:c.veh, name:destOf((LANG==="en"?(c.route.en||c.route.el):(c.route.el||c.route.en))||""),
+          lineId:c.route.id||"", routeCode:c.route.code, veh:c.veh, lat:c.lat, lng:c.lng };
+        step2();
+      });
+    }
+  }
+
+  async function pickMetro(){
+    busy=true; await loadMetro(); busy=false;
+    if(!reportForm.open||kind!=="metro") return;
+    const near=(state.metro||[]).map(m=>({...m,d:haversine(m.lat,m.lng,here.lat,here.lng)}))
+      .filter(m=>m.d<=ONBOARD.metroRadius).sort((a,b)=>a.d-b.d);
+    if(!near.length){
+      box.innerHTML=kindChips()+
+        `<div class="note">${t("noMetroNear")}</div>
+         <button class="ghost" id="rf-cancel">${t("cancel")}</button>`;
+      wireKind(); $("#rf-cancel").onclick=close; return;
+    }
+    box.innerHTML=kindChips()+
+      `<div class="field"><label>${t("nearestStation")}</label>
+        <div class="cands" id="rf-cands">${near.map((m,i)=>`
+          <button class="cand" data-i="${i}"><span class="cand-tile">Ⓜ</span>
+            <span class="cand-txt"><span class="cand-dest">${esc(LANG==="en"?(m.name_en||m.name):m.name)}</span>
+              <span class="cand-meta">${esc(m.lines.map(l=>"M"+l).join(" · "))} · ${fmtDist(m.d)}</span></span>
+          </button>`).join("")}</div></div>
+       <div class="shint">${t("metroNote")}</div>
+       <button class="ghost" id="rf-cancel">${t("cancel")}</button>`;
+    wireKind(); $("#rf-cancel").onclick=close;
+    box.querySelectorAll(".cand").forEach(b=>b.onclick=()=>{
+      const m=near[+b.dataset.i];
+      target={ id:m.id, name:(LANG==="en"?(m.name_en||m.name):m.name)||"",
+        lineId:m.lines.map(l=>"M"+l).join("/"), routeCode:null, veh:null, lat:m.lat, lng:m.lng };
+      step2();
+    });
+  }
+
+  /* ---- step 2: what's happening? (menu depends on the category) ---- */
+  function step2(){
+    const types=TYPES_BY_KIND[kind]||[];
+    if(!types.includes(type)) type=types[0];
     box.innerHTML=`
-      <div class="field"><label>${t("reportWhere")}</label><div class="chips" id="rf-kind">
-        <button class="chip${kind==="bus"?" on":""}" data-k="bus">${t("onBus")}</button>
-        <button class="chip${kind==="stop"?" on":""}" data-k="stop">${t("atStop")}</button>
-        <button class="chip${kind==="metro"?" on":""}" data-k="metro">${t("atMetro")}</button>
-      </div></div>
-      <div class="field"><label>${lbl}</label><select id="rf-target">${opts||"<option value=''>—</option>"}</select></div>
-      <div class="field"><label>${t("issueType")}</label><select id="rf-type">
-        ${ISSUE_TYPES.map(x=>`<option value="${x}"${x===type?" selected":""}>${esc(issueLabel(x))}</option>`).join("")}
-      </select></div>
+      <div class="field"><label>${kind==="bus"?t("onBus"):t("atMetro")}</label>
+        <div class="picked"><span class="cand-tile num">${esc(target.lineId||"Ⓜ")}</span>
+          <span class="cand-dest">${esc(target.name||target.id)}</span></div></div>
+      <div class="field"><label>${t("issueType")}</label>
+        <div class="chips" id="rf-type">${types.map(x=>
+          `<button class="chip${x===type?" on":""}" data-t="${x}">${esc(issueLabel(x))}</button>`).join("")}
+        </div></div>
       <button class="rep-cta" id="rf-send" style="margin-top:14px">${t("send")}</button>
-      <button class="ghost" id="rf-cancel">${t("cancel")}</button>
+      <button class="ghost" id="rf-back">${t("back")}</button>
       <div class="note" id="rf-msg" style="display:none"></div>`;
-    box.querySelectorAll("#rf-kind .chip").forEach(c=>c.onclick=()=>{ kind=c.dataset.k; render(); });
-    $("#rf-type").onchange=e=>{ type=e.target.value; };
-    $("#rf-cancel").onclick=()=>{ drawReportMap(); renderReportList(); };
+    box.querySelectorAll("#rf-type .chip").forEach(c=>c.onclick=()=>{
+      type=c.dataset.t;
+      box.querySelectorAll("#rf-type .chip").forEach(x=>x.classList.toggle("on",x===c));
+    });
+    $("#rf-back").onclick=()=>{ target=null; step1(); };
     $("#rf-send").onclick=send;
   }
 
   async function send(){
     const btn=$("#rf-send"), msg=$("#rf-msg");
-    const sel=$("#rf-target"); if(!sel||!sel.value){ return; }
+    if(!target) return;
     btn.disabled=true; btn.textContent="…";
     const fail=txt=>{ msg.style.display=""; msg.textContent=txt;
       btn.disabled=false; btn.textContent=t("send"); };
     try{
-      const body={by:myId(),kind,type:$("#rf-type").value,lat:here.lat,lng:here.lng};
-      if(kind==="bus"){
-        const r=lines.find(x=>x.code===sel.value)||{};
-        body.routeCode=sel.value; body.lineId=r.id||"";
-        body.targetName=destOf((LANG==="en"?(r.en||r.el):(r.el||r.en))||"");
-        // Pin the report to the actual vehicle nearest to the rider.
-        try{
-          const buses=await oasa("getBusLocation",sel.value);
-          let best=null,bd=Infinity;
-          (Array.isArray(buses)?buses:[]).forEach(v=>{
-            const la=Number(pick(v,"CS_LAT","cs_lat")),ln=Number(pick(v,"CS_LNG","cs_lng"));
-            if(!isFinite(la)||!isFinite(ln)) return;
-            const d=haversine(la,ln,here.lat,here.lng);
-            if(d<bd){ bd=d; best={veh:String(pick(v,"VEH_NO","veh_no")||""),lat:la,lng:ln}; }
-          });
-          if(best&&bd<1500){ body.veh=best.veh; body.lat=best.lat; body.lng=best.lng; }
-        }catch(_){}
-        body.targetId=body.veh||("route:"+sel.value);
-      } else if(kind==="stop"){
-        const st=stops.find(x=>x.code===sel.value)||{};
-        body.targetId=sel.value; body.targetName=st.code?stopName(st):"";
-        if(isFinite(st.lat)){ body.lat=st.lat; body.lng=st.lng; }
-      } else {
-        const m=metro.find(x=>x.id===sel.value)||{};
-        body.targetId=sel.value;
-        body.targetName=(LANG==="en"?(m.name_en||m.name):m.name)||"";
-        if(isFinite(m.lat)){ body.lat=m.lat; body.lng=m.lng; }
-      }
       const res=await fetch(base()+"/reports",{method:"POST",cache:"no-store",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ by:myId(), kind, type,
+          targetId:target.id, targetName:target.name, lineId:target.lineId,
+          routeCode:target.routeCode, veh:target.veh, lat:target.lat, lng:target.lng })});
       let j={}; try{ j=await res.json(); }catch(_){}
       if(!res.ok){ fail(j.error||("HTTP "+res.status)); return; }
-      await refreshReports(); drawReportMap(); renderReportList(); renderView();
+      reportForm.open=false;
+      await refreshReports(); await refreshFlagPositions();
+      drawReportMap(); renderReportList(); renderView();
     }catch(e){ fail(String((e&&e.message)||e)); }
   }
-  render();
+
+  step1();
 }
 
 /* ====================== tracking & stats UI ======================= */

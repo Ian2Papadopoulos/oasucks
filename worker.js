@@ -930,9 +930,13 @@ async function handleNearby(url, env, ctx) {
  * read with a plain get and pruned on every touch — zero list ops.
  * ------------------------------------------------------------------ */
 const REPORTS_KEY = "reports:index";
-const REPORT_KINDS = new Set(["bus", "stop", "metro"]);   // what the flag is attached to
-const REPORT_TYPES = new Set(["inspector", "breakdown", "crowded", "delay",
-  "incident", "no_show", "detour", "other"]);             // inspector = red, rest = yellow
+/* What may be flagged, and with what. A rider reports from inside a bus
+ * or standing at a metro station — those are the only two categories —
+ * and each one has its own short menu (inspector = red, rest = yellow). */
+const REPORT_TYPES = {
+  bus: new Set(["breakdown", "crowded", "inspector"]),
+  metro: new Set(["inspector"]),
+};
 const YELLOW_TTL = 3600;          // 60 min for every yellow flag
 const RED_TTL = 900;              // 15 min: inspectors hop off after a few stops
 const RED_METRO_TTL = 7200;       // 2 h on the metro, per spec
@@ -994,8 +998,8 @@ async function handleReports(req, url, env) {
   const kind = String(b.kind || "");
   const type = String(b.type || "");
   const targetId = String(b.targetId || "").slice(0, 60);
-  if (!REPORT_KINDS.has(kind) || !targetId) return json({ error: "bad target" }, 400);
-  if (!REPORT_TYPES.has(type)) return json({ error: "bad type" }, 400);
+  if (!REPORT_TYPES[kind] || !targetId) return json({ error: "bad target" }, 400);
+  if (!REPORT_TYPES[kind].has(type)) return json({ error: "bad type" }, 400);
   const lat = Number(b.lat), lng = Number(b.lng);
   if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
 
