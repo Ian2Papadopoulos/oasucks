@@ -1,0 +1,13 @@
+{
+  "name": "oasa-stop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Live OASA arrivals — Cloudflare Worker serving the app + API proxy.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.117.0"
+  }
+}

@@ -1,0 +1,121 @@
+# Turning on bus alerts (push notifications)
+
+The app works fully without this. These steps add the alert engine: a cron job
+that checks live arrivals every minute and pushes a notification before your bus
+reaches your stop.
+
+Everything below is free tier. Do it once, in your `oasa-stop` folder.
+
+---
+
+## 1. Create the storage namespace
+
+```powershell
+npx wrangler kv:namespace create ALERTS
+```
+
+It prints something like:
+
+```
+[[kv_namespaces]]
+binding = "ALERTS"
+id = "a1b2c3d4e5f6..."
+```
+
+Copy that `id`. Open **wrangler.toml**, find the commented block at the bottom,
+uncomment the three lines and paste your id:
+
+```toml
+[[kv_namespaces]]
+binding = "ALERTS"
+id = "a1b2c3d4e5f6..."
+```
+
+> On newer wrangler the command is `npx wrangler kv namespace create ALERTS`
+> (no colon). Either form is fine — use whichever your version accepts.
+
+## 2. Generate your signing keys
+
+```powershell
+node genkeys.mjs
+```
+
+It prints a `VAPID_PUBLIC_KEY` and a `VAPID_PRIVATE_KEY`. These identify your
+server to Google/Mozilla's push services. Keep the private one secret.
+
+## 3. Store the keys as secrets
+
+Run each command, paste the matching value when prompted, press Enter:
+
+```powershell
+npx wrangler secret put VAPID_PUBLIC_KEY
+npx wrangler secret put VAPID_PRIVATE_KEY
+npx wrangler secret put VAPID_SUBJECT
+```
+
+For `VAPID_SUBJECT` enter a contact URL like `mailto:you@example.com` — push
+services require one so they can reach you if something misbehaves.
+
+## 4. Deploy
+
+```powershell
+npx wrangler deploy
+```
+
+The output should now mention the KV binding and the cron trigger.
+
+---
+
+## 5. Use it on your phone
+
+1. Open the app, tap the **🔔** button in the header.
+2. Tap **Send test notification** → allow notifications when Chrome asks.
+   A test notification should arrive within a second or two. If it does, the
+   whole chain works.
+3. Tap **＋ New alert** and set up your rule:
+   - **Stop** — one of your current nearby stops
+   - **Line / direction** — e.g. `036 · ΠΛ. ΚΥΨΕΛΗΣ - ΠΑΝΟΡΜΟΥ`
+   - **Days** — Mo–Fr are pre-selected
+   - **From / To** — e.g. 08:30 to 08:50
+   - **Notify before** — 10′ and 5′ are pre-selected; 15′ and 3′ available
+4. Save. You'll get a notification when a bus on that line is 10 minutes and
+   again when it's 5 minutes from that stop, but only for buses predicted to
+   arrive inside your window, and only on the days you chose.
+
+Alerts are deduplicated per vehicle, so one bus gives you one notification per
+lead time — not one every minute.
+
+---
+
+## How the timing actually works
+
+OASA reports live predicted arrivals at a stop, not a fixed timetable. So the
+rule reads: *"between 08:30 and 08:50 on weekdays, when a 036 heading to
+Panormou is predicted to reach Πλ. Κυψέλης, warn me 10 and 5 minutes before."*
+A bus predicted to arrive at 08:42 triggers at roughly 08:32 and 08:37.
+
+Because it's prediction-based, times shift as traffic changes — a bus can be
+"5 minutes away" for two consecutive minutes. The dedupe logic means you still
+only get one alert per lead time.
+
+## Costs and limits
+
+- Cron runs 1×/minute — well inside the free tier.
+- KV free tier allows 1,000 writes/day; each alert sent writes one small key.
+- Notifications only fire while a rule's window is active, so most minutes do
+  no work at all.
+
+## Turning it off
+
+Delete a rule with the ✕ next to it in the 🔔 sheet, or revoke notification
+permission in Chrome (site settings → Notifications).
+
+## Troubleshooting
+
+- **"Push isn't configured on the server yet"** → a secret or the KV binding is
+  missing. Re-check steps 1–3, then redeploy.
+- **Test works, alerts don't** → check the rule's days/window match the current
+  time in Athens, and that buses actually run then. Watch live logs with
+  `npx wrangler tail` and look for the cron runs.
+- **Nothing after reinstalling the app** → the push subscription is per-browser;
+  tap the test button once more to re-register.

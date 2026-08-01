@@ -1,0 +1,36 @@
+name = "oasa-stop"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Static app (index.html, icons, manifest, sw.js). Anything not matching a
+# file here falls through to worker.js — so /api, /geocode, /rules, /push/*.
+[assets]
+directory = "./public"
+
+# Checks live arrivals once a minute and fires bus alerts.
+# Harmless if push isn't set up yet — it just returns immediately.
+[triggers]
+crons = ["* * * * *"]
+
+# ---------------------------------------------------------------------
+# ALERTS STORAGE — required only for push notifications.
+# Create it once:
+#     npx wrangler kv:namespace create ALERTS
+# Copy the printed id below, then UNCOMMENT these three lines and deploy.
+# ---------------------------------------------------------------------
+[[kv_namespaces]]
+binding = "ALERTS"
+id = "286552a0463b4334b79d2961622a9ffe"
+
+# ---------------------------------------------------------------------
+# VEHICLE TRACKING — required only for stats (headways, bunching, ghosts).
+# Create it once:
+#     npx wrangler d1 create oasa-stats
+# Copy the printed database_id below, then UNCOMMENT these four lines
+# and deploy. Without it the app works fine; stats just report
+# "tracking isn't configured".
+# ---------------------------------------------------------------------
+[[d1_databases]]
+binding = "DB"
+database_name = "oasa-stats"
+database_id = "8e15897a-c744-496a-9684-384a2dc42302"
