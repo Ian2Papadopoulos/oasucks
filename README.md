@@ -143,12 +143,17 @@ sitting in, which is hard downtown where six buses share one jam. It runs two pa
    enough that a bus you're merely watching go past usually won't qualify. Because both
    your fix and the bus's telematics ping are noisy estimates, the acceptance radius
    stretches by the phone's own reported GPS error (capped at +100 m) — otherwise the
-   bus you are literally sitting in gets rejected on a bad fix.
+   bus you are literally sitting in gets rejected on a bad fix. The scan itself is a
+   single request: the Worker's `/scan?lat=&lng=` endpoint does the whole fan-out at
+   the edge (the phone used to make ~14 separate calls) and caches the result 10 s per
+   ~110 m cell, so riders scanning on the same bus share one answer.
 2. **Co-movement.** A second position sample ~6 s later. If you're on board, your GPS
    and the bus move the same way — similar heading, similar distance covered — and the
    gap between you stays small. Those get marked **"moving with you"** and jump to the
    top of the list. If nobody moved (bus stuck at a light, no GPS change), the pass
-   stays quiet and plain proximity order holds.
+   stays quiet and plain proximity order holds. This pass re-fetches only the routes
+   of the surviving candidates (1–3 calls, cache-bypassed so the positions are
+   genuinely fresh), not the full set.
 
 You always confirm with a tap — the app ranks, it never picks for you. If no bus is
 within range it says so and refuses the report rather than guessing.

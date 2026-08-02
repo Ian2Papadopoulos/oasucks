@@ -16,6 +16,7 @@
  *  GET  /metro                  → static Athens metro station list
  *  GET  /lines                  → every OASA line (id, code, description)
  *  GET  /live?lat=&lng=         → live vehicle positions around a point
+ *  GET  /scan?lat=&lng=         → batched "which bus am I on?" candidates
  *  cron (every minute)          → check live arrivals, fire push alerts
  *
  * Alerts need a KV namespace bound as ALERTS and VAPID secrets; without
@@ -78,11 +79,13 @@ async function timedFetch(urlStr, cacheTtl) {
   throw lastErr;
 }
 
-async function proxy(targetUrl, cacheSeconds) {
+async function proxy(targetUrl, cacheSeconds, skipCache) {
   const cache = caches.default;
   const key = new Request(targetUrl, { method: "GET" });
-  const hit = await cache.match(key);
-  if (hit) return withCors(hit);
+  if (!skipCache) {
+    const hit = await cache.match(key);
+    if (hit) return withCors(hit);
+  }
   let up;
   try {
     up = await timedFetch(targetUrl, cacheSeconds);
@@ -99,7 +102,7 @@ async function proxy(targetUrl, cacheSeconds) {
       ...CORS,
     },
   });
-  if (up.ok) await cache.put(key, res.clone());
+  if (up.ok && !skipCache) await cache.put(key, res.clone());
   return res;
 }
 
@@ -1224,6 +1227,81 @@ async function handleLive(url, env) {
   return res;
 }
 
+/* ==================== onboard scan (batched) ====================== *
+ * The "which bus am I on?" fan-out used to run on the phone: ~14
+ * getBusLocation calls per tap. Now it's ONE request — the fan-out
+ * happens here as subrequests (which don't count against the daily
+ * request quota) and the result is cached 10 s on a ~110 m grid, so
+ * two riders scanning on the same bus share one answer. The precise
+ * 100 m + GPS-accuracy filtering stays on the phone, which knows its
+ * own exact fix; we return everything within a generous 1.5 km so
+ * that filtering has raw material to work with.
+ * ------------------------------------------------------------------ */
+const SCAN = { stopRadius: 600, stopProbe: 10, maxRoutes: 14, keepM: 1500, cache: 10 };
+
+async function handleScan(url) {
+  const lat = parseFloat(url.searchParams.get("lat"));
+  const lng = parseFloat(url.searchParams.get("lng"));
+  if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
+
+  const ck = `https://scan/?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}`;
+  const cache = caches.default;
+  const hit = await cache.match(new Request(ck));
+  if (hit) return withCors(hit);
+
+  // stops around the rider → the lines that serve them
+  const lists = await Promise.all(samplePts(lat, lng, SCAN.stopRadius).map(p =>
+    getJSON(`${OASA}?act=getClosestStops&p1=${p[0]}&p2=${p[1]}`, ACT_TTL.getClosestStops)));
+  const stops = [];
+  const seen = new Set();
+  for (const arr of lists) {
+    if (!Array.isArray(arr)) continue;
+    for (const s of arr) {
+      const code = String(pickField(s, "StopCode", "StopID", "stop_code") || "");
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      const la = Number(pickField(s, "StopLat", "StopY", "stop_lat"));
+      const ln = Number(pickField(s, "StopLng", "StopX", "stop_lng"));
+      stops.push({ code, d: (isFinite(la) && isFinite(ln)) ? hav(lat, lng, la, ln) : Infinity });
+    }
+  }
+  stops.sort((a, b) => a.d - b.d);
+
+  const routes = new Map();
+  await pool(stops.slice(0, SCAN.stopProbe).map(s => async () => {
+    const r = await fetchStopRoutes(s.code);
+    if (r) for (const rt of r.routes) if (!routes.has(rt.code)) routes.set(rt.code, rt);
+  }), 5);
+
+  // vehicle positions fetched fresh (ttl 0) — the 10 s scan cache above
+  // is the sharing layer; stacking the 12 s /api cache under it would
+  // serve up to 22 s-old positions to a feature that resolves 100 m.
+  const buses = [];
+  await pool([...routes.values()].slice(0, SCAN.maxRoutes).map(rt => async () => {
+    const arr = await getJSON(`${OASA}?act=getBusLocation&p1=${encodeURIComponent(rt.code)}`, 0);
+    for (const v of (Array.isArray(arr) ? arr : [])) {
+      const veh = String(pickField(v, "VEH_NO", "veh_no", "VEH_CODE") || "");
+      const la = Number(pickField(v, "CS_LAT", "cs_lat"));
+      const ln = Number(pickField(v, "CS_LNG", "cs_lng"));
+      if (!veh || !isFinite(la) || !isFinite(ln)) continue;
+      if (hav(lat, lng, la, ln) > SCAN.keepM) continue;
+      buses.push({ veh, lat: la, lng: ln, route: { code: rt.code, id: rt.id, el: rt.el, en: rt.en } });
+    }
+  }), 6);
+
+  const res = new Response(JSON.stringify({
+    generated: Math.floor(Date.now() / 1000), buses,
+  }), {
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": `public, max-age=${SCAN.cache}`,
+      ...CORS,
+    },
+  });
+  await cache.put(new Request(ck), res.clone());
+  return res;
+}
+
 /* ============================ routing ============================= */
 
 export default {
@@ -1241,7 +1319,11 @@ export default {
         const v = url.searchParams.get(k);
         if (v != null) up.searchParams.set(k, v);
       }
-      return proxy(up.toString(), ACT_TTL[act] || OASA_CACHE);
+      // nocache=1 bypasses the edge cache — the co-movement pass needs
+      // positions genuinely 6 s apart, and the 12 s cache would hand the
+      // same coordinates back twice, making every bus look parked.
+      const fresh = url.searchParams.get("nocache") === "1";
+      return proxy(up.toString(), fresh ? 0 : (ACT_TTL[act] || OASA_CACHE), fresh);
     }
 
     if (p.endsWith("/nearby")) return handleNearby(url, env, ctx);
@@ -1301,6 +1383,8 @@ export default {
     if (p.endsWith("/lines")) return handleLines();
 
     if (p.endsWith("/live")) return handleLive(url, env);
+
+    if (p.endsWith("/scan")) return handleScan(url);
 
     if (p.endsWith("/push/key")) {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);

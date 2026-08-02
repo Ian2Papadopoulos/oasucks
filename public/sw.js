@@ -7,7 +7,7 @@
  * anything with a query string, anything cross-origin) goes to the network
  * every time. New endpoints are safe by default.
  */
-const SHELL = "stop-shell-v8";
+const SHELL = "stop-shell-v9";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest"];
 const STATIC_RE = /\.(png|jpe?g|svg|ico|css|woff2?|webmanifest)$/i;
 
