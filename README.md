@@ -140,7 +140,10 @@ sitting in, which is hard downtown where six buses share one jam. It runs two pa
 
 1. **Proximity.** Every live vehicle on the lines serving the stops around you, kept
    only if it's within **100 m** of your GPS fix, ranked nearest-first. That's tight
-   enough that a bus you're merely watching go past usually won't qualify.
+   enough that a bus you're merely watching go past usually won't qualify. Because both
+   your fix and the bus's telematics ping are noisy estimates, the acceptance radius
+   stretches by the phone's own reported GPS error (capped at +100 m) — otherwise the
+   bus you are literally sitting in gets rejected on a bad fix.
 2. **Co-movement.** A second position sample ~6 s later. If you're on board, your GPS
    and the bus move the same way — similar heading, similar distance covered — and the
    gap between you stays small. Those get marked **"moving with you"** and jump to the
@@ -166,6 +169,11 @@ Re-reporting the same thing renews the timer. Nobody can cancel someone else's r
 a flag disappears only when it expires or when **the reporter who filed it** withdraws
 it (the app keeps an anonymous device token in `localStorage`; the server never exposes
 it, so withdrawals can't be forged).
+
+**History for statistics:** active flags live in KV and vanish when they expire, but
+every filed report is *also* appended to D1's `report_log` table (timestamp, kind,
+type, target, line — no user data). `GET /reports/toplist?days=30&type=inspector`
+returns the most-reported buses/lines/stations, ready for a future public stats page.
 
 Reports live in the same KV namespace as the alert rules (`ALERTS`), in a single key —
 no extra setup (`GET/POST /reports`, `POST /reports/delete`). The Worker enforces the

@@ -454,6 +454,14 @@ async function initSchema(env) {
     `CREATE TABLE IF NOT EXISTS sched_dep(line_code TEXT, dir TEXT, hhmm INTEGER,
        PRIMARY KEY(line_code, dir, hhmm))`,
     `CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)`,
+    // Append-only history of every community report ever filed (the KV
+    // side only keeps ACTIVE flags). This is what future statistics —
+    // "which line gets the most inspector reports" — will read from.
+    `CREATE TABLE IF NOT EXISTS report_log(id INTEGER PRIMARY KEY AUTOINCREMENT,
+       ts INTEGER, kind TEXT, type TEXT, target_id TEXT, target_name TEXT,
+       line_id TEXT, route_code TEXT, renewed INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS ix_rl_ts ON report_log(ts)`,
+    `CREATE INDEX IF NOT EXISTS ix_rl_target ON report_log(kind, target_id, ts)`,
   ];
   await env.DB.batch(stmts.map(s => env.DB.prepare(s)));
   schemaDone = true;
@@ -971,7 +979,21 @@ function publicReport(r, by) {
   return out;
 }
 
-async function handleReports(req, url, env) {
+/* Every filed (or renewed) report also lands in D1's report_log —
+ * fire-and-forget, so a missing DB binding costs nothing. */
+async function logReport(env, r, now, renewed) {
+  if (!dbReady(env)) return;
+  try {
+    await initSchema(env);
+    await env.DB.prepare(
+      `INSERT INTO report_log(ts, kind, type, target_id, target_name, line_id, route_code, renewed)
+       VALUES(?,?,?,?,?,?,?,?)`)
+      .bind(now, r.kind, r.type, r.targetId, r.targetName || "", r.lineId || "",
+        r.routeCode || "", renewed ? 1 : 0).run();
+  } catch (_) { /* stats are best-effort */ }
+}
+
+async function handleReports(req, url, env, ctx) {
   if (!reportsReady(env)) return json({ error: "reports not configured" }, 501);
   const now = Math.floor(Date.now() / 1000);
 
@@ -1023,6 +1045,7 @@ async function handleReports(req, url, env) {
   if (mine) {
     Object.assign(mine, fields, { at: now });
     await writeReports(env, active);
+    if (ctx) ctx.waitUntil(logReport(env, mine, now, true));
     return json(publicReport(mine, by));
   }
   if (active.filter(r => r.by === by).length >= MAX_ACTIVE_PER_REPORTER) {
@@ -1031,6 +1054,7 @@ async function handleReports(req, url, env) {
   const rec = { id: crypto.randomUUID(), by, at: now, ...fields };
   active.push(rec);
   await writeReports(env, active);
+  if (ctx) ctx.waitUntil(logReport(env, rec, now, false));
   return json(publicReport(rec, by));
 }
 
@@ -1248,8 +1272,30 @@ export default {
       });
     }
 
+    // Aggregated history: which buses/lines/stations collect the most
+    // reports. Feeds any future public statistics page.
+    //   /reports/toplist?days=30&type=inspector&kind=metro
+    if (p.endsWith("/reports/toplist")) {
+      if (!dbReady(env)) return json({ error: "stats not configured" }, 501);
+      await initSchema(env);
+      const days = Math.min(365, Math.max(1, +(url.searchParams.get("days") || 30)));
+      const since = Math.floor(Date.now() / 1000) - days * 86400;
+      const type = url.searchParams.get("type");   // e.g. inspector; omit = all
+      const kind = url.searchParams.get("kind");   // bus | metro; omit = both
+      const cond = ["ts>?"], args = [since];
+      if (type) { cond.push("type=?"); args.push(type); }
+      if (kind) { cond.push("kind=?"); args.push(kind); }
+      const { results } = await env.DB.prepare(
+        `SELECT kind, type, target_id, target_name, line_id,
+                COUNT(*) reports, MAX(ts) last_ts
+         FROM report_log WHERE ${cond.join(" AND ")}
+         GROUP BY kind, target_id, type ORDER BY reports DESC LIMIT 30`)
+        .bind(...args).all();
+      return json({ days, type: type || "all", kind: kind || "all", top: results || [] });
+    }
+
     if (p.endsWith("/reports") || p.endsWith("/reports/delete")) {
-      return handleReports(req, url, env);
+      return handleReports(req, url, env, ctx);
     }
 
     if (p.endsWith("/lines")) return handleLines();
