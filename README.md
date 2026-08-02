@@ -1,4 +1,4 @@
-# Στάση — live OASA arrivals
+# OASUCKS — live OASA arrivals
 
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. Installs on Android like a native app.
