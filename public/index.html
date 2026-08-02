@@ -11,8 +11,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="OASUCKS" />
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Leaflet is self-hosted (was cdnjs): same-origin, so no third-party
+     code path to compromise, no SRI hash to break, and it works offline. -->
+<link rel="stylesheet" href="vendor/leaflet-1.9.4.min.css" />
+<script src="vendor/leaflet-1.9.4.min.js"></script>
 <style>
   /* ------------------------------------------------------------------
      A photocopied timetable taped to a bus-shelter pole.
@@ -451,7 +453,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v22</span></div>
+  <div class="foot"><span class="ver">v23</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1297,20 +1299,20 @@ async function openRoutePreview(stop,routeCode,minutes,meta){
     if(!stop){
       L.marker([x.lat,x.lng],{icon:L.divIcon({className:"",html:'<div class="nstop"></div>',
         iconSize:[11,11],iconAnchor:[5.5,5.5]})}).addTo(rlayer)
-        .bindTooltip(`${i+1}. ${x.name}`,{direction:"top"});
+        .bindTooltip(`${i+1}. ${esc(x.name)}`,{direction:"top"});
       return;
     }
     L.circleMarker([x.lat,x.lng],{radius:2.5,color:"#5A6B8C",weight:1,
-      fillColor:"#8A97AD",fillOpacity:.85}).addTo(rlayer).bindTooltip(x.name,{direction:"top"});
+      fillColor:"#8A97AD",fillOpacity:.85}).addTo(rlayer).bindTooltip(esc(x.name),{direction:"top"});
   });
   onward.forEach((x,i)=>{
     if(i===0) return;
     L.marker([x.lat,x.lng],{icon:L.divIcon({className:"",html:'<div class="nstop"></div>',
-      iconSize:[11,11],iconAnchor:[5.5,5.5]})}).addTo(rlayer).bindTooltip(`${i}. ${x.name}`,{direction:"top"});
+      iconSize:[11,11],iconAnchor:[5.5,5.5]})}).addTo(rlayer).bindTooltip(`${i}. ${esc(x.name)}`,{direction:"top"});
   });
   if(stop&&isFinite(stop.lat)) L.marker([stop.lat,stop.lng],{icon:L.divIcon({className:"",
     html:'<div class="board"></div>',iconSize:[20,20],iconAnchor:[10,10]}),zIndexOffset:600})
-    .addTo(rlayer).bindTooltip(stopName(stop),{direction:"top",permanent:false});
+    .addTo(rlayer).bindTooltip(esc(stopName(stop)),{direction:"top",permanent:false});
   L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:700}).addTo(rlayer);
   (Array.isArray(buses)?buses:[]).forEach(b=>{
     const la=Number(pick(b,"CS_LAT","cs_lat")),ln=Number(pick(b,"CS_LNG","cs_lng"));
@@ -1497,10 +1499,12 @@ function drawReportMap(){
     const live=(r.kind==="bus"&&r.veh&&state.busPos)?state.busPos[r.veh]:null;
     const la=live?live.lat:r.lat, ln=live?live.lng:r.lng;
     if(!isFinite(la)||!isFinite(ln)) return;
-    const name=r.kind==="bus"?`🚌 ${r.lineId||""} · ${issueLabel(r.type)}`
-      :`Ⓜ ${r.targetName||""} · ${issueLabel(r.type)}`;
+    // lineId/targetName come straight from a POST /reports body — untrusted.
+    // Leaflet renders tooltip strings as HTML, so escape before interpolating.
+    const name=r.kind==="bus"?`🚌 ${esc(r.lineId||"")} · ${esc(issueLabel(r.type))}`
+      :`Ⓜ ${esc(r.targetName||"")} · ${esc(issueLabel(r.type))}`;
     L.marker([la,ln],{icon:flagIcon(r.kind,isRed(r)?"red":"yellow"),zIndexOffset:600})
-      .addTo(replayer).bindTooltip(`${name} · ${agoTxt(Date.now()/1000-r.at)}`,{direction:"top"});
+      .addTo(replayer).bindTooltip(`${name} · ${esc(agoTxt(Date.now()/1000-r.at))}`,{direction:"top"});
     b.extend([la,ln]);
   });
   if(b.isValid()) repmap.fitBounds(b,{padding:[40,40],maxZoom:15});
@@ -1982,7 +1986,7 @@ async function loadLive(){
     const dest=destOf((LANG==="en"?(v.en||v.el):(v.el||v.en))||"");
     L.marker([v.lat,v.lng],{icon:L.divIcon({className:"",
       html:`<div class="livebus num">${esc(v.line||"")}</div>`,iconSize:[30,20],iconAnchor:[15,10]})})
-      .addTo(llayer).bindTooltip(`${v.line||""}${dest?" · "+dest:""}`,{direction:"top"});
+      .addTo(llayer).bindTooltip(`${esc(v.line||"")}${dest?" · "+esc(dest):""}`,{direction:"top"});
   });
   $("#live-sub").textContent = n?t("liveCount")(n):t("liveNone");
   liveBusy=false;
@@ -1994,7 +1998,7 @@ function openAbout(){
   $("#ab-h").textContent=t("aboutH");
   $("#ab-body").innerHTML=`<div class="ab">${t("aboutBody")}
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
-    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v22</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v23</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -2188,7 +2192,8 @@ function renderAlerts(){
       <div class="dt">${esc(r.routeName||"")}<br>${days} · ${esc(r.from)}–${esc(r.to)} · ${(r.leads||[]).join("′, ")}′</div></div>`;
     const del=document.createElement("button"); del.className="del"; del.textContent="✕";
     del.onclick=async()=>{ await fetch(base()+"/rules/delete",{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify({id:r.id})});
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id:r.id,sub:state.subId})});   // sub = ownership proof
       await loadRules(); bellBadge(); renderAlerts(); };
     d.appendChild(del); list.appendChild(d);
   });

@@ -62,18 +62,30 @@ With the in-app screen currently off, add routes through the Worker's endpoints.
 `route_code` is a single direction of a line — get it from `/lines` then
 `getRoutesForLine`, or from the ☰ → *Find a line* preview (the code is in the request).
 
+**Adding or removing routes is an admin action** and requires an admin token, so a
+random visitor can't reshape what you track. Set it once as a secret:
+
+```powershell
+npx wrangler secret put ADMIN_TOKEN     # paste any long random string
+npx wrangler deploy
+```
+
+Then pass it on the mutating calls (header `X-Admin-Token`, or `?token=`):
+
 ```powershell
 # add a route (repeat for each direction you care about)
-curl -X POST https://<your-url>/track/add ^
-  -H "Content-Type: application/json" ^
+curl -X POST "https://<your-url>/track/add" ^
+  -H "X-Admin-Token: YOUR_TOKEN" -H "Content-Type: application/json" ^
   -d "{\"route_code\":\"1873\",\"line_id\":\"608\"}"
 
-# see what's tracked and how much data has accrued
+# see what's tracked and how much data has accrued (this read is public)
 curl https://<your-url>/track/list
 ```
 
-The cron begins sampling within a minute (5 minutes overnight). You can track up to
-**8 routes** — that cap is deliberate, see limits below.
+Without `ADMIN_TOKEN` set, `/track/add`, `/track/remove` and `/track/sample` all return
+`403` — reads (`/track/list`, `/stats*`) stay open. The cron begins sampling within a
+minute (5 minutes overnight). You can track up to **8 routes** — that cap is deliberate,
+see limits below.
 
 ## 5. Reading the numbers
 

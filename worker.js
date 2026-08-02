@@ -52,8 +52,47 @@ const ALLOWED_ACTS = new Set(Object.keys(ACT_TTL));
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, X-Admin-Token",
 };
+
+/* ======================= abuse controls =========================== *
+ * Per-IP, in-memory, fixed-window rate limiting. It lives in the
+ * isolate (one per colo, recycled often), so it is NOT globally exact —
+ * but it cheaply blunts the realistic threat: a single script hammering
+ * the write / fan-out endpoints from one address. It costs zero storage
+ * and can't itself be exhausted. For hard, global guarantees layer
+ * Cloudflare's WAF rate-limiting rules on top (dashboard → Security).
+ * ------------------------------------------------------------------ */
+const RL = new Map();                        // "bucket:ip" -> { n, reset }
+function clientIp(req) {
+  return req.headers.get("CF-Connecting-IP") ||
+    (req.headers.get("X-Forwarded-For") || "").split(",")[0].trim() || "unknown";
+}
+function rateLimit(ip, bucket, limit, windowSec) {
+  const now = Date.now();
+  if (RL.size > 5000) {                      // opportunistic sweep, bounded memory
+    for (const [k, v] of RL) if (v.reset < now) RL.delete(k);
+    if (RL.size > 8000) RL.clear();
+  }
+  const key = bucket + ":" + ip;
+  let e = RL.get(key);
+  if (!e || e.reset < now) { e = { n: 0, reset: now + windowSec * 1000 }; RL.set(key, e); }
+  e.n++;
+  return e.n <= limit;
+}
+function tooMany() { return json({ error: "rate limited, slow down" }, 429); }
+
+/* Tracking mutations are admin actions, not public ones. They're allowed
+ * only when the ADMIN_TOKEN secret is set AND the caller presents it
+ * (header X-Admin-Token, or ?token=). No secret configured → denied. */
+function adminOK(req, env) {
+  const want = env && env.ADMIN_TOKEN;
+  if (!want) return false;
+  const got = req.headers.get("X-Admin-Token") ||
+    new URL(req.url).searchParams.get("token") || "";
+  // constant-ish comparison; tokens are short and this isn't timing-critical
+  return got.length === want.length && got === want;
+}
 
 /* ===================== generic fetch helpers ====================== */
 
@@ -1309,20 +1348,21 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     const p = url.pathname.replace(/\/+$/, "");
+    const ip = clientIp(req);
 
     if (p.endsWith("/api")) {
       const act = url.searchParams.get("act");
       if (!act || !ALLOWED_ACTS.has(act)) return json({ error: "act not allowed" }, 400);
+      // Cached reads are cheap and shared; only the cache-bypassing refine
+      // path (nocache=1) actually hits OASA per request, so throttle that.
+      const fresh = url.searchParams.get("nocache") === "1";
+      if (fresh && !rateLimit(ip, "api-fresh", 60, 60)) return tooMany();
       const up = new URL(OASA);
       up.searchParams.set("act", act);
       for (const k of ["p1", "p2", "p3"]) {
         const v = url.searchParams.get(k);
         if (v != null) up.searchParams.set(k, v);
       }
-      // nocache=1 bypasses the edge cache — the co-movement pass needs
-      // positions genuinely 6 s apart, and the 12 s cache would hand the
-      // same coordinates back twice, making every bus look parked.
-      const fresh = url.searchParams.get("nocache") === "1";
       return proxy(up.toString(), fresh ? 0 : (ACT_TTL[act] || OASA_CACHE), fresh);
     }
 
@@ -1377,14 +1417,25 @@ export default {
     }
 
     if (p.endsWith("/reports") || p.endsWith("/reports/delete")) {
+      if (req.method === "POST") {
+        const bucket = p.endsWith("/delete") ? "reports-del" : "reports";
+        const limit = p.endsWith("/delete") ? 30 : 20;
+        if (!rateLimit(ip, bucket, limit, 60)) return tooMany();
+      }
       return handleReports(req, url, env, ctx);
     }
 
     if (p.endsWith("/lines")) return handleLines();
 
-    if (p.endsWith("/live")) return handleLive(url, env);
+    if (p.endsWith("/live")) {
+      if (!rateLimit(ip, "live", 30, 60)) return tooMany();
+      return handleLive(url, env);
+    }
 
-    if (p.endsWith("/scan")) return handleScan(url);
+    if (p.endsWith("/scan")) {
+      if (!rateLimit(ip, "scan", 30, 60)) return tooMany();
+      return handleScan(url);
+    }
 
     if (p.endsWith("/push/key")) {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
@@ -1393,6 +1444,7 @@ export default {
 
     if (p.endsWith("/push/subscribe") && req.method === "POST") {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      if (!rateLimit(ip, "push-sub", 15, 60)) return tooMany();
       const b = await req.json().catch(() => null);
       if (!b || !b.subscription || !b.subscription.endpoint) return json({ error: "bad subscription" }, 400);
       const id = b.id || crypto.randomUUID();
@@ -1402,6 +1454,7 @@ export default {
 
     if (p.endsWith("/push/test") && req.method === "POST") {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      if (!rateLimit(ip, "push-test", 15, 60)) return tooMany();
       const b = await req.json().catch(() => null);
       const sub = b && b.sub ? await env.ALERTS.get(`sub:${b.sub}`, "json") : null;
       if (!sub) return json({ error: "unknown subscription" }, 404);
@@ -1414,17 +1467,24 @@ export default {
     if (p.endsWith("/rules")) {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
       if (req.method === "GET") {
+        // A sub is the caller's own token; requiring it means you can only
+        // read YOUR rules. Without it we used to return everyone's — which
+        // leaked every user's stop, line, commute window and sub token.
         const sub = url.searchParams.get("sub");
+        if (!sub) return json({ error: "sub required" }, 400);
         const all = await readRules(env);
-        return json(sub ? all.filter(r => r.sub === sub) : all);
+        return json(all.filter(r => r.sub === sub));
       }
       if (req.method === "POST") {
+        if (!rateLimit(ip, "rules", 15, 60)) return tooMany();
         const r = await req.json().catch(() => null);
         if (!r || !r.sub || !r.stopCode) return json({ error: "bad rule" }, 400);
         r.id = r.id || crypto.randomUUID();
         if (r.enabled == null) r.enabled = true;
         const all = await readRules(env);
         const i = all.findIndex(x => x.id === r.id);
+        // don't let a POST overwrite a rule that belongs to a different sub
+        if (i >= 0 && all[i].sub !== r.sub) return json({ error: "not yours" }, 403);
         if (i >= 0) all[i] = r; else all.push(r);
         await writeRules(env, all);
         return json(r);
@@ -1433,9 +1493,14 @@ export default {
 
     if (p.endsWith("/rules/delete") && req.method === "POST") {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      if (!rateLimit(ip, "rules-del", 30, 60)) return tooMany();
       const b = await req.json().catch(() => null);
-      if (!b || !b.id) return json({ error: "id required" }, 400);
+      if (!b || !b.id || !b.sub) return json({ error: "id and sub required" }, 400);
       const all = await readRules(env);
+      const rule = all.find(x => x.id === b.id);
+      if (!rule) return json({ error: "not found" }, 404);
+      // only the owner (matching sub) may delete — was: anyone with the id
+      if (rule.sub !== b.sub) return json({ error: "not yours" }, 403);
       await writeRules(env, all.filter(x => x.id !== b.id));
       return json({ ok: true });
     }
@@ -1443,6 +1508,14 @@ export default {
     /* ---------------- tracking + stats (needs D1) ----------------- */
     if (p.includes("/track") || p.includes("/stats")) {
       if (!dbReady(env)) return json({ error: "tracking not configured" }, 501);
+      // Mutations (add/remove/sample) are admin actions — require the
+      // ADMIN_TOKEN secret. Reads (/track/list, /stats*) stay public: they
+      // expose only aggregate service quality, nothing user-specific.
+      const isMutation = p.endsWith("/track/add") || p.endsWith("/track/remove") ||
+        p.endsWith("/track/sample");
+      if (isMutation && !adminOK(req, env)) {
+        return json({ error: "admin token required" }, 403);
+      }
       await initSchema(env);
 
       if (p.endsWith("/track/list")) {

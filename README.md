@@ -191,6 +191,38 @@ allows. Without a KV binding the app still runs; reporting just returns "not
 configured". Metro stations (lines M1/M2/M3) are a static list served by the Worker at
 `/metro`; their coordinates are close approximations you can tweak in `worker.js`.
 
+## Security model
+
+There's no login, no payments, and no personal data at rest — so the blast radius is
+small by design. The controls that exist:
+
+- **No stored XSS.** Report fields (`targetName`/`lineId`) are attacker-supplyable, so
+  every value rendered into a map tooltip or list row is HTML-escaped (`esc()`). A
+  `<img onerror=…>` in a report shows as literal text, it never executes.
+- **Reports can't be forged or cancelled by others.** Each carries an anonymous
+  device token (`by`), kept in `localStorage` and **never** returned to other clients;
+  only the original reporter (or expiry) can withdraw one.
+- **Alert rules are private.** `GET /rules` requires your own `sub` token — it can only
+  return *your* rules — and `/rules/delete` checks ownership. (Earlier versions leaked
+  every user's stops and commute windows; fixed.)
+- **Tracking mutations are gated.** `/track/add|remove|sample` require the `ADMIN_TOKEN`
+  secret (header `X-Admin-Token` or `?token=`); reads stay public. See TRACKING-SETUP.md.
+- **The proxy is allow-listed.** `/api` forwards only ~15 named OASA actions, so it
+  can't be used as a general open proxy.
+- **Rate limiting.** Per-IP, in-memory limits on the write and fan-out endpoints
+  (`/reports`, `/rules`, `/scan`, `/live`, cache-bypassing `/api`) blunt a single-source
+  flood and protect the KV write quota. It's per-isolate (not globally exact) — for hard
+  guarantees, add Cloudflare WAF rate-limiting rules on the zone.
+- **Secrets stay server-side.** Only the VAPID *public* key is ever returned; D1 uses
+  parameterized queries (no SQL injection); Leaflet is self-hosted (no third-party CDN
+  code path).
+
+What an attacker *could* still do: file plausible-looking fake flags (bounded by the
+rate limit, and each expires), or — from a different Cloudflare account/IP set — spread
+load past the per-isolate limiter. Neither exposes data; the residual risk is report
+*spam/integrity*, which a Turnstile challenge on `POST /reports` would further reduce if
+you ever need it.
+
 ## Tuning
 
 In `public/index.html` → `CONFIG`: `refreshMs` (refresh interval), `listStops` (how

@@ -7,9 +7,12 @@
  * anything with a query string, anything cross-origin) goes to the network
  * every time. New endpoints are safe by default.
  */
-const SHELL = "stop-shell-v9";
-const ASSETS = ["./", "./index.html", "./manifest.webmanifest"];
-const STATIC_RE = /\.(png|jpe?g|svg|ico|css|woff2?|webmanifest)$/i;
+const SHELL = "stop-shell-v10";
+const ASSETS = ["./", "./index.html", "./manifest.webmanifest",
+  "./vendor/leaflet-1.9.4.min.css", "./vendor/leaflet-1.9.4.min.js"];
+// self-hosted, version-pinned vendor .js is now cacheable too (the app's
+// own code lives inline in index.html, so nothing dynamic matches .js here)
+const STATIC_RE = /\.(png|jpe?g|svg|ico|css|js|woff2?|webmanifest)$/i;
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
