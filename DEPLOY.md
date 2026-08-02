@@ -26,18 +26,28 @@ You should see something like `v20.x` or `v22.x`.
 
 ## 1. Get the project onto your PC
 
-Unzip `oasa-stop.zip` somewhere easy, e.g. `C:\Users\you\oasa-stop`.
+Clone the repo (needs Git — https://git-scm.com — or use GitHub Desktop / "Download ZIP"
+from the repo page):
+```powershell
+git clone https://github.com/Ian2Papadopoulos/oasucks.git
+cd oasucks
+```
 
 ## 2. Open a terminal *in that folder*
 
-Easiest: open the folder in File Explorer, then **Shift + right-click** an empty area →
+If you cloned from the command line you're already there. Otherwise open the `oasucks`
+folder in VS Code → Terminal → New Terminal, or Shift + right-click the folder →
 **"Open PowerShell window here"**.
-(Or in VS Code: File → Open Folder → pick `oasa-stop` → Terminal → New Terminal.)
 
 Install the tooling (this just pulls in `wrangler`, Cloudflare's CLI):
 ```powershell
 npm install
 ```
+
+> The `wrangler.toml` already has the KV (reports/alerts) and D1 (stats) bindings wired
+> up, so deploying to **the same Cloudflare account** these were created in just works.
+> Deploying under a *different* account? See PUSH-SETUP.md / TRACKING-SETUP.md to make
+> your own storage and swap the ids — the core arrivals app runs without either.
 
 ## 3. Log in to Cloudflare
 

@@ -1,38 +1,32 @@
 # Turning on bus alerts (push notifications)
 
-The app works fully without this. These steps add the alert engine: a cron job
-that checks live arrivals every minute and pushes a notification before your bus
-reaches your stop.
+The app works fully without this. These steps add the alert engine: a cron job that
+checks live arrivals (every minute during the day, every 5 minutes overnight) and
+pushes a notification before your bus reaches your stop.
 
-Everything below is free tier. Do it once, in your `oasa-stop` folder.
+Everything below is free tier. Do it once, in the project folder.
 
 ---
 
-## 1. Create the storage namespace
+## 1. The storage namespace (KV)
+
+Push alerts store subscriptions and rules in a KV namespace bound as `ALERTS`. The
+repo's **wrangler.toml already has this binding active**, pointing at the project's
+namespace — so if you deploy to the same Cloudflare account it was created in, you can
+**skip this step** and go straight to the keys.
+
+Only if you're deploying under a *different* account: create your own namespace and
+replace the `id` in `wrangler.toml`:
 
 ```powershell
-npx wrangler kv:namespace create ALERTS
+npx wrangler kv namespace create ALERTS   # older wrangler: kv:namespace create
 ```
 
-It prints something like:
+It prints an `id = "a1b2c3d4e5f6..."` — paste that over the existing `ALERTS` id in the
+`[[kv_namespaces]]` block of **wrangler.toml**.
 
-```
-[[kv_namespaces]]
-binding = "ALERTS"
-id = "a1b2c3d4e5f6..."
-```
-
-Copy that `id`. Open **wrangler.toml**, find the commented block at the bottom,
-uncomment the three lines and paste your id:
-
-```toml
-[[kv_namespaces]]
-binding = "ALERTS"
-id = "a1b2c3d4e5f6..."
-```
-
-> On newer wrangler the command is `npx wrangler kv namespace create ALERTS`
-> (no colon). Either form is fine — use whichever your version accepts.
+> The same `ALERTS` namespace also holds the community reports, so setting this up
+> lights up reports too, not just alerts.
 
 ## 2. Generate your signing keys
 
@@ -100,10 +94,11 @@ only get one alert per lead time.
 
 ## Costs and limits
 
-- Cron runs 1×/minute — well inside the free tier.
+- Cron runs once a minute during Athens daytime and every 5 minutes overnight
+  (`wrangler.toml` → `[triggers]`) — well inside the free tier.
 - KV free tier allows 1,000 writes/day; each alert sent writes one small key.
-- Notifications only fire while a rule's window is active, so most minutes do
-  no work at all.
+- Notifications only fire while a rule's window is active, so most runs do no work
+  at all.
 
 ## Turning it off
 

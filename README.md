@@ -1,20 +1,24 @@
-# OASUCKS — live OASA arrivals
+# OASUCKS — live OASA arrivals & community reports
 
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
-built on the unofficial OASA telematics API. Installs on Android like a native app.
+built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
+app and proxies the API. Installs on Android and iOS like a native app. **Current
+version: v22.**
 
-**New in v20.** The top bar is down to three buttons — reports ❗, alerts 🔔, and a ☰
-menu holding everything else: [look up a line](#find-a-line) and preview its route,
-a [live map](#live-buses) of the buses running around you, the EL/EN switch (moved out
-of the header), and About. Reporting a bus now requires you to be within **100 m** of
-it.
+**The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
+everything else: [look up a line](#find-a-line) and preview its route, a
+[live map](#live-buses) of the buses running around you, the EL/EN switch, and About.
 
-**Community reports.** The line-stats button is gone; in its place sits a
-red exclamation mark. Tap it and a problem map of Athens opens — only the buses and
-metro stations that currently carry a flag, red for a ticket inspector, yellow for
-anything else. Under the map, **Report an issue** lets you flag the bus you are
-actually riding (the app works out which one that is) or a metro station you are
-standing at. See [Reports](#reports-red-exclamation-mark) for the exact rules.
+**Community reports.** The old line-stats button is now the red exclamation mark. Tap
+it and a problem map of Athens opens — only the buses and metro stations that currently
+carry a flag, red for a ticket inspector, yellow for anything else. Under the map,
+**Report an issue** lets you flag the bus you are actually riding (the app works out
+which one, and you must be within **100 m** of it) or a metro station within 600 m.
+See [Reports](#reports-red-exclamation-mark) for the exact rules.
+
+> The service-stats screen (line reliability, bunching, missing trips) still exists in
+> the code and the tracking backend still collects data — the UI was retired in v18 to
+> make room for reports. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
 
 ## Files
 

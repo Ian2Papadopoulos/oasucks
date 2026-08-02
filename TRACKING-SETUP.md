@@ -1,35 +1,30 @@
 # Vehicle tracking & service stats — setup
 
-Turns your Worker into a data logger: every minute it samples the live position
+Turns your Worker into a data logger: on each cron run it samples the live position
 of buses on the lines you choose, records when each bus reaches a stop, and from
 that stream computes headway regularity, bunching, and missing trips.
 
 The app works fine without this. Stats simply report "tracking isn't configured".
 
-> **v18 note:** the line-stats screen in the app was replaced by the community
-> reports feature (the red ❗). Tracking still runs and collects data exactly as
-> described here, but its numbers are now only reachable through the Worker's
-> `/stats`, `/stats/bunching` and `/stats/missing` endpoints (curl or browser),
-> not from the UI.
+> **The stats screen is currently off in the UI.** It was retired in v18 to make room
+> for the community-reports feature (the red ❗), but all the code and the tracking
+> backend are intact — the cron still collects data. Today the numbers are read through
+> the Worker's endpoints (`/stats`, `/stats/bunching`, `/stats/missing`, and
+> `/reports/toplist`) from curl or a browser; re-enabling the in-app screen is a small
+> change (wiring `openStats()` to a menu entry) whenever you want it back.
 
 ---
 
-## ⚠️ First: don't overwrite your wrangler.toml
+## The database binding (D1)
 
-Your current `wrangler.toml` contains **your real KV namespace id** (for push
-alerts). The copy in this zip has a placeholder. So:
+Tracking (and the report-history log behind `/reports/toplist`) stores its data in a D1
+database bound as `DB`. The repo's **wrangler.toml already has this binding active**,
+pointing at the project's database — so on the same Cloudflare account it's ready to go
+and you can skip to *Start tracking* below. Tables are created automatically on first
+use; there's no migration step.
 
-- **Copy over:** `worker.js` and `public/index.html`
-- **Do NOT copy:** `wrangler.toml` — edit your existing one instead (step 2 below)
-
-If you already overwrote it, just paste your KV id back in:
-```toml
-[[kv_namespaces]]
-binding = "ALERTS"
-id = "286552a0463b4334b79d2961622a9ffe"
-```
-
----
+Only if you're deploying under a *different* account, create your own database and swap
+the id:
 
 ## 1. Create the database
 
@@ -63,18 +58,35 @@ trigger. Tables are created automatically on first use — no migration step.
 
 ## 4. Start tracking a line
 
-1. Open the app, tap **📊** in the header.
-2. Pick a route from the dropdown (it lists lines serving your nearby stops) and
-   tap **Track a line**. Choose a direction you actually care about — each
-   direction is a separate route.
-3. That's it. The cron begins sampling within a minute.
+With the in-app screen currently off, add routes through the Worker's endpoints. A
+`route_code` is a single direction of a line — get it from `/lines` then
+`getRoutesForLine`, or from the ☰ → *Find a line* preview (the code is in the request).
 
-You can track up to **8 routes**. That cap is deliberate — see limits below.
+```powershell
+# add a route (repeat for each direction you care about)
+curl -X POST https://<your-url>/track/add ^
+  -H "Content-Type: application/json" ^
+  -d "{\"route_code\":\"1873\",\"line_id\":\"608\"}"
+
+# see what's tracked and how much data has accrued
+curl https://<your-url>/track/list
+```
+
+The cron begins sampling within a minute (5 minutes overnight). You can track up to
+**8 routes** — that cap is deliberate, see limits below.
 
 ## 5. Reading the numbers
 
-Tap 📊 next to a tracked line. Metrics are measured at that route's busiest
-stop, over 7 or 30 days:
+Fetch a route's stats as JSON. Metrics are measured at that route's busiest stop, over
+`days` (7 or 30):
+
+```powershell
+curl "https://<your-url>/stats?route=1873&days=7"
+curl "https://<your-url>/stats/bunching?route=1873&days=7"
+curl "https://<your-url>/stats/missing?route=1873&days=7"
+```
+
+The `/stats` response carries the same figures the retired screen showed:
 
 | Metric | Meaning |
 |---|---|
