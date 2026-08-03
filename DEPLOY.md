@@ -108,7 +108,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v12"` to `v13` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v13"` to `v14` in `public/sw.js` and redeploy to force an update.
 
 ---
 

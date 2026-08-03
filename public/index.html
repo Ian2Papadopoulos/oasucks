@@ -91,6 +91,39 @@
   .menu-item .mi-side{margin-left:auto;color:var(--ink3);font-size:10px;letter-spacing:.1em}
   @media (prefers-reduced-motion:reduce){ .menu{animation:none} }
 
+  /* pinned stops */
+  .stop.fav{border-color:var(--toner)}
+  .stop-hd .star{color:var(--marker2);margin-right:5px;font-size:12px}
+
+  /* a single stop, glanced from search — centred card */
+  .stopcard{position:fixed;inset:0;z-index:3600;display:none;align-items:center;
+    justify-content:center;background:rgba(23,23,26,.4);padding:16px}
+  .stopcard.on{display:flex}
+  .sc-box{width:100%;max-width:440px;max-height:80vh;overflow:auto;background:var(--card);
+    border:2px solid var(--toner);border-radius:2px;
+    box-shadow:5px 5px 0 rgba(23,23,26,.18);animation:pop .16s ease-out}
+  @keyframes pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+  .sc-hd{display:flex;align-items:flex-start;gap:9px;padding:12px 13px 8px;
+    border-bottom:1px solid var(--toner);user-select:none;-webkit-user-select:none}
+  .sc-hd.press{background:var(--paper)}
+  .sc-name{flex:1;font-weight:700;font-size:13.5px;line-height:1.3;letter-spacing:.02em}
+  .sc-name .star{color:var(--marker2);margin-right:5px}
+  .sc-x{background:var(--card);border:1px solid var(--toner);color:var(--toner);
+    width:28px;height:28px;font-size:13px;cursor:pointer;flex:none;border-radius:2px}
+  .sc-meta{color:var(--ink3);font-size:10px;padding:7px 13px 0;text-transform:uppercase;
+    letter-spacing:.1em}
+  .sc-box .rows{padding-bottom:4px}
+  .sc-box .shint{padding:4px 13px 12px}
+  @media (prefers-reduced-motion:reduce){ .sc-box{animation:none} }
+
+  /* transient confirmation */
+  .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:4000;
+    background:var(--toner);color:var(--paper);padding:9px 14px;font-size:11.5px;
+    font-weight:700;letter-spacing:.04em;border-radius:2px;font-family:var(--mono);
+    max-width:86vw;text-align:center;animation:fade .2s ease-out}
+  .toast[hidden]{display:none}
+  @keyframes fade{from{opacity:0;transform:translate(-50%,6px)}to{opacity:1;transform:translateX(-50%)}}
+
   #livemap{flex:1;min-height:190px;position:relative;z-index:0;background:#EDEDEA}
   .livebus{min-width:26px;height:18px;padding:0 4px;background:var(--toner);color:var(--paper);
     font-size:9.5px;font-weight:700;display:grid;place-items:center;border-radius:2px;
@@ -459,7 +492,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v25</span></div>
+  <div class="foot"><span class="ver">v26</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -531,6 +564,18 @@
   <div id="livemap"></div>
   <div class="rp-strip" id="live-hint"></div>
 </div>
+
+<div class="stopcard" id="stopcard"><div class="sc-box">
+  <div class="sc-hd" id="sc-hd">
+    <div class="sc-name" id="sc-name">…</div>
+    <button class="sc-x" id="sc-x">✕</button>
+  </div>
+  <div class="sc-meta" id="sc-meta"></div>
+  <div class="rows" id="sc-rows"></div>
+  <div class="shint" id="sc-hint"></div>
+</div></div>
+
+<div class="toast" id="toast" hidden></div>
 
 <div class="sheet-bg" id="aboutbg"><div class="sheet">
   <h3 id="ab-h">Σχετικά</h3>
@@ -638,8 +683,12 @@ const T={
   metroNote:"Μόνο για σταθμούς σε 600 μ. από εσένα.",
   back:"← Πίσω",
   mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
-  lineH:"Αναζήτηση γραμμής",
-  lineP:"Γράψε αριθμό ή όνομα γραμμής (π.χ. 022) και δες τη διαδρομή και τις στάσεις της.",
+  favAdded:"★ Προστέθηκε στα αγαπημένα", favRemoved:"Αφαιρέθηκε από τα αγαπημένα",
+  favFull:"Έφτασες το όριο αγαπημένων", favHint:"Κράτα πατημένο το όνομα για αγαπημένο",
+  favHintOn:"Κράτα πατημένο το όνομα για αφαίρεση",
+  secLines:"Γραμμές", secStops:"Στάσεις",
+  lineH:"Αναζήτηση",
+  lineP:"Γράψε γραμμή (π.χ. 022) για τη διαδρομή της, ή όνομα στάσης/περιοχής για τις αφίξεις της.",
   linePh:"022, Α1, Σύνταγμα…", noLine:"Καμία γραμμή με αυτό το όνομα.",
   pickDir:"Διάλεξε κατεύθυνση", wholeRoute:"Όλη η διαδρομή", allStops:"Στάσεις",
   liveH:"Ζωντανά λεωφορεία", liveLoading:"Φόρτωση ζωντανών θέσεων…",
@@ -700,8 +749,12 @@ const T={
   metroNote:"Only for stations within 600 m of you.",
   back:"← Back",
   mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
-  lineH:"Find a line",
-  lineP:"Type a line number or name (e.g. 022) to preview its route and stops.",
+  favAdded:"★ Pinned to favourites", favRemoved:"Removed from favourites",
+  favFull:"Favourites are full", favHint:"Long-press the name to pin it",
+  favHintOn:"Long-press the name to unpin",
+  secLines:"Lines", secStops:"Stops",
+  lineH:"Search",
+  lineP:"Type a line (e.g. 022) for its route, or a stop/place name for its arrivals.",
   linePh:"022, A1, Syntagma…", noLine:"No line by that name.",
   pickDir:"Pick a direction", wholeRoute:"Whole route", allStops:"Stops",
   liveH:"Live buses", liveLoading:"Loading live positions…",
@@ -778,7 +831,7 @@ const PRESETS=[
 
 /* ------------------------------ state ------------------------------ */
 let here={lat:37.9755,lng:23.7348,label:null,gps:false};
-const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},radius:600,
+const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:600,
   dark:false,mapFitted:false,_mapCodes:null,rules:[],subId:null};
 let timer=null,progTimer=null,loading=false;
 
@@ -906,14 +959,17 @@ function renderView(){ state.view==="map"?renderMap():renderList(); }
 
 function renderList(){
   const list=$("#list");
-  const shown=state.stops.slice(0,CONFIG.listStops);
+  const shown=listStops();
   if(!shown.length){ list.innerHTML=`<div class="msg">${t("nobus")}</div>`; return; }
   list.innerHTML="";
   shown.forEach(s=>{
     const w=walkMin(s.dist);
-    const card=document.createElement("div"); card.className="stop";
-    card.innerHTML=`<div class="stop-hd"><div class="name">${esc(stopName(s))}</div>
-      <div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}<span class="num">${fmtDist(s.dist)}</span></div></div>`;
+    const fav=isFav(s.code);
+    const card=document.createElement("div"); card.className="stop"+(fav?" fav":"");
+    card.innerHTML=`<div class="stop-hd"><div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}</div>
+      <div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}<span class="num">${isFinite(s.dist)?fmtDist(s.dist):""}</span></div></div>`;
+    // long-press the stop header to pin / unpin it
+    onLongPress(card.querySelector(".stop-hd"),()=>toggleFav(s));
     const rows=document.createElement("div"); rows.className="rows";
     if(!s.arrLoaded){ rows.innerHTML='<div class="skel"></div><div class="skel"></div>'; }
     else if(!s.arrivals.length){ rows.innerHTML=`<div class="empty">${t("nobus")}</div>`; }
@@ -1030,6 +1086,70 @@ function samplePoints(lat,lng,r){
   const d=r*0.62, dLat=d/111320, dLng=d/(111320*Math.cos(lat*Math.PI/180));
   return [[lat,lng],[lat+dLat,lng],[lat-dLat,lng],[lat,lng+dLng],[lat,lng-dLng]];
 }
+/* ---------------------------- favourites ---------------------------
+ * Long-press a stop to pin it. Pinned stops sort to the top of the list
+ * and keep a ★. We store the whole stop (name + coords), not just the
+ * code, so a favourite OUT of range can still be shown — its arrivals
+ * are fetched separately, which is the point: your home stop while
+ * you're at work. Capped, because each out-of-range favourite costs a
+ * couple of requests per refresh. */
+const FAV_KEY="favStops", FAV_MAX=6;
+let favs=[];
+try{ const v=JSON.parse(localStorage.getItem(FAV_KEY)||"[]");
+  if(Array.isArray(v)) favs=v.filter(f=>f&&f.code).slice(0,FAV_MAX); }catch(_){}
+function saveFavs(){ try{ localStorage.setItem(FAV_KEY,JSON.stringify(favs)); }catch(_){} }
+function isFav(code){ return favs.some(f=>String(f.code)===String(code)); }
+function toggleFav(s){
+  const code=String(s.code);
+  if(isFav(code)){ favs=favs.filter(f=>String(f.code)!==code); }
+  else{
+    if(favs.length>=FAV_MAX){ toast(t("favFull")); return; }
+    favs.push({code,name_el:s.name_el||"",name_en:s.name_en||"",
+      street:s.street||"",lat:Number(s.lat),lng:Number(s.lng)});
+  }
+  saveFavs();
+  if(navigator.vibrate) try{ navigator.vibrate(18); }catch(_){}
+  toast(isFav(code)?t("favAdded"):t("favRemoved"));
+  renderView();
+  if($("#stopcard").classList.contains("on")) renderStopCard();
+}
+/* The list: favourites first (in the order pinned), then the nearest
+   stops. A favourite that isn't in range is carried in from `favLive`. */
+function listStops(){
+  const byCode={};
+  (state.stops||[]).forEach(s=>{ byCode[String(s.code)]=s; });
+  const pinned=[];
+  favs.forEach(f=>{
+    const live=byCode[String(f.code)]||state.favLive[String(f.code)];
+    if(live) pinned.push(live);
+  });
+  const rest=(state.stops||[]).filter(s=>!isFav(s.code));
+  return pinned.concat(rest).slice(0,CONFIG.listStops+pinned.length);
+}
+/* Fetch arrivals for favourites the nearby sweep didn't return. */
+async function loadFarFavs(){
+  if(!favs.length) return;
+  const have={}; (state.stops||[]).forEach(s=>{ have[String(s.code)]=1; });
+  const missing=favs.filter(f=>!have[String(f.code)]);
+  if(!missing.length) return;
+  await withLimit(missing.map(f=>async()=>{
+    const key=String(f.code);
+    let s=state.favLive[key];
+    if(!s){
+      s={code:key,name_el:f.name_el,name_en:f.name_en,street:f.street||"",
+        lat:Number(f.lat),lng:Number(f.lng),dist:NaN,
+        lines:[],routes:[],routeMap:{},arrivals:[],routesLoaded:false,arrLoaded:false};
+      state.favLive[key]=s;
+    }
+    if(isFinite(here.lat)&&isFinite(s.lat)) s.dist=haversine(here.lat,here.lng,s.lat,s.lng);
+    try{
+      if(!s.routesLoaded) await loadRoutes(s);
+      await loadArrivals(s);
+    }catch(_){}
+  }),3);
+  renderView();
+}
+
 /* ---------------------- dead stops (no lines) ----------------------
  * A stop nobody serves any more should vanish for good. The server keeps
  * the shared list, but it only probes a few unknown stops per request —
@@ -1115,6 +1235,7 @@ async function loadStopsBatch(){
   });
   state._mapCodes=null;
   updateRadiusLabel(); renderView();
+  loadFarFavs();
 }
 
 async function loadStops(){
@@ -1155,6 +1276,7 @@ async function loadStopsLegacy(){
       if(m&&m.isPopupOpen&&m.isPopupOpen()&&!need.includes(s)) need.push(s); });
     await withLimit(need.map(s=>()=>loadArrivals(s)),4);
     renderView(); updateRadiusLabel();
+    loadFarFavs();
 }
 
 /* Polling pauses when the tab is hidden — a forgotten tab used to keep
@@ -2024,6 +2146,58 @@ document.addEventListener("click",e=>{
   toggleMenu(false);
 });
 
+/* ------------------------- toast + stop card ---------------------- */
+let toastTimer=null;
+function toast(msg){
+  const el=$("#toast"); if(!el||!msg) return;
+  el.textContent=msg; el.hidden=false;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{ el.hidden=true; },1900);
+}
+
+/* One stop, centred, with the same arrival rows as the list — opened
+   from search so you can glance at it without walking there. Long-press
+   its name to pin it, exactly like in the list. */
+let cardStop=null;
+function openStopCard(s){
+  cardStop=s;
+  $("#stopcard").classList.add("on");
+  renderStopCard();
+  (async()=>{                       // fill in whatever we don't have yet
+    try{
+      if(!s.routesLoaded) await loadRoutes(s);
+      await loadArrivals(s);
+    }catch(_){}
+    if(cardStop===s) renderStopCard();
+  })();
+}
+function closeStopCard(){ $("#stopcard").classList.remove("on"); cardStop=null; }
+function renderStopCard(){
+  const s=cardStop; if(!s) return;
+  const fav=isFav(s.code);
+  $("#sc-name").innerHTML=(fav?'<span class="star">★</span>':"")+esc(stopName(s));
+  const w=walkMin(s.dist);
+  $("#sc-meta").textContent=[isFinite(s.dist)?fmtDist(s.dist):"",
+    w?`🚶 ~${w}′`:""].filter(Boolean).join(" · ");
+  const rows=$("#sc-rows");
+  if(!s.arrLoaded){ rows.innerHTML='<div class="skel"></div><div class="skel"></div>'; }
+  else if(!s.arrivals.length){ rows.innerHTML=`<div class="empty">${t("nobus")}</div>`; }
+  else{
+    rows.innerHTML="";
+    s.arrivals.slice(0,CONFIG.maxRows).forEach(a=>{
+      const now=a.min<=1,d=arrDest(s,a.code);
+      const row=document.createElement("div"); row.className="row";
+      row.innerHTML=`<div class="tile num">${esc(String(arrLine(s,a.code)))}</div>
+        <div class="dest">${d?`<span class="to">${t("to")}</span>${esc(d)}`:""}${flagLine(reportForArrival(a))}</div>
+        <div class="eta ${now?"now":""}">${now?`<span class="v">${t("now")}</span>`
+          :`<span class="v num">${a.min}</span><span class="u">${t("min")}</span>`}</div>`;
+      onLongPress(row,()=>{ closeStopCard(); openRoutePreview(s,String(a.code),a.min); });
+      rows.appendChild(row);
+    });
+  }
+  $("#sc-hint").textContent=fav?t("favHintOn"):t("favHint");
+}
+
 /* ------------------------ line lookup ------------------------------ */
 async function loadLines(){
   if(state.lines&&state.lines.length) return state.lines;
@@ -2069,21 +2243,86 @@ function matchLines(lines,q){
     .sort((a,b)=>a.r-b.r||String(a.l.id).localeCompare(String(b.l.id),undefined,{numeric:true}))
     .slice(0,25).map(x=>x.l);
 }
+/* One field, two kinds of answer: lines (matched against the cached
+   catalogue) and stops. OASA has no stop-name search, so stops come from
+   the Worker's /stops/search, which geocodes the query and returns the
+   stops around that place — plus anything matching among the stops
+   already loaded around you, which needs no request at all. */
+function localStopMatches(q){
+  const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const n=norm(q);
+  if(!n) return [];
+  const pool=(state.stops||[]).concat(Object.values(state.favLive||{}));
+  const seen={},out=[];
+  pool.forEach(s=>{
+    const key=String(s.code);
+    if(seen[key]) return;
+    if(norm(s.name_el).includes(n)||norm(s.name_en).includes(n)||norm(s.street).includes(n)){
+      seen[key]=1; out.push(s);
+    }
+  });
+  return out.sort((a,b)=>(a.dist||0)-(b.dist||0)).slice(0,6);
+}
 async function doLineSearch(){
   const box=$("#lnres"), q=$("#lnq").value;
   if(!q.trim()) return;
   box.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
+
   const lines=await loadLines();
-  const hits=matchLines(lines,q);
-  if(!hits.length){ box.innerHTML=`<div class="res-msg">${t("noLine")}</div>`; return; }
+  const lineHits=matchLines(lines,q);
+  const localStops=localStopMatches(q);
+
+  let remoteStops=[];
+  if(hasBackend()){
+    try{
+      const r=await fetch(`${base()}/stops/search?q=${encodeURIComponent(q)}`,{cache:"no-store"});
+      if(r.ok){ const j=await r.json(); remoteStops=Array.isArray(j.stops)?j.stops:[]; }
+    }catch(_){}
+  }
+  // de-dupe: a stop we already hold locally wins (it has live arrivals)
+  const haveLocal={}; localStops.forEach(s=>{ haveLocal[String(s.code)]=1; });
+  const stopHits=localStops.concat(remoteStops.filter(s=>!haveLocal[String(s.code)]))
+    .slice(0,8);
+
+  if(!lineHits.length&&!stopHits.length){
+    box.innerHTML=`<div class="res-msg">${t("noLine")}</div>`; return;
+  }
   box.innerHTML="";
-  hits.forEach(l=>{
+  if(lineHits.length){
+    const h=document.createElement("div"); h.className="sec-label";
+    h.textContent=t("secLines"); box.appendChild(h);
+  }
+  lineHits.forEach(l=>{
     const b=document.createElement("button"); b.className="res";
-    const d=destOf(LANG==="en"?(l.en||l.el):(l.el||l.en));
     b.innerHTML=`<b class="num">${esc(l.id)}</b> · ${esc((LANG==="en"?(l.en||l.el):(l.el||l.en))||"")}`;
     b.onclick=()=>pickLineDirection(l);
     box.appendChild(b);
   });
+  if(stopHits.length){
+    const h=document.createElement("div"); h.className="sec-label";
+    h.textContent=t("secStops"); box.appendChild(h);
+  }
+  stopHits.forEach(raw=>{
+    const s=adoptStop(raw);
+    const b=document.createElement("button"); b.className="res";
+    b.innerHTML=`${isFav(s.code)?'<span class="star">★</span> ':""}🚏 ${esc(stopName(s))}`
+      +(isFinite(s.dist)?` <span style="color:var(--ink3)">· ${fmtDist(s.dist)}</span>`:"");
+    b.onclick=()=>{ closeLineSearch(); openStopCard(s); };
+    box.appendChild(b);
+  });
+}
+/* Turn a search result into a full stop object we can load arrivals
+   into — reusing the live one if we already track that code. */
+function adoptStop(raw){
+  const key=String(raw.code);
+  const existing=(state.stops||[]).find(s=>String(s.code)===key)||state.favLive[key];
+  if(existing) return existing;
+  const s={code:key,name_el:raw.name_el||"",name_en:raw.name_en||"",street:raw.street||"",
+    lat:Number(raw.lat),lng:Number(raw.lng),
+    dist:(isFinite(raw.lat)&&isFinite(here.lat))?haversine(here.lat,here.lng,Number(raw.lat),Number(raw.lng)):NaN,
+    lines:[],routes:[],routeMap:{},arrivals:[],routesLoaded:false,arrLoaded:false};
+  state.favLive[key]=s;      // keep it around so favouriting works
+  return s;
 }
 /* A line has two directions (and sometimes more variants); each is its
    own route code, and a route code is what the preview needs. */
@@ -2173,7 +2412,7 @@ function openAbout(){
   $("#ab-h").textContent=t("aboutH");
   $("#ab-body").innerHTML=`<div class="ab">${t("aboutBody")}
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
-    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v25</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v26</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -2456,6 +2695,9 @@ $("#lnq").addEventListener("keydown",e=>{ if(e.key==="Enter") doLineSearch(); })
 $("#linebg").onclick=e=>{ if(e.target.id==="linebg") closeLineSearch(); };
 $("#aboutbg").onclick=e=>{ if(e.target.id==="aboutbg") closeAbout(); };
 $("#live-x").onclick=closeLiveMap;
+$("#sc-x").onclick=closeStopCard;
+$("#stopcard").onclick=e=>{ if(e.target.id==="stopcard") closeStopCard(); };
+onLongPress($("#sc-hd"),()=>{ if(cardStop) toggleFav(cardStop); });
 $("#live-r").onclick=loadLive;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;

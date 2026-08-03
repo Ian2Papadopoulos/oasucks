@@ -10,6 +10,8 @@
  *  GET  /rules?sub=ID           → list alert rules
  *  POST /rules                  → create/update an alert rule
  *  POST /rules/delete           → delete an alert rule
+ *  GET  /health                 → liveness; +admin token = usage summary
+ *  GET  /stops/search?q=        → find stops by place/stop name
  *  GET  /alerts/windows         → when alerts need the cron (admin)
  *  POST /admin/reports/purge    → wipe reports / history rows (admin)
  *  POST /stops/dead             → verify+record a stop that has no lines
@@ -26,6 +28,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
+const APP_VERSION = "v26";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -513,13 +516,20 @@ async function runAlerts(env) {
           return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
         })();
 
+        // Which lead is actually firing: the tightest one still unsent.
+        // It goes in the TAG, because a notification reusing an existing
+        // tag REPLACES it — and phones commonly do that update silently.
+        // With one tag per rule+vehicle only the first of a 15/10/5 set
+        // ever rang; per-lead tags make each one its own notification.
+        const firingLead = Math.min(...unsent.map(([, L]) => L));
         try {
           const sub = await env.ALERTS.get(`sub:${rule.sub}`, "json");
           if (sub) {
             await sendPush(sub, {
               title: `${rule.lineId || "Λεωφορείο"} σε ${min}′`,
               body: `${rule.stopName || ""}${rule.routeName ? " · " + rule.routeName : ""} — άφιξη ~${etaClock}`,
-              tag: `${rule.id}:${veh}`,
+              tag: `${rule.id}:${veh}:${firingLead}`,
+              lead: firingLead,
               url: "./",
             }, env);
           }
@@ -1649,6 +1659,122 @@ export default {
       slSet(known, code, r.lines.length, nowS);
       if (ctx) ctx.waitUntil(saveStopLines(env));
       return json({ code, dead: r.lines.length === 0, lines: r.lines.length });
+    }
+
+    /* Usage at a glance, so you don't have to dig through the Cloudflare
+       dashboard. Unauthenticated it's a bare liveness ping (safe for an
+       uptime monitor); with the admin token it reports the numbers that
+       actually decide when you'd need to pay — reports drive KV writes,
+       which is the ceiling that gives way first. */
+    if (p.endsWith("/health")) {
+      const full = adminOK(req, env);
+      const nowS = Math.floor(Date.now() / 1000);
+      const out = { ok: true, version: APP_VERSION, time: nowS };
+      if (!full) return json(out);
+
+      out.bindings = { kv: !!env.ALERTS, d1: !!env.DB,
+        push: pushReady(env), admin: true, selfTuneCron: !!(env.CF_API_TOKEN && env.CF_ACCOUNT_ID) };
+
+      if (env.ALERTS) {
+        try {
+          const active = await readReports(env, nowS);
+          out.reports = { activeNow: active.length,
+            red: active.filter(r => r.type === "inspector").length };
+        } catch (_) { }
+        try {
+          const rules = (await readRules(env)).filter(r => r && r.enabled !== false);
+          const w = windowsOf(rules);
+          out.alerts = { rules: rules.length, cronSuggestion: cronFor(w),
+            estimatedCronRunsPerDay: w.length ? estimateRuns(cronFor(w)) : 0 };
+        } catch (_) { }
+        try {
+          const known = await loadStopLines(env);
+          out.deadStopIndex = known.size;
+        } catch (_) { }
+      }
+
+      if (dbReady(env)) {
+        try {
+          await initSchema(env);
+          const d1 = await env.DB.prepare(
+            `SELECT COUNT(*) total,
+                    SUM(CASE WHEN ts > ? THEN 1 ELSE 0 END) day,
+                    SUM(CASE WHEN ts > ? THEN 1 ELSE 0 END) week
+             FROM report_log`).bind(nowS - 86400, nowS - 7 * 86400).first();
+          const tr = await env.DB.prepare("SELECT COUNT(*) n FROM tracked_route").first();
+          const ev = await env.DB.prepare(
+            "SELECT COUNT(*) n FROM stop_event WHERE ts > ?").bind(nowS - 86400).first();
+          out.history = { reportsLogged: (d1 && d1.total) || 0,
+            last24h: (d1 && d1.day) || 0, last7d: (d1 && d1.week) || 0 };
+          out.tracking = { routes: (tr && tr.n) || 0, eventsLast24h: (ev && ev.n) || 0 };
+        } catch (_) { }
+      }
+
+      /* The number that matters: every report is one KV write, and the
+         free plan allows 1,000/day. Everything else has far more slack. */
+      const writes = (out.history && out.history.last24h) || 0;
+      out.freePlanUsage = {
+        kvWritesLast24h: writes, kvWriteLimitPerDay: 1000,
+        kvWritesPercent: Math.round(writes / 10),
+        note: writes > 700 ? "approaching the KV write ceiling — see README (move reports to D1)"
+          : "comfortable",
+      };
+      return json(out);
+    }
+
+    /* Search stops by name anywhere in Athens. OASA has no stop-name
+       search, so we geocode the query (Nominatim, same path the address
+       search already uses) and ask for the stops around that point —
+       two cached calls, no index to build or keep fresh. */
+    if (p.endsWith("/stops/search")) {
+      const q = (url.searchParams.get("q") || "").trim();
+      if (!q) return json({ stops: [] });
+      if (!rateLimit(ip, "stopsearch", 30, 60)) return tooMany();
+
+      const ck = `https://stopsearch/?q=${encodeURIComponent(q.toLowerCase())}`;
+      const cache = caches.default;
+      const hit = await cache.match(new Request(ck));
+      if (hit) return withCors(hit);
+
+      let pt = null;
+      for (const cand of geocodeCandidates(q)) {
+        const data = await getJSON(nominatimSearchUrl(cand, "el"), GEO_CACHE);
+        if (Array.isArray(data) && data.length) {
+          pt = { lat: Number(data[0].lat), lng: Number(data[0].lon),
+            label: data[0].display_name || cand };
+          break;
+        }
+      }
+      if (!pt || !isFinite(pt.lat)) return json({ stops: [], place: null });
+
+      const raw = await getJSON(
+        `${OASA}?act=getClosestStops&p1=${pt.lat}&p2=${pt.lng}`, ACT_TTL.getClosestStops);
+      const norm = s => String(s || "").toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const needle = norm(q);
+      let stops = (Array.isArray(raw) ? raw : []).map(s => {
+        const la = Number(pickField(s, "StopLat", "StopY", "stop_lat"));
+        const ln = Number(pickField(s, "StopLng", "StopX", "stop_lng"));
+        return {
+          code: String(pickField(s, "StopCode", "StopID", "stop_code") || ""),
+          name_el: pickField(s, "StopDescr", "StopDescrEng") || "",
+          name_en: pickField(s, "StopDescrEng", "StopDescr") || "",
+          street: pickField(s, "StopStreet", "StopStreetEng") || "",
+          lat: la, lng: ln,
+          dist: (isFinite(la) && isFinite(ln)) ? hav(pt.lat, pt.lng, la, ln) : Infinity,
+        };
+      }).filter(s => s.code && isFinite(s.dist));
+      // a stop actually named like the query wins over merely nearby ones
+      stops.forEach(s => { s.named = norm(s.name_el).includes(needle) || norm(s.name_en).includes(needle); });
+      stops.sort((a, b) => (b.named ? 1 : 0) - (a.named ? 1 : 0) || a.dist - b.dist);
+      stops = stops.slice(0, 12);
+
+      const res = new Response(JSON.stringify({ place: pt.label, origin: { lat: pt.lat, lng: pt.lng }, stops }), {
+        headers: { "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "public, max-age=3600", ...CORS },
+      });
+      await cache.put(new Request(ck), res.clone());
+      return res;
     }
 
     if (p.endsWith("/lines")) return handleLines();

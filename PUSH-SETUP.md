@@ -76,8 +76,11 @@ The output should now mention the KV binding and the cron trigger.
    again when it's 5 minutes from that stop, but only for buses predicted to
    arrive inside your window, and only on the days you chose.
 
-Alerts are deduplicated per vehicle, so one bus gives you one notification per
-lead time — not one every minute.
+Alerts are deduplicated per vehicle **per lead time**, so one bus gives you one
+notification per lead — not one every minute — and a 15/10/5 set arrives as three
+separate notifications that each alert you. (Before v26 all three shared one
+notification tag, so the later ones silently *replaced* the first in the tray instead
+of ringing.)
 
 ---
 

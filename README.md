@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v25.**
+version: v26.**
 
 **The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
 everything else: [look up a line](#find-a-line) and preview its route, a
@@ -89,6 +89,11 @@ JSON to host at `/.well-known/assetlinks.json`.
 2. Auto-refreshes every 30s (the thin progress bar up top is the countdown), pulling
    fresh arrivals *and* the current report flags together.
 
+**Favourites:** long-press a stop's header in the list to pin it — it gets a ★ and
+sorts to the top, and stays there across refreshes. A pinned stop that's out of range
+is still shown (its arrivals are fetched separately), which is the point: your home
+stop while you're at work. Long-press again to unpin; up to 6, kept in `localStorage`.
+
 **Switching views:** the Λίστα / Χάρτης tabs, or **swipe left for the map, right for the
 list**. On the map the swipe has to start at the left edge, since Leaflet owns dragging
 everywhere else; swipes are ignored while a sheet or full-screen panel is open.
@@ -106,9 +111,9 @@ if line-mapping fails it degrades to the route code and still shows the countdow
 Everything that isn't "what's coming to my stop" lives behind the hamburger, so the
 header stays down to the two things you tap in a hurry (reports and alerts).
 
-### Find a line
+### Search — lines *and* stops
 
-Type a line number or name — `22` finds **022** before **220**, because matching is
+One field, two kinds of answer. Type a line number or name — `22` finds **022** before **220**, because matching is
 ranked exact → prefix → substring → description text. Pick a line, pick a direction,
 and you get the same route preview as long-pressing a line in the arrivals list: the
 route drawn over Athens streets, every stop on it, and the buses currently running it.
@@ -117,6 +122,14 @@ instead of just the stretch ahead of you, and the strip lists all its stops.
 
 The line catalogue comes from the Worker's `/lines` (cached a day); directions come
 from `getRoutesForLine`.
+
+The same query also returns **stops**. OASA has no stop-name search, so `/stops/search`
+geocodes the query (Nominatim — the path the address search already uses) and returns
+the stops around that place, ranked so a stop actually *named* like the query beats one
+that's merely nearby; stops already loaded around you match instantly with no request at
+all. Picking one opens a **card in the centre of the screen** with its live arrivals in
+the same style as the list — long-press the stop's name there to pin it, and long-press
+an arrival row for the route preview.
 
 ### Live buses
 
@@ -202,6 +215,18 @@ same rules as the UI: only `bus` and `metro` categories, and only the types each
 allows. Without a KV binding the app still runs; reporting just returns "not
 configured". Metro stations (lines M1/M2/M3) are a static list served by the Worker at
 `/metro`; their coordinates are close approximations you can tweak in `worker.js`.
+
+## Checking usage without the dashboard
+
+```powershell
+curl "https://<your-url>/health?token=YOUR_ADMIN_TOKEN"
+```
+
+Reports which bindings are live, how many reports are active, how many were filed in
+the last 24 h / 7 d, tracked routes, and — the number that actually matters —
+`kvWritesLast24h` against the free plan's 1,000/day, since every report is one KV write
+and that's the ceiling that gives way first. Without the token it's a bare
+`{ok, version, time}` liveness ping, safe to point an uptime monitor at.
 
 ## Clearing bad reports (e.g. after testing)
 
