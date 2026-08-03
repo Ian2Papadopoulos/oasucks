@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v22.**
+version: v25.**
 
 **The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
 everything else: [look up a line](#find-a-line) and preview its route, a
@@ -151,22 +151,25 @@ The issue menu changes with the category, so a metro station only ever offers
 You can't pick a line off a list any more — the app has to identify the vehicle you're
 sitting in, which is hard downtown where six buses share one jam. It runs two passes:
 
-1. **Proximity.** Every live vehicle on the lines serving the stops around you, kept
-   only if it's within **100 m** of your GPS fix, ranked nearest-first. That's tight
-   enough that a bus you're merely watching go past usually won't qualify. Because both
-   your fix and the bus's telematics ping are noisy estimates, the acceptance radius
-   stretches by the phone's own reported GPS error (capped at +100 m) — otherwise the
-   bus you are literally sitting in gets rejected on a bad fix. The scan itself is a
-   single request: the Worker's `/scan?lat=&lng=` endpoint does the whole fan-out at
-   the edge (the phone used to make ~14 separate calls) and caches the result 10 s per
-   ~110 m cell, so riders scanning on the same bus share one answer.
-2. **Co-movement.** A second position sample ~6 s later. If you're on board, your GPS
-   and the bus move the same way — similar heading, similar distance covered — and the
-   gap between you stays small. Those get marked **"moving with you"** and jump to the
-   top of the list. If nobody moved (bus stuck at a light, no GPS change), the pass
-   stays quiet and plain proximity order holds. This pass re-fetches only the routes
-   of the surviving candidates (1–3 calls, cache-bypassed so the positions are
-   genuinely fresh), not the full set.
+1. **Reach.** Every live vehicle on the lines serving the stops around you. Standing
+   still the gate is the **100 m** rule. *While you're moving it widens* — by exactly how
+   far a bus travels during the feed's staleness (speed × ~40 s, capped at 900 m),
+   because a moving bus's reported position lags reality by that much. Without this the
+   vehicle you are sitting in falls outside 100 m and never appears, while a bus parked
+   at the kerb — whose stale fix has caught up with reality — does.
+2. **Velocity.** A second sample ~6 s later, and this is where the decision is made. A
+   stale feed shifts a bus's *position* but not its *velocity*: if you're on board, your
+   velocity and the bus's are the same vector even when the reported positions are 300 m
+   apart. So heading and pace agreement identify your bus precisely where distance
+   fails. The remaining gap is then split into **along-track** (how far the bus is
+   "behind itself" — what staleness looks like) and **cross-track** (sideways — what a
+   *different street* looks like); a big cross-track offset disqualifies a bus no matter
+   how well its speed matches. The along-track figure also gives the fix's age, so the
+   bus can be dead-reckoned forward to where it actually is now.
+
+   If nothing is moving — bus at a light, you on foot — there's no velocity to compare,
+   so the app stays quiet and leaves plain proximity ranking alone rather than inventing
+   a verdict.
 
 You always confirm with a tap — the app ranks, it never picks for you. If no bus is
 within range it says so and refuses the report rather than guessing.

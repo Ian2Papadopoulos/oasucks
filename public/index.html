@@ -459,7 +459,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v24</span></div>
+  <div class="foot"><span class="ver">v25</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1466,9 +1466,18 @@ function stopCycle(quiet){
    actually sees from a seat; a metro station only ever gets inspectors. */
 const TYPES_BY_KIND={ bus:["breakdown","crowded","inspector"], metro:["inspector"] };
 /* You may only flag the vehicle you are inside, or a station you are
-   standing at — these two numbers are what "inside" and "at" mean. */
+   standing at — these numbers are what "inside" and "at" mean.
+   busRadius is the STANDING-STILL rule; while you're moving it widens by
+   how far a bus travels during the feed's staleness (see reachRadius). */
 const ONBOARD={ busRadius:100, metroRadius:600, maxRoutes:14,
-  refineMs:6000, minMove:20 };
+  refineMs:6000, minMove:20,
+  staleS:40,          // assumed worst-case age of an OASA position fix
+  maxRadius:900,      // never widen past this, however fast we're going
+  moveMs:2,           // m/s above which we treat the rider as "in traffic"
+  cosOK:0.75,         // heading agreement for "moving with you"
+  paceOK:0.6,         // slower/faster ratio that still counts as the same
+  crossMax:80,        // sideways offset that still counts as the same street
+  maxStaleS:75 };     // most staleness we'll believe when inferring a fix's age
 const isRed=r=>r.type==="inspector";
 function agoTxt(sec){
   const m=Math.max(0,Math.round(sec/60));
@@ -1641,45 +1650,62 @@ function repBadge(){
  *     If nobody moved, the pass simply says nothing and proximity order
  *     stands.
  * ------------------------------------------------------------------ */
-async function sampleBuses(at){
+/* Returns {generated, buses[]} — the timestamp matters: the first sample
+   may come from the Worker's 10 s cache, so measuring velocity against
+   wall-clock would understate it. opts.fresh bypasses that cache and
+   opts.routes narrows the fan-out to the candidates we care about. */
+async function sampleBuses(at,opts){
   const pos=at||here;
+  const o=opts||{};
   await ensureMode();
-  /* One request: the Worker does the whole fan-out at the edge and
-     riders scanning near each other share the (10 s) cached answer. */
   if(hasBackend()){
     try{
-      const r=await fetch(`${base()}/scan?lat=${pos.lat.toFixed(5)}&lng=${pos.lng.toFixed(5)}`,
-        {cache:"no-store"});
+      let u=`${base()}/scan?lat=${pos.lat.toFixed(5)}&lng=${pos.lng.toFixed(5)}`;
+      if(o.fresh) u+="&fresh=1";
+      if(o.routes&&o.routes.length) u+="&routes="+encodeURIComponent(o.routes.join(","));
+      const r=await fetch(u,{cache:"no-store"});
       if(r.ok){
         const j=await r.json();
-        return (Array.isArray(j.buses)?j.buses:[]).map(b=>({
-          veh:String(b.veh),route:b.route||{},lat:Number(b.lat),lng:Number(b.lng)}));
+        return { generated:Number(j.generated)||Date.now()/1000,
+          buses:(Array.isArray(j.buses)?j.buses:[]).map(b=>({
+            veh:String(b.veh),route:b.route||{},lat:Number(b.lat),lng:Number(b.lng),
+            ts:Number(b.ts)||null })) };
       }
     }catch(_){}
   }
   // no backend: the old phone-side fan-out
-  const routes=[];
+  let routes=[];
   (state.stops||[]).forEach(s=>(s.routes||[]).forEach(r=>{
     if(!routes.some(x=>x.code===r.code)) routes.push(r); }));
+  if(o.routes&&o.routes.length) routes=routes.filter(r=>o.routes.includes(String(r.code)));
   const out=[];
   await withLimit(routes.slice(0,ONBOARD.maxRoutes).map(r=>async()=>{
-    const buses=await oasa("getBusLocation",r.code).catch(()=>null);
+    const buses=await oasa("getBusLocation",r.code,null,!!o.fresh).catch(()=>null);
     (Array.isArray(buses)?buses:[]).forEach(v=>{
       const veh=String(pick(v,"VEH_NO","veh_no","VEH_CODE")||"");
       const la=Number(pick(v,"CS_LAT","cs_lat")), ln=Number(pick(v,"CS_LNG","cs_lng"));
       if(!veh||!isFinite(la)||!isFinite(ln)) return;
-      out.push({veh,route:r,lat:la,lng:ln});
+      out.push({veh,route:r,lat:la,lng:ln,ts:null});
     });
   }),6);
-  return out;
+  return { generated:Date.now()/1000, buses:out };
 }
+/* Also carries speed/heading when the device reports them (phones do
+   while actually moving) and the fix's own timestamp — both feed the
+   staleness maths below. */
 function myPosition(){
   return new Promise(res=>{
-    if(!navigator.geolocation) return res({lat:here.lat,lng:here.lng,acc:999});
+    const fallback={lat:here.lat,lng:here.lng,acc:999,speed:null,heading:null,t:Date.now()/1000};
+    if(!navigator.geolocation) return res(fallback);
     navigator.geolocation.getCurrentPosition(
       p=>{ rememberPos(p);
-        res({lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy||0}); },
-      ()=>res({lat:here.lat,lng:here.lng,acc:999}),
+        const c=p.coords;
+        res({lat:c.latitude,lng:c.longitude,acc:c.accuracy||0,
+          speed:(isFinite(c.speed)&&c.speed>=0)?c.speed:null,
+          heading:(isFinite(c.heading)&&c.heading>=0)?c.heading:null,
+          t:(p.timestamp?p.timestamp/1000:Date.now()/1000)});
+      },
+      ()=>res(fallback),
       {enableHighAccuracy:true,timeout:6000,maximumAge:0});
   });
 }
@@ -1694,55 +1720,135 @@ function cosAngle(u,v){
   const l=len(u)*len(v);
   return l?((u[0]*v[0]+u[1]*v[1])/l):0;
 }
-/* The 100 m rule is against TRUE distance, but we only see two noisy
-   estimates of it: your GPS fix (tens of metres off in a street canyon)
-   and the bus's telematics ping (updated every ~20s, so a moving bus
-   reads where it was, not where it is). A hard 100 m cutoff on top of
-   that noise rejects buses you are literally sitting in — so the
-   acceptance radius stretches by the phone's own reported GPS error
-   (capped at +100 m). Ranking is still nearest-first, and the
-   co-movement pass then separates "in it" from "next to it". */
+/* The 100 m rule is against TRUE distance, but we only ever see two
+   noisy estimates of it:
+     · your GPS fix — tens of metres off in a street canyon;
+     · the bus's telematics ping — refreshed every ~20-40 s, so a MOVING
+       bus reports where it was, not where it is.
+   That second error is the killer. At 30 km/h a 35 s-old fix sits ~290 m
+   behind the bus, so the vehicle you are sitting in falls outside a
+   100 m gate and never appears — while a bus stopped at the kerb, whose
+   stale position has caught up with reality, does. Hence:
+
+     while you are moving, the gate widens by exactly how far a bus
+     travels during that staleness, and the decision of which candidate
+     is YOURS is made on velocity, not distance (see matchBuses).
+
+   Standing still the gate stays ~100 m, so the product rule — you can't
+   flag a bus you're merely watching go past — is unchanged. */
+function reachRadius(pos){
+  const acc=Math.min(100,Math.max(0,(pos&&pos.acc)||0));
+  const spd=Math.max(0,(pos&&pos.speed)||0);
+  const slack=spd>ONBOARD.moveMs ? spd*ONBOARD.staleS : 0;
+  return Math.min(ONBOARD.maxRadius, ONBOARD.busRadius+acc+slack);
+}
+// kept for the metro path and any older call sites
 function acceptRadius(acc){ return ONBOARD.busRadius+Math.min(100,Math.max(0,acc||0)); }
 async function findMyBus(){
   const p0=await myPosition();
-  const first=await sampleBuses(p0);
+  const scan=await sampleBuses(p0);
   const near={};
-  const lim=acceptRadius(p0.acc);
-  first.forEach(c=>{
+  const lim=reachRadius(p0);
+  (scan.buses||[]).forEach(c=>{
     const d=haversine(c.lat,c.lng,p0.lat,p0.lng);
     if(d>lim) return;
     // the same vehicle can surface on two route variants — keep the closest
-    if(!near[c.veh]||d<near[c.veh].d) near[c.veh]={...c,d,p0:{lat:c.lat,lng:c.lng}};
+    if(!near[c.veh]||d<near[c.veh].d){
+      near[c.veh]={...c,d,p0:{lat:c.lat,lng:c.lng},t0:c.ts||scan.generated};
+    }
   });
-  return { p0, list:Object.values(near).sort((a,b)=>a.d-b.d) };
+  return { p0, t0:scan.generated, list:Object.values(near).sort((a,b)=>a.d-b.d) };
 }
-async function refineMyBus(cands,p0){
+
+/* Second look, ~6 s later. This is where the real decision happens.
+ *
+ * The insight: a stale feed shifts a bus's REPORTED POSITION, but not
+ * its VELOCITY. If you are on board, your velocity and the bus's are the
+ * same vector even when the reported positions are 300 m apart — so
+ * velocity agreement identifies your bus in exactly the situation where
+ * distance fails. We then dead-reckon each candidate forward by the age
+ * of its fix and use that (much smaller) gap only as a sanity check and
+ * tiebreak, never as the gate.
+ *
+ * If nothing is moving — bus at a light, you standing still — there's no
+ * velocity to compare, so we stay quiet and leave proximity ranking
+ * alone rather than inventing a verdict. */
+async function refineMyBus(cands,p0,t0){
+  const tStart=Date.now()/1000;
   await new Promise(r=>setTimeout(r,ONBOARD.refineMs));
-  /* Surgical second pass: fresh positions for ONLY the routes the
-     surviving candidates ride (usually 1–3 calls, not 14). fresh=true
-     matters — the edge caches getBusLocation for 12 s, which would
-     hand back the t0 coordinates and make every bus look parked. */
   const codes=[...new Set(cands.map(c=>String((c.route||{}).code||"")).filter(Boolean))].slice(0,4);
-  const [p1,...lists]=await Promise.all([myPosition(),
-    ...codes.map(c=>oasa("getBusLocation",c,null,true).catch(()=>null))]);
+  const [p1,scan]=await Promise.all([
+    myPosition(),
+    sampleBuses(p0,{fresh:true,routes:codes}),
+  ]);
   const now={};
-  lists.forEach(arr=>(Array.isArray(arr)?arr:[]).forEach(v=>{
-    const veh=String(pick(v,"VEH_NO","veh_no","VEH_CODE")||"");
-    const la=Number(pick(v,"CS_LAT","cs_lat")), ln=Number(pick(v,"CS_LNG","cs_lng"));
-    if(veh&&isFinite(la)&&isFinite(ln)) now[veh]={lat:la,lng:ln};
-  }));
-  const mine=vec(p0,p1), myMove=len(mine);
+  (scan.buses||[]).forEach(v=>{ now[v.veh]={lat:v.lat,lng:v.lng,ts:v.ts}; });
+
+  /* How far apart the two samples really are. Server timestamps are the
+     better source — a first sample served from the scan cache is genuinely
+     older than the wait we just did — but they're whole seconds and can be
+     missing, and an underestimate here inflates every speed (a 58 m step
+     over a bogus 1 s reads as 209 km/h and fails the pace test). The time
+     we actually waited is a hard lower bound, so take the larger. */
+  const wall=Math.max(1,(Date.now()/1000)-tStart);
+  const t1=scan.generated||(Date.now()/1000);
+  const dtFeed=Math.max(wall,(t1-(t0||0))||0);
+  const dtMe=Math.max(wall,(p1.t-p0.t)||0);
+
+  // my velocity: prefer the device's own speed/heading, else derive it
+  const mineVec=vec(p0,p1);
+  const myV=[mineVec[0]/dtMe,mineVec[1]/dtMe];
+  const mySpeed=(p1.speed!=null?p1.speed:len(myV));
+
   cands.forEach(c=>{
-    const cur=now[c.veh]; if(!cur) return;
-    c.lat=cur.lat; c.lng=cur.lng;
-    c.d=haversine(cur.lat,cur.lng,p1.lat,p1.lng);
-    const theirs=vec(c.p0,{lat:cur.lat,lng:cur.lng}), theirMove=len(theirs);
-    if(myMove<ONBOARD.minMove||theirMove<ONBOARD.minMove) return;   // nobody moved: no verdict
-    const sameWay=cosAngle(mine,theirs)>0.6;
-    const samePace=Math.abs(theirMove-myMove)<Math.max(60,myMove*0.5);
-    c.withYou=sameWay&&samePace&&c.d<=acceptRadius(p1.acc);
+    const cur=now[c.veh];
+    if(!cur){ c.withYou=false; return; }
+    const moved=vec(c.p0,{lat:cur.lat,lng:cur.lng});
+    const busV=[moved[0]/dtFeed,moved[1]/dtFeed];
+    const busSpeed=len(busV);
+    c.rawD=haversine(cur.lat,cur.lng,p1.lat,p1.lng);
+
+    if(mySpeed<ONBOARD.moveMs||busSpeed<ONBOARD.moveMs){
+      // nothing is moving (bus at a light, rider on foot): no velocity to
+      // compare, so no verdict — fall back to the reported distance.
+      c.withYou=false; c.d=c.rawD; return;
+    }
+
+    /* Split the gap between the bus's reported position and me into:
+         along  — distance along its direction of travel (what a stale
+                  fix looks like: the bus is simply "behind" itself)
+         cross  — sideways offset (what a DIFFERENT street looks like)
+       A stale fix inflates `along` and leaves `cross` at GPS-noise level;
+       a bus one street over inflates `cross` no matter how stale it is.
+       That's the discriminator distance alone could never provide. */
+    const unit=[busV[0]/busSpeed,busV[1]/busSpeed];
+    const off=vec({lat:cur.lat,lng:cur.lng},p1);        // bus fix → me
+    const along=off[0]*unit[0]+off[1]*unit[1];
+    const cross=Math.hypot(off[0]-along*unit[0],off[1]-along*unit[1]);
+
+    /* Age of the fix. OASA gives a timestamp on some feeds; when it
+       doesn't, infer it — if I'm on board, the along-track gap is exactly
+       how far the bus has travelled since its last ping. */
+    const age=cur.ts
+      ? Math.max(0,Math.min(120,(Date.now()/1000)-cur.ts))
+      : Math.max(0,Math.min(ONBOARD.maxStaleS,along/busSpeed));
+    const proj=project({lat:cur.lat,lng:cur.lng},busV,age);
+    c.lat=proj.lat; c.lng=proj.lng;
+    c.d=haversine(proj.lat,proj.lng,p1.lat,p1.lng);
+
+    const cos=cosAngle(myV,busV);
+    const ratio=Math.min(mySpeed,busSpeed)/Math.max(mySpeed,busSpeed);
+    c.agree=cos>ONBOARD.cosOK&&ratio>ONBOARD.paceOK;
+    const sameStreet=cross<=Math.max(ONBOARD.crossMax,p1.acc||0);
+    const explainable=along>=-150&&along<=busSpeed*ONBOARD.maxStaleS+150;
+    c.withYou=c.agree&&sameStreet&&explainable;
   });
   return cands.sort((a,b)=>(b.withYou?1:0)-(a.withYou?1:0)||a.d-b.d);
+}
+/* move a point by a velocity vector (m/s, east/north) for `secs` */
+function project(p,v,secs){
+  const k=Math.cos(p.lat*Math.PI/180)||1;
+  return { lat:p.lat+(v[1]*secs)/111320, lng:p.lng+(v[0]*secs)/(111320*k) };
 }
 
 /* -------------------- report form (2 steps) ------------------------ */
@@ -1786,7 +1892,7 @@ function openReportForm(){
     busy=true;
     const myKind=kind;
     let found;
-    try{ found=await findMyBus(); }catch(_){ found={p0:here,list:[]}; }
+    try{ found=await findMyBus(); }catch(_){ found={p0:here,t0:Date.now()/1000,list:[]}; }
     busy=false;
     if(!reportForm.open||kind!==myKind) return;
     if(!found.list.length){
@@ -1800,7 +1906,7 @@ function openReportForm(){
     const cands=found.list.slice(0,8);
     drawCands(cands,true);
     // second opinion arrives a few seconds later and re-ranks in place
-    refineMyBus(cands,found.p0).then(list=>{
+    refineMyBus(cands,found.p0,found.t0).then(list=>{
       if(reportForm.open&&kind===myKind&&!target) drawCands(list,false);
     }).catch(()=>{});
 
@@ -2067,7 +2173,7 @@ function openAbout(){
   $("#ab-h").textContent=t("aboutH");
   $("#ab-body").innerHTML=`<div class="ab">${t("aboutBody")}
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
-    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v24</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v25</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

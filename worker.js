@@ -1401,39 +1401,67 @@ async function handleLive(url, env) {
  * ------------------------------------------------------------------ */
 const SCAN = { stopRadius: 600, stopProbe: 10, maxRoutes: 14, keepM: 1500, cache: 10 };
 
+/* OASA sometimes stamps each fix with its own time. If it does, the
+ * client can measure real staleness per vehicle instead of assuming it.
+ * Accept epoch seconds/ms or a parsable date string; ignore nonsense. */
+function vehicleTs(v) {
+  const raw = pickField(v, "CS_DATE", "cs_date", "CS_DATE_TIME", "LAST_UPDATE", "last_update");
+  if (raw == null) return null;
+  if (typeof raw === "number" || /^\d+$/.test(String(raw))) {
+    const n = Number(raw);
+    const s = n > 1e11 ? Math.floor(n / 1000) : n;       // ms → s
+    return (s > 1.5e9 && s < 4e9) ? s : null;
+  }
+  const t = Date.parse(String(raw));
+  if (!isFinite(t)) return null;
+  const s = Math.floor(t / 1000);
+  return (s > 1.5e9 && s < 4e9) ? s : null;
+}
+
 async function handleScan(url) {
   const lat = parseFloat(url.searchParams.get("lat"));
   const lng = parseFloat(url.searchParams.get("lng"));
   if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
+  // The second (co-movement) sample must not be served from cache, and
+  // only needs the candidate routes — one cheap request instead of a
+  // second full fan-out.
+  const fresh = url.searchParams.get("fresh") === "1";
+  const only = (url.searchParams.get("routes") || "").split(",")
+    .map(s => s.trim()).filter(Boolean).slice(0, 6);
 
   const ck = `https://scan/?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}`;
   const cache = caches.default;
-  const hit = await cache.match(new Request(ck));
-  if (hit) return withCors(hit);
-
-  // stops around the rider → the lines that serve them
-  const lists = await Promise.all(samplePts(lat, lng, SCAN.stopRadius).map(p =>
-    getJSON(`${OASA}?act=getClosestStops&p1=${p[0]}&p2=${p[1]}`, ACT_TTL.getClosestStops)));
-  const stops = [];
-  const seen = new Set();
-  for (const arr of lists) {
-    if (!Array.isArray(arr)) continue;
-    for (const s of arr) {
-      const code = String(pickField(s, "StopCode", "StopID", "stop_code") || "");
-      if (!code || seen.has(code)) continue;
-      seen.add(code);
-      const la = Number(pickField(s, "StopLat", "StopY", "stop_lat"));
-      const ln = Number(pickField(s, "StopLng", "StopX", "stop_lng"));
-      stops.push({ code, d: (isFinite(la) && isFinite(ln)) ? hav(lat, lng, la, ln) : Infinity });
-    }
+  if (!fresh && !only.length) {
+    const hit = await cache.match(new Request(ck));
+    if (hit) return withCors(hit);
   }
-  stops.sort((a, b) => a.d - b.d);
 
   const routes = new Map();
-  await pool(stops.slice(0, SCAN.stopProbe).map(s => async () => {
-    const r = await fetchStopRoutes(s.code);
-    if (r) for (const rt of r.routes) if (!routes.has(rt.code)) routes.set(rt.code, rt);
-  }), 5);
+  if (only.length) {
+    for (const code of only) routes.set(code, { code, id: "", el: "", en: "" });
+  } else {
+    // stops around the rider → the lines that serve them
+    const lists = await Promise.all(samplePts(lat, lng, SCAN.stopRadius).map(p =>
+      getJSON(`${OASA}?act=getClosestStops&p1=${p[0]}&p2=${p[1]}`, ACT_TTL.getClosestStops)));
+    const stops = [];
+    const seen = new Set();
+    for (const arr of lists) {
+      if (!Array.isArray(arr)) continue;
+      for (const s of arr) {
+        const code = String(pickField(s, "StopCode", "StopID", "stop_code") || "");
+        if (!code || seen.has(code)) continue;
+        seen.add(code);
+        const la = Number(pickField(s, "StopLat", "StopY", "stop_lat"));
+        const ln = Number(pickField(s, "StopLng", "StopX", "stop_lng"));
+        stops.push({ code, d: (isFinite(la) && isFinite(ln)) ? hav(lat, lng, la, ln) : Infinity });
+      }
+    }
+    stops.sort((a, b) => a.d - b.d);
+    await pool(stops.slice(0, SCAN.stopProbe).map(s => async () => {
+      const r = await fetchStopRoutes(s.code);
+      if (r) for (const rt of r.routes) if (!routes.has(rt.code)) routes.set(rt.code, rt);
+    }), 5);
+  }
 
   // vehicle positions fetched fresh (ttl 0) — the 10 s scan cache above
   // is the sharing layer; stacking the 12 s /api cache under it would
@@ -1446,8 +1474,11 @@ async function handleScan(url) {
       const la = Number(pickField(v, "CS_LAT", "cs_lat"));
       const ln = Number(pickField(v, "CS_LNG", "cs_lng"));
       if (!veh || !isFinite(la) || !isFinite(ln)) continue;
-      if (hav(lat, lng, la, ln) > SCAN.keepM) continue;
-      buses.push({ veh, lat: la, lng: ln, route: { code: rt.code, id: rt.id, el: rt.el, en: rt.en } });
+      // a moving rider's own bus can report a badly stale position, so the
+      // keep-radius stays generous; the client does the real filtering
+      if (!only.length && hav(lat, lng, la, ln) > SCAN.keepM) continue;
+      buses.push({ veh, lat: la, lng: ln, ts: vehicleTs(v),
+        route: { code: rt.code, id: rt.id, el: rt.el, en: rt.en } });
     }
   }), 6);
 
@@ -1456,11 +1487,11 @@ async function handleScan(url) {
   }), {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": `public, max-age=${SCAN.cache}`,
+      "Cache-Control": (fresh || only.length) ? "no-store" : `public, max-age=${SCAN.cache}`,
       ...CORS,
     },
   });
-  await cache.put(new Request(ck), res.clone());
+  if (!fresh && !only.length) await cache.put(new Request(ck), res.clone());
   return res;
 }
 
