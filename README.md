@@ -89,6 +89,15 @@ JSON to host at `/.well-known/assetlinks.json`.
 2. Auto-refreshes every 30s (the thin progress bar up top is the countdown), pulling
    fresh arrivals *and* the current report flags together.
 
+**Switching views:** the Λίστα / Χάρτης tabs, or **swipe left for the map, right for the
+list**. On the map the swipe has to start at the left edge, since Leaflet owns dragging
+everywhere else; swipes are ignored while a sheet or full-screen panel is open.
+
+**Stops with no lines** (decommissioned, seasonal) are dropped when discovered: the app
+removes the pin, remembers it locally so a refresh can't resurrect it, and tells the
+Worker via `POST /stops/dead` — which **re-checks with OASA** before recording it in the
+shared list, so no one can hide a healthy stop from everyone else.
+
 Field names in the API are inconsistent (mixed casing), so the parsing is defensive —
 if line-mapping fails it degrades to the route code and still shows the countdown.
 
@@ -190,6 +199,45 @@ same rules as the UI: only `bus` and `metro` categories, and only the types each
 allows. Without a KV binding the app still runs; reporting just returns "not
 configured". Metro stations (lines M1/M2/M3) are a static list served by the Worker at
 `/metro`; their coordinates are close approximations you can tweak in `worker.js`.
+
+## Clearing bad reports (e.g. after testing)
+
+Live flags expire by themselves (red 15 min on a bus, 2 h on metro; yellow 60 min), so a
+mistaken flag disappears on its own. What outlives it is the **history log** in D1, which
+feeds `/reports/toplist` — test flags left there would skew any future statistics.
+
+To wipe both at once (needs `ADMIN_TOKEN`, see [Security model](#security-model)):
+
+```powershell
+# every inspector report, live + history
+curl -X POST "https://<your-url>/admin/reports/purge" ^
+  -H "X-Admin-Token: YOUR_TOKEN" -H "Content-Type: application/json" ^
+  -d "{\"type\":\"inspector\",\"log\":true}"
+
+# just one vehicle/station
+… -d "{\"targetId\":\"70142\",\"log\":true}"
+
+# everything, but only history from the last 6 hours
+… -d "{\"all\":true,\"log\":true,\"hours\":6}"
+```
+
+It replies `{"ok":true,"removedLive":N,"removedLog":N,"remaining":N}`. Omit `log` to
+clear only the live flags and keep the history. Users can always withdraw their *own*
+reports from the ✕ in the reports list — this admin route is for cleaning up after
+someone else, or after testing.
+
+<details><summary>Doing it by hand instead (no admin token)</summary>
+
+```powershell
+# live flags live in one KV key
+npx wrangler kv key get --binding=ALERTS "reports:index" --remote
+npx wrangler kv key put --binding=ALERTS "reports:index" "[]" --remote   # wipe all
+
+# history rows
+npx wrangler d1 execute oasa-stats --remote ^
+  --command "DELETE FROM report_log WHERE type='inspector' AND ts > unixepoch()-21600"
+```
+</details>
 
 ## Security model
 

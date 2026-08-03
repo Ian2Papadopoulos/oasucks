@@ -10,6 +10,9 @@
  *  GET  /rules?sub=ID           → list alert rules
  *  POST /rules                  → create/update an alert rule
  *  POST /rules/delete           → delete an alert rule
+ *  GET  /alerts/windows         → when alerts need the cron (admin)
+ *  POST /admin/reports/purge    → wipe reports / history rows (admin)
+ *  POST /stops/dead             → verify+record a stop that has no lines
  *  GET  /reports?by=ID          → active user reports (inspector/issue flags)
  *  POST /reports                → file (or renew) a report
  *  POST /reports/delete         → withdraw a report (reporter-only)
@@ -377,6 +380,81 @@ function athensNow() {
 function hhmmToMin(s) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
   return m ? (+m[1]) * 60 + (+m[2]) : null;
+}
+
+/* ---------------- alert windows (cron work-avoidance) --------------- *
+ * The cron fires on a fixed schedule, but most of those minutes have no
+ * alert window anywhere near them. windowsOf() distils the rules into
+ * {days, from, to, lead} tuples so a run can bail out before touching
+ * OASA, and cronFor() turns the same tuples into the narrowest cron
+ * expressions that still cover every rule — which is how the schedule
+ * itself gets trimmed (see /alerts/windows and applySchedule).
+ * ------------------------------------------------------------------- */
+function windowsOf(rules) {
+  return (rules || [])
+    .filter(r => r && r.enabled !== false && Array.isArray(r.days) && r.days.length)
+    .map(r => ({
+      days: r.days.slice().sort(),
+      from: hhmmToMin(r.from), to: hhmmToMin(r.to),
+      lead: Math.max(...(r.leads || [10])),
+    }))
+    .filter(w => w.from != null && w.to != null);
+}
+function windowDue(windows, now) {
+  return windows.some(w => w.days.includes(now.day) &&
+    now.minutes >= w.from - w.lead - 1 && now.minutes <= w.to);
+}
+/* Athens local minutes → UTC hours, expanded to whole hours (cron's
+ * finest useful granularity here) and merged per weekday set. */
+function cronFor(windows) {
+  if (!windows.length) return [];                 // nothing to do: no cron at all
+  const offset = athensUtcOffsetHours();
+  const byDay = new Map();                        // utcDay -> Set(utcHour)
+  for (const w of windows) {
+    const startMin = Math.max(0, w.from - w.lead - 1);
+    for (const d of w.days) {
+      for (let m = startMin; m <= w.to; m += 60) markHour(byDay, d, m, offset);
+      markHour(byDay, d, w.to, offset);           // always include the closing hour
+    }
+  }
+  // group days that share the same hour set, so we emit few expressions
+  const groups = new Map();
+  for (const [day, hours] of byDay) {
+    const key = [...hours].sort((a, b) => a - b).join(",");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(day);
+  }
+  const out = [];
+  for (const [hours, days] of groups) {
+    out.push(`* ${hours} * * ${days.sort((a, b) => a - b).join(",")}`);
+  }
+  return out;
+}
+// rough "how many times will this fire per day" for the summary
+function estimateRuns(crons) {
+  let n = 0;
+  for (const c of crons) {
+    const [, hours, , , days] = c.split(" ");
+    const h = hours === "*" ? 24 : hours.split(",").length;
+    const d = days === "*" ? 7 : days.split(",").length;
+    n += h * 60 * d / 7;
+  }
+  return Math.round(n);
+}
+function markHour(byDay, day, minutes, offset) {
+  let utcMin = minutes - offset * 60;
+  let utcDay = day;
+  if (utcMin < 0) { utcMin += 1440; utcDay = (utcDay + 6) % 7; }
+  else if (utcMin >= 1440) { utcMin -= 1440; utcDay = (utcDay + 1) % 7; }
+  if (!byDay.has(utcDay)) byDay.set(utcDay, new Set());
+  byDay.get(utcDay).add(Math.floor(utcMin / 60));
+}
+function athensUtcOffsetHours() {
+  // +2 in winter, +3 in summer — ask Intl rather than hard-coding DST rules
+  const d = new Date();
+  const utc = new Date(d.toLocaleString("en-US", { timeZone: "UTC" }));
+  const ath = new Date(d.toLocaleString("en-US", { timeZone: "Europe/Athens" }));
+  return Math.round((ath - utc) / 3600000);
 }
 
 async function runAlerts(env) {
@@ -1177,6 +1255,51 @@ const METRO_STATIONS = [
   { id: "m-aerodromio",      el: "Αεροδρόμιο",           en: "Airport",              lines: ["3"], lat: 37.9364, lng: 23.9445 },
 ];
 
+/* Skip the D1 round-trip on every cron run when nothing is tracked.
+ * Cached per isolate for a few minutes — adding a route is rare and
+ * takes effect on the next refresh at the latest. */
+let trackFlag = null;
+async function trackingActive(env) {
+  if (!dbReady(env)) return false;
+  const nowS = Date.now() / 1000;
+  if (trackFlag && nowS - trackFlag.at < 300) return trackFlag.on;
+  let on = false;
+  try {
+    await initSchema(env);
+    const c = await env.DB.prepare("SELECT COUNT(*) n FROM tracked_route").first();
+    on = !!(c && c.n > 0);
+  } catch (_) { on = true; }          // on error, don't silently stop tracking
+  trackFlag = { on, at: nowS };
+  return on;
+}
+
+/* OPTIONAL self-tuning schedule. Cloudflare crons are static config, so
+ * the only way to actually cut invocations is to rewrite them. If (and
+ * only if) CF_API_TOKEN + CF_ACCOUNT_ID are configured, the worker
+ * updates its own cron triggers to the narrowest set covering current
+ * alert windows — no rules, no crons at all. Without those secrets this
+ * is a no-op and you tune wrangler.toml by hand from /alerts/windows.
+ *
+ * Security note: that token can edit your Worker, so it is deliberately
+ * opt-in. Scope it to "Workers Scripts: Edit" on this account only. */
+let lastApplied = null;
+async function applySchedule(env, crons) {
+  if (!env || !env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return { skipped: "not configured" };
+  const script = env.CF_SCRIPT_NAME || "oasa-stop";
+  const body = JSON.stringify(crons.map(c => ({ cron: c })));
+  if (body === lastApplied) return { skipped: "unchanged" };
+  try {
+    const r = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/scripts/${script}/schedules`,
+      { method: "PUT", headers: {
+          "Authorization": `Bearer ${env.CF_API_TOKEN}`,
+          "Content-Type": "application/json",
+        }, body });
+    if (r.ok) { lastApplied = body; return { applied: crons }; }
+    return { error: `HTTP ${r.status}` };
+  } catch (e) { return { error: String((e && e.message) || e) }; }
+}
+
 /* ======================= lines & live map ========================= */
 
 // The whole line catalogue, trimmed to what the picker needs and cached
@@ -1425,6 +1548,78 @@ export default {
       return handleReports(req, url, env, ctx);
     }
 
+    /* What the cron schedule *should* be, from the live rules. Admin —
+       it summarises when users have alerts. Paste `crons` into
+       wrangler.toml, or set the CF API secrets to auto-apply. */
+    if (p.endsWith("/alerts/windows")) {
+      if (!adminOK(req, env)) return json({ error: "admin token required" }, 403);
+      if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      const windows = windowsOf(await readRules(env));
+      const crons = cronFor(windows);
+      const out = {
+        rules: windows.length, athensUtcOffset: athensUtcOffsetHours(),
+        windows: windows.map(w => ({ days: w.days,
+          from: `${String(Math.floor(w.from / 60)).padStart(2, "0")}:${String(w.from % 60).padStart(2, "0")}`,
+          to: `${String(Math.floor(w.to / 60)).padStart(2, "0")}:${String(w.to % 60).padStart(2, "0")}`,
+          leadMin: w.lead })),
+        crons: crons.length ? crons : ["(none — no active alert rules)"],
+        estimatedRunsPerDay: crons.length ? estimateRuns(crons) : 0,
+      };
+      if (url.searchParams.get("apply") === "1") out.apply = await applySchedule(env, crons);
+      return json(out);
+    }
+
+    /* Wipe reports (e.g. false flags from testing). Admin only.
+       body: { all:true } | { targetId } | { type }  (+ log:true, hours:N
+       to also delete the matching rows from the D1 history log). */
+    if (p.endsWith("/admin/reports/purge") && req.method === "POST") {
+      if (!adminOK(req, env)) return json({ error: "admin token required" }, 403);
+      if (!reportsReady(env)) return json({ error: "reports not configured" }, 501);
+      const b = await req.json().catch(() => null) || {};
+      const nowS = Math.floor(Date.now() / 1000);
+      const active = await readReports(env, nowS);
+      const match = r => (b.all === true) ||
+        (b.targetId && r.targetId === String(b.targetId)) ||
+        (b.type && r.type === String(b.type));
+      if (!b.all && !b.targetId && !b.type) {
+        return json({ error: "specify all:true, targetId, or type" }, 400);
+      }
+      const keep = active.filter(r => !match(r));
+      const removedLive = active.length - keep.length;
+      await writeReports(env, keep);
+
+      let removedLog = 0;
+      if (b.log === true && dbReady(env)) {
+        await initSchema(env);
+        const since = b.hours ? nowS - Math.min(8760, +b.hours) * 3600 : 0;
+        const cond = ["ts > ?"], args = [since];
+        if (b.targetId) { cond.push("target_id = ?"); args.push(String(b.targetId)); }
+        if (b.type) { cond.push("type = ?"); args.push(String(b.type)); }
+        const res = await env.DB.prepare(
+          `DELETE FROM report_log WHERE ${cond.join(" AND ")}`).bind(...args).run();
+        removedLog = (res && res.meta && res.meta.changes) || 0;
+      }
+      return json({ ok: true, removedLive, removedLog, remaining: keep.length });
+    }
+
+    /* A stop the client found has no lines any more. Never trust that
+       claim — a malicious caller could hide healthy stops for everyone —
+       so verify against OASA here and only then record it in the shared
+       KV map that /nearby filters on. */
+    if (p.endsWith("/stops/dead") && req.method === "POST") {
+      if (!rateLimit(ip, "stops-dead", 30, 60)) return tooMany();
+      const b = await req.json().catch(() => null);
+      const code = String((b && b.code) || "").slice(0, 20);
+      if (!code) return json({ error: "code required" }, 400);
+      const r = await fetchStopRoutes(code);
+      if (!r) return json({ error: "upstream unavailable" }, 502);
+      const nowS = Math.floor(Date.now() / 1000);
+      const known = await loadStopLines(env);
+      slSet(known, code, r.lines.length, nowS);
+      if (ctx) ctx.waitUntil(saveStopLines(env));
+      return json({ code, dead: r.lines.length === 0, lines: r.lines.length });
+    }
+
     if (p.endsWith("/lines")) return handleLines();
 
     if (p.endsWith("/live")) {
@@ -1572,15 +1767,30 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
-      await runAlerts(env);                 // bus alerts (push)
-      await sampleVehicles(env);            // vehicle tracking (D1)
-      // Once a day around 04:0x Athens time: refresh timetables, drop old rows.
-      const hour = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hour12: false,
-      }).formatToParts(new Date()).reduce((o, p) => (o[p.type] = p.value, o), {});
-      if (hour.hour === "04" && +hour.minute < 2) {
+      const now = athensNow();
+      const daily = (() => {
+        const h = new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hour12: false,
+        }).formatToParts(new Date()).reduce((o, p) => (o[p.type] = p.value, o), {});
+        return h.hour === "04" && +h.minute < 2;
+      })();
+
+      // Cheapest possible no-op minute: one small KV read tells us whether
+      // any alert window is near. Nothing due and no tracking → stop here,
+      // touching neither OASA nor D1.
+      let windows = [];
+      if (pushReady(env)) {
+        try { windows = windowsOf(await readRules(env)); } catch (_) { }
+      }
+      const alertsDue = windowDue(windows, now);
+      if (alertsDue) await runAlerts(env);
+      if (await trackingActive(env)) await sampleVehicles(env);
+      if (daily) {
         await syncSchedules(env);
         await pruneOld(env);
+        // Keep the cron schedule itself matched to the current rules
+        // (no-op unless the CF API secrets are configured).
+        await applySchedule(env, cronFor(windows));
       }
     })());
   },

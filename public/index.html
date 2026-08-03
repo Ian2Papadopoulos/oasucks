@@ -114,6 +114,12 @@
   .seg button:last-child{border-right:none}
   .seg button.on{background:var(--toner);color:var(--paper)}
   .hint{color:var(--ink3);font-size:10.5px;margin-top:9px;text-align:center;line-height:1.5}
+  /* swipe transitions between list and map */
+  .slide-l{animation:slideL .18s ease-out}
+  .slide-r{animation:slideR .18s ease-out}
+  @keyframes slideL{from{transform:translateX(14px);opacity:.35}to{transform:none;opacity:1}}
+  @keyframes slideR{from{transform:translateX(-14px);opacity:.35}to{transform:none;opacity:1}}
+  @media (prefers-reduced-motion:reduce){ .slide-l,.slide-r{animation:none} }
 
   /* ---------------------------- radius --------------------------------- */
   .radwrap{margin-top:10px;background:var(--card);border:1px solid var(--rule);padding:9px 11px 3px;border-radius:2px}
@@ -453,7 +459,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v23</span></div>
+  <div class="foot"><span class="ver">v24</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -850,7 +856,8 @@ function updateRadiusLabel(){
 }
 
 /* ----------------------------- views ------------------------------- */
-function setView(v){
+function setView(v,dir){
+  if(state.view===v) return;
   state.view=v;
   $("#mapwrap").style.display=v==="map"?"":"none";
   $("#radwrap").style.display=v==="map"?"":"none";
@@ -858,6 +865,42 @@ function setView(v){
   $$("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
   $("#lphint").textContent = v==="map"?t("lpMap"):t("lpList");
   renderView();
+  if(dir){                       // slide the incoming view in, swipe-style
+    const el=v==="map"?$("#mapwrap"):$("#list");
+    el.classList.remove("slide-l","slide-r");
+    void el.offsetWidth;         // restart the animation
+    el.classList.add(dir<0?"slide-l":"slide-r");
+  }
+}
+
+/* ---------------------------- swipes -------------------------------
+ * Swipe left → map, swipe right → list. The Leaflet map owns horizontal
+ * dragging, so a swipe that starts on it is ignored *unless* it starts
+ * at the very left edge — the conventional "back" gesture. Sheets and
+ * full-screen panels suppress it entirely, and the gesture must be
+ * clearly horizontal and quick so it never fights vertical scrolling. */
+const SWIPE={edge:34,minX:60,maxY:55,maxMs:700};
+function initSwipes(){
+  const zone=$(".wrap");
+  if(!zone) return;
+  let sx=0,sy=0,t0=0,live=false;
+  zone.addEventListener("touchstart",e=>{
+    live=false;
+    if(e.touches.length!==1) return;
+    if(document.querySelector(".sheet-bg.on,.picker.on,.rp.on,.cyc.on")) return;
+    const t=e.touches[0];
+    if(e.target.closest("#mapwrap") && t.clientX>SWIPE.edge) return;  // let the map pan
+    sx=t.clientX; sy=t.clientY; t0=Date.now(); live=true;
+  },{passive:true});
+  zone.addEventListener("touchend",e=>{
+    if(!live) return; live=false;
+    const t=e.changedTouches[0];
+    const dx=t.clientX-sx, dy=t.clientY-sy;
+    if(Date.now()-t0>SWIPE.maxMs) return;
+    if(Math.abs(dx)<SWIPE.minX||Math.abs(dy)>SWIPE.maxY) return;
+    if(Math.abs(dy)>Math.abs(dx)*0.6) return;                        // too diagonal
+    if(dx<0) setView("map",-1); else setView("list",1);
+  },{passive:true});
 }
 function renderView(){ state.view==="map"?renderMap():renderList(); }
 
@@ -952,12 +995,15 @@ function renderMap(){
         if(!s.arrLoaded)    jobs.push(loadArrivals(s));
         if(jobs.length) Promise.all(jobs).catch(()=>{}).then(()=>{
           // No line serves this stop any more — drop the pin instead of
-          // showing an empty popup. The server remembers it for everyone.
+          // showing an empty popup, remember it locally so the next
+          // refresh doesn't resurrect it, and tell the server so it
+          // disappears for everyone (the server re-verifies first).
           if(s.routesLoaded && !s.lines.length){
+            markStopDead(s.code);
             m.closePopup(); layerStops.removeLayer(m); delete mapMarkers[s.code];
             state.stops=state.stops.filter(x=>x.code!==s.code);
             state._mapCodes=state.stops.map(x=>x.code).join(",");
-            updateRadiusLabel(); return;
+            updateRadiusLabel(); renderView(); return;
           }
           if(m.isPopupOpen()) m.setPopupContent(popupHtml(s));
         });
@@ -984,6 +1030,29 @@ function samplePoints(lat,lng,r){
   const d=r*0.62, dLat=d/111320, dLng=d/(111320*Math.cos(lat*Math.PI/180));
   return [[lat,lng],[lat+dLat,lng],[lat-dLat,lng],[lat,lng+dLng],[lat,lng-dLng]];
 }
+/* ---------------------- dead stops (no lines) ----------------------
+ * A stop nobody serves any more should vanish for good. The server keeps
+ * the shared list, but it only probes a few unknown stops per request —
+ * so when the client is the one that discovers a dead stop (by opening
+ * its popup) it must (a) remember it locally, or the next /nearby brings
+ * it straight back, and (b) tell the server, which re-verifies with OASA
+ * before recording it for everyone. */
+const DEAD_KEY="deadStops";
+let deadStops=new Set();
+try{ const v=JSON.parse(localStorage.getItem(DEAD_KEY)||"[]");
+  if(Array.isArray(v)) deadStops=new Set(v.map(String)); }catch(_){}
+function markStopDead(code){
+  code=String(code); if(!code||deadStops.has(code)) return;
+  deadStops.add(code);
+  // keep the local list from growing without bound
+  if(deadStops.size>400) deadStops=new Set([...deadStops].slice(-300));
+  try{ localStorage.setItem(DEAD_KEY,JSON.stringify([...deadStops])); }catch(_){}
+  if(hasBackend()) fetch(base()+"/stops/dead",{method:"POST",cache:"no-store",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify({code})})
+    .catch(()=>{});
+}
+function notDead(list){ return (list||[]).filter(s=>!deadStops.has(String(s.code))); }
+
 function mapStop(s){
   const lat=Number(pick(s,"StopLat","StopY","stop_lat"));
   const lng=Number(pick(s,"StopLng","StopX","stop_lng"));
@@ -1029,7 +1098,7 @@ async function loadStopsBatch(){
   const j=await r.json();
   if(Array.isArray(j.reports)){ state.reports=j.reports; repBadge(); }
   const prev={}; state.stops.forEach(s=>prev[s.code]=s);
-  state.stops=(j.stops||[]).filter(s=>!(s.routes&&s.routes.length===0&&s.lines&&s.lines.length===0&&s.detail)).map(s=>{
+  state.stops=notDead(j.stops).filter(s=>!(s.routes&&s.routes.length===0&&s.lines&&s.lines.length===0&&s.detail)).map(s=>{
     const p=prev[s.code]||{};
     const routes=(s.routes&&s.routes.length)?s.routes:(p.routes||[]);
     const rm={}; routes.forEach(r=>{ rm[r.code]={line:r.id,el:r.el,en:r.en}; });
@@ -1069,7 +1138,7 @@ async function loadStopsLegacy(){
     res.forEach(arr=>{ if(Array.isArray(arr)) arr.forEach(s=>{
       const c=String(pick(s,"StopCode","StopID","stop_code")||""); if(c&&!byCode[c]) byCode[c]=s; }); });
     const prev={}; state.stops.forEach(s=>prev[s.code]=s);
-    let stops=Object.values(byCode).map(mapStop)
+    let stops=notDead(Object.values(byCode).map(mapStop))
       .filter(s=>isFinite(s.dist)&&s.dist<=state.radius)
       .sort((a,b)=>a.dist-b.dist).slice(0,CONFIG.maxMarkers);
     stops.forEach(s=>{ const p=prev[s.code]; if(p){
@@ -1998,7 +2067,7 @@ function openAbout(){
   $("#ab-h").textContent=t("aboutH");
   $("#ab-body").innerHTML=`<div class="ab">${t("aboutBody")}
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
-    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v23</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v24</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -2335,6 +2404,7 @@ $("#locwhere").textContent=here.label;
 updateRadiusLabel();
 startRefresh();
 useGPS();
+initSwipes();
 state.subId=localStorage.getItem("subId");
 ensureMode().then(async()=>{ if(state.subId){ await loadRules(); bellBadge(); }
   await refreshReports(); renderView(); });

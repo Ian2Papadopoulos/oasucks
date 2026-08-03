@@ -92,10 +92,47 @@ Because it's prediction-based, times shift as traffic changes — a bus can be
 "5 minutes away" for two consecutive minutes. The dedupe logic means you still
 only get one alert per lead time.
 
+## Trimming the cron to your actual alert windows
+
+The default schedule is deliberately broad (~1,150 runs/day) so *any* rule anyone
+creates is covered. Once you know your real usage you can cut that hard — the Worker
+computes the minimum schedule from the live rules:
+
+```powershell
+curl "https://<your-url>/alerts/windows?token=YOUR_ADMIN_TOKEN"
+```
+
+```json
+{ "rules": 2,
+  "crons": ["* 5,6 * * 1,2,3,4,5", "* 18,19,20 * * 6"],
+  "estimatedRunsPerDay": 111 }
+```
+
+Paste those `crons` into `wrangler.toml` → `[triggers]` and redeploy. (Times are
+converted to UTC for you, DST included; the lead time is already subtracted so the
+notification still fires early enough.) With **no** alert rules it returns none, and
+you can drop the trigger entirely.
+
+**Optional — let it retune itself.** If you'd rather not do this by hand, set two more
+secrets and the Worker rewrites its own schedule once a day:
+
+```powershell
+npx wrangler secret put CF_API_TOKEN      # scope: Workers Scripts:Edit, this account
+npx wrangler secret put CF_ACCOUNT_ID
+```
+
+Weigh that: the token can edit your Worker, so it's opt-in and off by default. Without
+it nothing happens — `applySchedule` is a no-op. Add `&apply=1` to the `/alerts/windows`
+call to apply immediately instead of waiting for the daily pass.
+
+Runs where nothing is due now cost effectively nothing anyway: the cron checks the alert
+windows first and returns before touching OASA or D1.
+
 ## Costs and limits
 
-- Cron runs once a minute during Athens daytime and every 5 minutes overnight
-  (`wrangler.toml` → `[triggers]`) — well inside the free tier.
+- Cron runs once a minute during Athens daytime and every 5 minutes overnight by
+  default (`wrangler.toml` → `[triggers]`) — well inside the free tier, and trimmable
+  to ~110/day as above.
 - KV free tier allows 1,000 writes/day; each alert sent writes one small key.
 - Notifications only fire while a rule's window is active, so most runs do no work
   at all.

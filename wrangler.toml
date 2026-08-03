@@ -12,8 +12,16 @@ directory = "./public"
 # Cloudflare evaluates crons in UTC: per-minute while Athens is awake
 # (UTC 4–21 ≈ Athens 06/07:00–24:00), every 5 minutes through the dead
 # hours — so a night alert (e.g. on X95) still fires, just with up to
-# 5-minute granularity. Saves ~290 invocations/day.
-# Harmless if push isn't set up yet — it just returns immediately.
+# 5-minute granularity. Harmless if push isn't set up: runs exit early.
+#
+# WANT FEWER RUNS? These are broad, "cover any possible alert" defaults
+# (~1,150/day). Ask the Worker what your ACTUAL rules need:
+#     curl "https://<your-url>/alerts/windows?token=$ADMIN_TOKEN"
+# and paste the `crons` it returns here — typically ~100/day. With no
+# alert rules at all it returns none, and you can comment this out
+# entirely (tracking then needs a manual /track/sample, and alerts stop).
+# Setting CF_API_TOKEN + CF_ACCOUNT_ID secrets makes the Worker apply
+# that narrowed schedule to itself daily — see PUSH-SETUP.md.
 [triggers]
 crons = ["* 4-21 * * *", "*/5 22,23,0-3 * * *"]
 
