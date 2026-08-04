@@ -38,8 +38,9 @@ early and check the operator's own information.
 
 ## 3. Rider reports
 
-Riders can flag three things on a bus (breakdown, overcrowding, ticket inspector)
-and one thing at a metro station (ticket inspector).
+Riders can flag four things on a bus (breakdown, overcrowding, no air conditioning,
+ticket inspectors) and two at a metro station (ticket inspectors, elevator out of
+service).
 
 - **Reports are unverified.** They are one person's claim, filed in a hurry, from
   a phone, about a moving vehicle. A flag being absent means nothing at all.

@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v28.**
+version: v30.**
 
 **The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
 everything else: [look up a line](#find-a-line) and preview its route, a
@@ -11,7 +11,7 @@ everything else: [look up a line](#find-a-line) and preview its route, a
 
 **Community reports.** The old line-stats button is now the red exclamation mark. Tap
 it and a problem map of Athens opens — only the buses and metro stations that currently
-carry a flag, red for a ticket inspector, yellow for anything else. Under the map,
+carry a flag, every one of them red and labelled on the map with what is wrong. Under it,
 **Report an issue** lets you flag the bus you are actually riding (the app works out
 which one) or a metro station within 600 m. A report the app could not match to your
 vehicle still goes up — faint, short-lived, and needing a second rider to agree.
@@ -30,6 +30,7 @@ See [Reports](#reports-red-exclamation-mark) for the exact rules.
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon-*.png` | PWA install + offline shell. |
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | MIT licence and the documents the hosted service runs under — see [Legal](#legal). |
+| `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
 
 ## The one thing you must understand
 
@@ -149,20 +150,22 @@ cached 15 s. Pan the map and tap **↻** to load another area. Tune the ceilings
 
 The ❗ button in the header opens the reports view. The map is a **problem map**: it
 shows *only* what is currently flagged — the flagged buses (following their live
-positions, so a reported bus keeps moving on the map) and the flagged metro stations,
-**red** for a ticket inspector and **yellow** for anything else. Nothing that is fine
-is drawn. The full list of active reports sits underneath, newest first, above a
-**Report an issue** button.
+positions, so a reported bus keeps moving on the map) and the flagged metro stations.
+Every flag is **red**, and each pin carries a permanent label above it saying what it is
+— *Ticket inspectors*, *No A/C*, *Elevator not working* — so the map answers "what and
+where" without a tap. Nothing that is fine is drawn. The full list of active reports
+sits underneath, newest first, above a **Report an issue** button.
 
 You can only report what you are actually next to — two categories, no free text:
 
 | Category | Who can report it | What can be reported |
 |---|---|---|
-| **On a bus** | only the vehicle you're riding (see below) | breakdown · overcrowded · ticket inspector |
-| **At a metro station** | stations within **600 m** of you | ticket inspector |
+| **On a bus** | only the vehicle you're riding (see below) | breakdown · overcrowded · no A/C · ticket inspectors |
+| **At a metro station** | stations within **600 m** of you | ticket inspectors · elevator not working |
 
-The issue menu changes with the category, so a metro station only ever offers
-*ticket inspector*.
+The issue menu changes with the category — a bus never offers *elevator not working*,
+and the Worker enforces the same two menus server-side, so a hand-made request can't
+file a type the UI doesn't show.
 
 ### Which bus am I on?
 
@@ -238,16 +241,21 @@ only they can see the result. Neither trigger fires on a single unlucky report.
 At most **2 active reports per person** at a time.
 
 Flags then show up on the reports map and inline in the list view: a flagged bus gets
-red **"Ticket inspector X minutes ago"** (or a yellow issue line) under its direction,
-matched to that exact vehicle, so the other bus on the same line stays clean.
+red **"Ticket inspectors X minutes ago"** under its direction, matched to that exact
+vehicle, so the other bus on the same line stays clean.
 
 The rules:
 
 | Flag | Expires after |
 |---|---|
-| Red (inspector) on a bus | **15 min** — inspectors ride a few stops and hop off |
-| Red (inspector) on a metro station | **2 h** |
-| Yellow (breakdown / overcrowded) | **60 min** |
+| Ticket inspectors on a bus | **15 min** — they ride a few stops and hop off |
+| Ticket inspectors at a metro station | **2 h** — they work a station, not a trip |
+| Elevator not working (metro) | **2 h** — a facility fault, not a passing event |
+| Breakdown / overcrowded / no A/C (bus) | **60 min** |
+| Anything still **unconfirmed** | **5 min**, whatever it claims |
+
+All of these live in one table, `TTL` in `worker.js` — see
+[PARAMETERS.md](PARAMETERS.md).
 
 Re-reporting the same thing renews the timer. **Nobody can cancel someone else's report
 outright** — a flag disappears when it expires, when **the reporter who filed it**
@@ -386,21 +394,15 @@ and a history log that carries neither coordinates nor reporter ids.
 
 ## Tuning
 
-In `public/index.html` → `CONFIG`: `refreshMs` (refresh interval), `listStops` (how
-many stops in the list), `maxRows` (arrivals per stop) — the search radius has its own
-slider in the map view. **`listStops` is a hard cap and the main cost dial:** the map
-draws every stop within the radius as a marker, but the list only ever shows this many
-closest stops, and loading their arrivals (one OASA call each) is the expensive part of
-a refresh. Raising the radius adds map markers, not list rows — so the number of
-arrival calls per refresh stays fixed no matter how far you zoom out. Every visible row
-is guaranteed to have its data (`fillVisibleArrivals` tops up anything the batch didn't
-cover), so a row can never sit on the loading bars forever. Reporting reach lives in
-`ONBOARD`: `busRadius` (100 m),
-`metroRadius` (600 m), `refineMs` (how long the co-movement pass waits) and `minMove`
-(how far you must travel for that pass to have an opinion); the per-category issue
-menus are `TYPES_BY_KIND`. In `worker.js`: `ACT_TTL` cache times, `ALLOWED_ACTS` if you
-add more endpoints, `REPORT_TYPES` (the same menus, enforced server-side), and the
-report lifetimes `RED_TTL` / `RED_METRO_TTL` / `YELLOW_TTL`.
+**Every arbitrary number in the project is listed in [PARAMETERS.md](PARAMETERS.md)** —
+reporting radii, report lifetimes, rate limits, retention, gesture thresholds, and which
+three parameters actually drive cost. Start there.
+
+The short version: `CONFIG` in `public/index.html` holds the client dials
+(`refreshMs`, `listStops`, `maxRows`), `ONBOARD` holds the reporting reach, `SCAN` and
+`LIVE` in `worker.js` hold the server fan-out, and `TTL` holds how long each kind of
+flag lives. The per-category issue menus are `TYPES_BY_KIND` (client) and
+`REPORT_TYPES` (server, enforced) — keep those two in sync.
 
 ## Note
 

@@ -346,23 +346,29 @@
   #repmap{flex:1;min-height:190px;position:relative;z-index:0;background:#EDEDEA}
   .flag{width:15px;height:15px;border-radius:50%;background:#fff;border:3px solid var(--ink3)}
   .flag.red{border-color:#C42B1C;background:#C42B1C}
-  .flag.yellow{border-color:#B8860B;background:var(--marker)}
   .flag.bus{border-radius:3px;width:17px;height:17px}
   .flag.metro{border-radius:2px;width:15px;height:15px;transform:rotate(45deg)}
   /* unconfirmed: hollow, so it reads as "someone says so" rather than
      "this is the case" — same shape and colour, no fill */
   .flag.faint{background:#fff!important;opacity:.9;border-style:dashed}
+  /* the always-on label above each pin: says WHAT is wrong without a tap */
+  .leaflet-tooltip.flaglabel{background:#C42B1C;color:#fff;border:none;border-radius:2px;
+    font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.04em;
+    padding:2px 5px;white-space:nowrap;box-shadow:1px 1px 0 rgba(23,23,26,.25)}
+  .leaflet-tooltip.flaglabel::before{border-top-color:#C42B1C}
+  .leaflet-tooltip.flaglabel.faint{background:var(--card);color:#C42B1C;
+    border:1px dashed #C42B1C;padding:1px 4px}
+  .leaflet-tooltip.flaglabel.faint::before{display:none}
   .rep-legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:9px;
     color:var(--ink3);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em}
   .rep-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px;
     vertical-align:-1px;border:2px solid var(--ink3);background:#fff}
   .rep-legend i.red{background:#C42B1C;border-color:#C42B1C}
-  .rep-legend i.yellow{background:var(--marker);border-color:#B8860B}
   .rep-legend i.hollow{background:#fff;border-style:dashed;border-color:var(--toner)}
   .repitem{display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px dashed var(--rule)}
   .repitem:first-of-type{border-top:none}
   .repitem .rb{width:4px;align-self:stretch;background:var(--ink3);flex:none}
-  .repitem .rb.red{background:#C42B1C} .repitem .rb.yellow{background:var(--marker)}
+  .repitem .rb.red{background:#C42B1C}
   .repitem .rb.faint{background:repeating-linear-gradient(180deg,
     currentColor 0 3px,transparent 3px 6px);opacity:.55}
   .repitem.faint .rt{font-weight:400}
@@ -379,7 +385,6 @@
   .rvote .rv[disabled]{opacity:.4}
   .flagline{font-size:10.5px;font-weight:700;margin-top:3px;letter-spacing:.02em}
   .flagline.red{color:#C42B1C}
-  .flagline.yellow{color:#8A6D0B;background:var(--marker);display:inline-block;padding:0 4px}
   /* candidate pickers: "which bus are you on / which station" */
   .cands{display:flex;flex-direction:column;gap:5px}
   .cand{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
@@ -519,7 +524,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v29</span></div>
+  <div class="foot"><span class="ver">v30</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -703,7 +708,7 @@ const T={
   whichLine:"Ποια γραμμή;", whichStop:"Ποια στάση;", whichStation:"Ποιος σταθμός;",
   issueType:"Τι συμβαίνει;", noteOpt:"Σχόλιο (προαιρετικό)", send:"Αποστολή",
   noReports:"Καμία ενεργή αναφορά.", agoShort:"πριν", mineOnly:"Μόνο εσύ μπορείς να τη σβήσεις",
-  legendIssue:"θέμα", legendInsp:"ελεγκτής",
+  legendIssue:"αναφορά", legendInsp:"ελεγκτές",
   confirmBus:"Σε ποιο λεωφορείο είσαι;", scanBus:"Εντοπισμός λεωφορείων γύρω σου…",
   scanRefine:"Έλεγχος ποιο κινείται μαζί σου…", withYou:"κινείται μαζί σου",
   gpsFix:"Εντοπισμός της θέσης σου…",
@@ -724,9 +729,8 @@ const T={
   confirms:n=>n===1?"1 επιβεβαίωση":`${n} επιβεβαιώσεις`,
   /* first-report notice + legal */
   firstH:"Πριν στείλεις την πρώτη σου αναφορά",
-  firstP:"Οι αναφορές είναι δημόσιες, ανώνυμες και ανεπιβεβαίωτες. Στέλνεις μόνο τη γραμμή ή τον "+
-    "σταθμό και τι είδες — ποτέ όνομα, φωτογραφία ή σχόλιο. Είσαι υπεύθυνος/η για ό,τι δηλώνεις. "+
-    "Η εφαρμογή δεν είναι εργαλείο αποφυγής κομίστρου: έχε πάντα έγκυρο εισιτήριο.",
+  firstP:"Οι αναφορές είναι δημόσιες αλλα τελειως ανώνυμες. Η εφαρμογή δεν είναι εργαλείο "+
+    "αποφυγής κομίστρου, έχετε πάντα έγκυρο εισιτήριο.",
   agree:"Κατάλαβα",
   unofficial:"Ανεπίσημη εφαρμογή· δεν σχετίζεται με ΟΑΣΑ / ΟΣΥ / ΣΤΑΣΥ.",
   mLegal:"Όροι & απόρρητο", legalH:"Όροι & απόρρητο",
@@ -747,10 +751,11 @@ const T={
   aboutH:"Σχετικά",
   aboutBody:`<p><b>OASUCKS</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
     γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
-    <p><b>Αναφορές.</b> Οι επιβάτες σημαίνουν τι βλέπουν: ελεγκτής (κόκκινο) ή πρόβλημα (κίτρινο).
-    Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι κόκκινες
-    σημάνσεις σβήνουν μετά από 15′ στα λεωφορεία και 2 ώρες στο μετρό, οι κίτρινες μετά από 60′.
-    Μόνο όποιος έκανε μια αναφορά μπορεί να τη σβήσει νωρίτερα.</p>
+    <p><b>Αναφορές.</b> Οι επιβάτες σημαίνουν τι βλέπουν: ελεγκτές, βλάβη, υπερπλήρες ή χωρίς A/C
+    στα λεωφορεία· ελεγκτές ή ασανσέρ εκτός λειτουργίας στο μετρό. Κάθε σήμανση είναι κόκκινη και
+    γράφει από πάνω της τι είναι. Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε
+    600 μ. Οι ελεγκτές σβήνουν μετά από 15′ στα λεωφορεία και 2 ώρες στο μετρό, οι βλάβες μετά
+    από 60′. Μόνο όποιος έκανε μια αναφορά μπορεί να τη σβήσει νωρίτερα.</p>
     <p><b>Επιβεβαίωση.</b> Αν η εφαρμογή δεν καταφέρει να σε ταιριάξει με το όχημα, η αναφορά
     μπαίνει <i>χωρίς επιβεβαίωση</i>: φαίνεται αχνή, κρατάει 5′ και δεν βάζει ένδειξη στη λίστα
     αφίξεων. Μόλις συμφωνήσει δεύτερος επιβάτης γίνεται κανονική — έτσι κανείς δεν μπορεί μόνος
@@ -762,7 +767,8 @@ const T={
     πέφτουν έξω. Χάρτες © OpenStreetMap, © CARTO.</p>`,
   aboutTip:"Μικρά κόλπα", aboutTips:`<p>Κράτα πατημένη μια γραμμή στη λίστα για προεπισκόπηση
     διαδρομής. Κράτα πατημένη μια στάση στον χάρτη για να δεις πού πάνε τα λεωφορεία της.</p>`,
-  ti_inspector:"Ελεγκτής", ti_breakdown:"Βλάβη", ti_crowded:"Υπερπλήρες",
+  ti_inspector:"Ελεγκτές", ti_breakdown:"Βλάβη", ti_crowded:"Υπερπλήρες",
+  ti_noac:"Χωρίς A/C", ti_lift:"Ασανσέρ εκτός λειτουργίας",
   ti_delay:"Καθυστέρηση", ti_incident:"Επεισόδιο", ti_no_show:"Δεν πέρασε",
   ti_detour:"Παράκαμψη", ti_other:"Άλλο", reportSent:"Καταχωρήθηκε ✓",
   needLoc:"Χρειάζεται τοποθεσία.", repOff:"Οι αναφορές δεν έχουν ρυθμιστεί.",
@@ -792,7 +798,7 @@ const T={
   whichLine:"Which line?", whichStop:"Which stop?", whichStation:"Which station?",
   issueType:"What's happening?", noteOpt:"Note (optional)", send:"Send",
   noReports:"No active reports.", agoShort:"ago", mineOnly:"Only you can clear it",
-  legendIssue:"issue", legendInsp:"inspector",
+  legendIssue:"report", legendInsp:"inspectors",
   confirmBus:"Which bus are you on?", scanBus:"Finding buses around you…",
   scanRefine:"Checking which one moves with you…", withYou:"moving with you",
   gpsFix:"Getting your position…",
@@ -813,9 +819,8 @@ const T={
   confirms:n=>n===1?"1 confirmation":`${n} confirmations`,
   /* first-report notice + legal */
   firstH:"Before your first report",
-  firstP:"Reports are public, anonymous and unverified. You send only the line or station and "+
-    "what you saw — never a name, a photo or a comment. You are responsible for what you file. "+
-    "This app is not a fare-evasion tool: always carry a valid ticket.",
+  firstP:"Reports are public but completely anonymous. This app is not a fare-evasion tool, "+
+    "always carry a valid ticket.",
   agree:"Got it",
   unofficial:"Unofficial app; not affiliated with OASA / OSY / STASY.",
   mLegal:"Terms & privacy", legalH:"Terms & privacy",
@@ -836,10 +841,11 @@ const T={
   aboutH:"About",
   aboutBody:`<p><b>OASUCKS</b> shows live bus and trolley arrivals for the stops around you,
     using the unofficial OASA telematics API.</p>
-    <p><b>Reports.</b> Riders flag what they see: a ticket inspector (red) or a problem (yellow).
-    You flag the bus you are riding, or a metro station within 600 m. Red flags expire
-    after 15 min on buses and 2 hours on the metro, yellow ones after 60 min. Only the person who
-    filed a report can clear it early.</p>
+    <p><b>Reports.</b> Riders flag what they see: ticket inspectors, a breakdown, overcrowding or
+    no A/C on a bus; inspectors or a broken lift at a metro station. Every flag is red and says
+    what it is, right on the map. You flag the bus you are riding, or a metro station within
+    600 m. Inspector flags expire after 15 min on buses and 2 hours on the metro, faults after
+    60 min. Only the person who filed a report can clear it early.</p>
     <p><b>Confirmation.</b> If the app can't match you to the vehicle, your report goes up
     <i>unconfirmed</i>: faint, five minutes, and it doesn't annotate the arrivals list. As soon
     as a second rider agrees it becomes a full flag — so nobody acting alone can manufacture
@@ -850,7 +856,8 @@ const T={
     often wrong. Maps © OpenStreetMap, © CARTO.</p>`,
   aboutTip:"Hidden bits", aboutTips:`<p>Long-press a line in the list to preview its route.
     Long-press a stop on the map to see where its buses go.</p>`,
-  ti_inspector:"Ticket inspector", ti_breakdown:"Breakdown", ti_crowded:"Overcrowded",
+  ti_inspector:"Ticket inspectors", ti_breakdown:"Breakdown", ti_crowded:"Overcrowded",
+  ti_noac:"No A/C", ti_lift:"Elevator not working",
   ti_delay:"Delayed", ti_incident:"Incident", ti_no_show:"Never arrived",
   ti_detour:"Detour", ti_other:"Other", reportSent:"Reported ✓",
   needLoc:"Location needed.", repOff:"Reports aren't configured.",
@@ -1758,13 +1765,15 @@ function stopCycle(quiet){
 
 
 /* ======================== issue reports ========================== *
- * Riders flag what they see. Red = ticket inspector (short-lived,
- * because inspectors ride a few stops and get off). Yellow = anything
- * else. Reports clear themselves when they expire; only the person who
- * filed one can remove it early. */
-/* What can be reported, per category. Buses get the three things a rider
-   actually sees from a seat; a metro station only ever gets inspectors. */
-const TYPES_BY_KIND={ bus:["breakdown","crowded","inspector"], metro:["inspector"] };
+ * Riders flag what they see. Every flag is red and carries its own label
+ * on the map — the type decides how long it lives (inspectors are
+ * short-lived on a bus because they ride a few stops and get off; a
+ * broken lift is not), never what colour it is. Reports clear themselves
+ * when they expire; only the person who filed one can remove it early. */
+/* What can be reported, per category: the things a rider actually sees
+   from a seat, and the things you can see standing on a platform. */
+const TYPES_BY_KIND={ bus:["breakdown","crowded","noac","inspector"],
+                      metro:["inspector","lift"] };
 /* You may only flag the vehicle you are inside, or a station you are
    standing at — these numbers are what "inside" and "at" mean.
 
@@ -1773,7 +1782,7 @@ const TYPES_BY_KIND={ bus:["breakdown","crowded","inspector"], metro:["inspector
    was the bug, and why the distance rule now lives in the verdict. */
 const ONBOARD={ busRadius:100, metroRadius:600, maxRoutes:20,
   shortlist:10,       // candidates the co-movement pass is allowed to weigh
-  gateM:1500,         // how far out a candidate may start (the server's own trim)
+  gateM:800,          // how far out a candidate may start (matches SCAN.keepM)
   trackMs:8000,       // how long we watch our OWN position before scanning
   trackMin:3,         // fixes that make a track usable
   sampleMs:5500,      // gap between vehicle samples
@@ -1787,7 +1796,10 @@ const ONBOARD={ busRadius:100, metroRadius:600, maxRoutes:20,
   crossMax:80,        // sideways offset that still counts as the same street
   maxStaleS:75,       // most staleness we'll believe when inferring a fix's age
   accMax:150 };       // above this the fix is too vague to reason about at all
-const isRed=r=>r.type==="inspector";
+/* Every flag is red now. Inspectors and faults differ in how long they
+   live (see TTL in worker.js) and in what the label says, not in colour —
+   a two-colour scheme just made people decode the palette before reading
+   the word that was already there. */
 function agoTxt(sec){
   const m=Math.max(0,Math.round(sec/60));
   if(m<1) return t("justNow");
@@ -1824,9 +1836,8 @@ function reportForMetro(id){
 }
 function flagLine(r){
   if(!r) return "";
-  const cls=isRed(r)?"red":"yellow";
   const ago=agoTxt(Date.now()/1000-r.at);
-  return `<div class="flagline ${cls}">${esc(issueLabel(r.type))} · ${ago}</div>`;
+  return `<div class="flagline red">${esc(issueLabel(r.type))} · ${ago}</div>`;
 }
 
 let repmap=null, replayer=null;
@@ -1899,9 +1910,15 @@ function drawReportMap(){
     const name=r.kind==="bus"?`🚌 ${esc(r.lineId||"")} · ${esc(issueLabel(r.type))}`
       :`Ⓜ ${esc(r.targetName||"")} · ${esc(issueLabel(r.type))}`;
     const tail=esc(agoTxt(Date.now()/1000-r.at))+(isConf(r)?"":` · ${esc(t("unconfirmed"))}`);
-    L.marker([la,ln],{icon:flagIcon(r.kind,isRed(r)?"red":"yellow",isConf(r)),
-        zIndexOffset:isConf(r)?600:500})
-      .addTo(replayer).bindTooltip(`${name} · ${tail}`,{direction:"top"});
+    const m=L.marker([la,ln],{icon:flagIcon(r.kind,"red",isConf(r)),
+        zIndexOffset:isConf(r)?600:500}).addTo(replayer);
+    /* The label sits ON the map, permanently, above the pin: the whole
+       point of this screen is "what is wrong and where", and a pin you
+       have to tap to identify answers only half of that. */
+    m.bindTooltip(esc(issueLabel(r.type)),
+      {permanent:true,direction:"top",offset:[0,-9],
+       className:"flaglabel"+(isConf(r)?"":" faint")});
+    m.bindPopup(`${name} · ${tail}`);
     b.extend([la,ln]);
   });
   if(b.isValid()) repmap.fitBounds(b,{padding:[40,40],maxZoom:15});
@@ -1912,11 +1929,10 @@ function renderReportList(){
   const reps=activeReports().sort((a,b)=>b.at-a.at);
   $("#rep-sub").textContent=`${reps.length} ${t("reports").toLowerCase()}`;
   const legend=`<div class="rep-legend">
-    <span><i class="yellow"></i>${t("legendIssue")}</span>
-    <span><i class="red"></i>${t("legendInsp")}</span>
+    <span><i class="red"></i>${t("legendIssue")}</span>
     <span><i class="hollow"></i>${t("legendUnconf")}</span></div>`;
   const items=reps.length?reps.map(r=>{
-    const cls=(isRed(r)?"red":"yellow")+(isConf(r)?"":" faint");
+    const cls="red"+(isConf(r)?"":" faint");
     const where=r.targetName||r.lineId||"";
     const tags=[agoTxt(Date.now()/1000-r.at)];
     if(!isConf(r)) tags.push(t("unconfirmed"));
@@ -2840,7 +2856,7 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v29</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v30</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

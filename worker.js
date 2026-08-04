@@ -29,7 +29,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v29";
+const APP_VERSION = "v30";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1085,15 +1085,25 @@ async function handleNearby(url, env, ctx) {
 const REPORTS_KEY = "reports:index";
 /* What may be flagged, and with what. A rider reports from inside a bus
  * or standing at a metro station — those are the only two categories —
- * and each one has its own short menu (inspector = red, rest = yellow). */
+ * and each one has its own short menu. Every flag is drawn red; the menus
+ * differ, the colour does not. */
 const REPORT_TYPES = {
-  bus: new Set(["breakdown", "crowded", "inspector"]),
-  metro: new Set(["inspector"]),
+  bus: new Set(["breakdown", "crowded", "noac", "inspector"]),
+  metro: new Set(["inspector", "lift"]),
 };
-const YELLOW_TTL = 3600;          // 60 min for every yellow flag
-const RED_TTL = 900;              // 15 min: inspectors hop off after a few stops
-const RED_METRO_TTL = 7200;       // 2 h on the metro, per spec
-const UNCONF_TTL = 300;           // 5 min while nobody has corroborated it
+
+/* How long a flag lives, in seconds, by category and type. The split is
+ * about how fast the thing stops being true, not about colour: inspectors
+ * ride a few stops and hop off a bus, but work a metro station for hours;
+ * a broken air-con or lift lasts the whole trip or the whole day. An
+ * unconfirmed flag is short-lived whatever it claims — see the two-tier
+ * note below. Documented in PARAMETERS.md. */
+const TTL = {
+  unconfirmed: 300,                                                    // 5 min
+  bus:   { inspector: 900, breakdown: 3600, crowded: 3600, noac: 3600 },
+  metro: { inspector: 7200, lift: 7200 },
+};
+const DEFAULT_TTL = 3600;
 const MAX_ACTIVE_PER_REPORTER = 2;
 
 /* ---------------------- two-tier reports --------------------------- *
@@ -1105,7 +1115,7 @@ const MAX_ACTIVE_PER_REPORTER = 2;
  *
  *   confirmed (conf:1) — the app matched you to the vehicle, or you are
  *     at a metro station (stations don't move, so that check is real).
- *     Full TTL, solid marker, red/yellow line in the arrivals list.
+ *     Full TTL, solid marker, red line in the arrivals list.
  *   unconfirmed (conf:0) — you picked from the plausible list but the
  *     matcher couldn't agree. Visible, hollow, 5 minutes, and it does
  *     NOT annotate arrivals.
@@ -1121,9 +1131,8 @@ const MAX_ACTIVE_PER_REPORTER = 2;
  * the self-service version of the manual purge.
  * ------------------------------------------------------------------ */
 function reportTtl(r) {
-  if (!r.conf) return UNCONF_TTL;
-  if (r.type !== "inspector") return YELLOW_TTL;
-  return r.kind === "metro" ? RED_METRO_TTL : RED_TTL;
+  if (!r.conf) return TTL.unconfirmed;
+  return (TTL[r.kind] && TTL[r.kind][r.type]) || DEFAULT_TTL;
 }
 const VOTES_TO_KILL = 2;          // distinct "not there" votes that remove a flag
 function reportsReady(env) { return !!(env && env.ALERTS); }
@@ -1558,7 +1567,16 @@ async function handleLive(url, env) {
  * Budget: 5 stop lists + 14 route lookups + 20 vehicle calls = 39, still
  * inside the 50-subrequest free-tier ceiling. The follow-up samples pass
  * ?routes= and cost 6. */
-const SCAN = { stopRadius: 600, stopProbe: 14, maxRoutes: 20, keepM: 1500, cache: 10 };
+/* keepM: how far from the rider a vehicle may be and still be returned as
+ * a candidate. It is NOT a polling radius — getBusLocation is fetched per
+ * ROUTE and always returns that route's whole fleet, so this trims the
+ * response, not the subrequest count. What sets the floor is staleness: a
+ * bus's reported position lags reality by speed x age, and the client will
+ * believe an age of up to ONBOARD.maxStaleS (75 s). At an urban 8 m/s that
+ * is 600 m of lag; the extra 200 m covers GPS error and a faster arterial.
+ * Drop this below ~700 m and the moving-bus matching regresses to only
+ * finding your vehicle once it stops. */
+const SCAN = { stopRadius: 600, stopProbe: 14, maxRoutes: 20, keepM: 800, cache: 10 };
 
 /* OASA sometimes stamps each fix with its own time. If it does, the
  * client can measure real staleness per vehicle instead of assuming it.
