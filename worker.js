@@ -29,7 +29,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v28";
+const APP_VERSION = "v29";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -943,7 +943,7 @@ async function handleNearby(url, env, ctx) {
   const lng = parseFloat(url.searchParams.get("lng"));
   if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
   const radius = Math.min(2000, Math.max(200, +(url.searchParams.get("radius") || 600)));
-  const limit = Math.min(12, Math.max(1, +(url.searchParams.get("limit") || 8)));
+  const limit = Math.min(12, Math.max(1, +(url.searchParams.get("limit") || 10)));
   const markers = Math.min(150, Math.max(limit, +(url.searchParams.get("markers") || 60)));
   // Map pins show the stop name now, so line metadata is only needed for the
   // stops the list renders. Everything else lazy-loads when its popup opens.

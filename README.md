@@ -388,7 +388,14 @@ and a history log that carries neither coordinates nor reporter ids.
 
 In `public/index.html` → `CONFIG`: `refreshMs` (refresh interval), `listStops` (how
 many stops in the list), `maxRows` (arrivals per stop) — the search radius has its own
-slider in the map view. Reporting reach lives in `ONBOARD`: `busRadius` (100 m),
+slider in the map view. **`listStops` is a hard cap and the main cost dial:** the map
+draws every stop within the radius as a marker, but the list only ever shows this many
+closest stops, and loading their arrivals (one OASA call each) is the expensive part of
+a refresh. Raising the radius adds map markers, not list rows — so the number of
+arrival calls per refresh stays fixed no matter how far you zoom out. Every visible row
+is guaranteed to have its data (`fillVisibleArrivals` tops up anything the batch didn't
+cover), so a row can never sit on the loading bars forever. Reporting reach lives in
+`ONBOARD`: `busRadius` (100 m),
 `metroRadius` (600 m), `refineMs` (how long the co-movement pass waits) and `minMove`
 (how far you must travel for that pass to have an opinion); the per-category issue
 menus are `TYPES_BY_KIND`. In `worker.js`: `ACT_TTL` cache times, `ALLOWED_ACTS` if you

@@ -519,7 +519,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v28</span></div>
+  <div class="foot"><span class="ver">v29</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -617,7 +617,11 @@
 
 <script>
 const CONFIG={proxyBase:"",refreshMs:30000,idleMs:45000,idleAfter:240000,sleepAfter:900000,
-  listStops:8,maxMarkers:120,maxRows:6,
+  // listStops is a HARD cap on the list: the map draws every marker, but the
+  // list only ever shows this many closest stops, and every one of them has
+  // its arrivals loaded (see fillVisibleArrivals). Loading arrivals is the
+  // expensive call, so this is the number that governs cost per refresh.
+  listStops:10,maxMarkers:120,maxRows:6,
   walkSpeed:80,detour:1.35,onward:9,cycleMs:3200};
 const API="https://telematics.oasa.gr/api/";
 const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
@@ -1264,6 +1268,11 @@ function toggleFav(s){
 }
 /* The list: favourites first (in the order pinned), then the nearest
    stops. A favourite that isn't in range is carried in from `favLive`. */
+/* The list is capped at CONFIG.listStops stops TOTAL — favourites first,
+   then the nearest others to fill up to the cap. Favourites count toward
+   the cap rather than adding on top of it: the old `+pinned.length` let
+   each pinned stop push an un-loaded stop past the loaded window, which
+   is exactly what produced the rows stuck on the grey loading bars. */
 function listStops(){
   const byCode={};
   (state.stops||[]).forEach(s=>{ byCode[String(s.code)]=s; });
@@ -1273,7 +1282,9 @@ function listStops(){
     if(live) pinned.push(live);
   });
   const rest=(state.stops||[]).filter(s=>!isFav(s.code));
-  return pinned.concat(rest).slice(0,CONFIG.listStops+pinned.length);
+  // never drop a favourite the user explicitly pinned, even past the cap
+  const cap=Math.max(CONFIG.listStops,pinned.length);
+  return pinned.concat(rest).slice(0,cap);
 }
 /* Fetch arrivals for favourites the nearby sweep didn't return. */
 async function loadFarFavs(){
@@ -1385,6 +1396,24 @@ async function loadStopsBatch(){
   state._mapCodes=null;
   updateRadiusLabel(); renderView();
   loadFarFavs();
+  fillVisibleArrivals();
+}
+
+/* The guarantee behind the cap: whatever the list is about to SHOW, it
+   shows with arrivals. The server loads the closest CONFIG.listStops, so
+   normally there is nothing left to do; this only fires for a stop the
+   list surfaces that the batch didn't cover (a far favourite reordering
+   the window, or the server trimming under its subrequest budget). It is
+   bounded by the cap, so at most a handful of requests, and it means a
+   row can never sit on the grey loading bars forever. Favourites are left
+   to loadFarFavs so we don't fetch the same stop twice. */
+async function fillVisibleArrivals(){
+  const need=listStops().filter(s=>s&&!s.arrLoaded&&!isFav(s.code));
+  if(!need.length) return;
+  await withLimit(need.map(s=>async()=>{
+    try{ if(!s.routesLoaded) await loadRoutes(s); await loadArrivals(s); }catch(_){}
+  }),4);
+  if(state.view==="list") renderView();
 }
 
 async function loadStops(){
@@ -2811,7 +2840,7 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v28</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v29</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
