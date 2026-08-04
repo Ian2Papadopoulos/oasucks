@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v26.**
+version: v27.**
 
 **The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
 everything else: [look up a line](#find-a-line) and preview its route, a
@@ -92,7 +92,9 @@ JSON to host at `/.well-known/assetlinks.json`.
 **Favourites:** long-press a stop's header in the list to pin it — it gets a ★ and
 sorts to the top, and stays there across refreshes. A pinned stop that's out of range
 is still shown (its arrivals are fetched separately), which is the point: your home
-stop while you're at work. Long-press again to unpin; up to 6, kept in `localStorage`.
+stop while you're at work. On the **map** a pinned stop swaps its black dot for a
+yellow ★ — including favourites outside the current radius, so they're findable there
+too. Long-press again to unpin; up to 6, kept in `localStorage`.
 
 **Switching views:** the Λίστα / Χάρτης tabs, or **swipe left for the map, right for the
 list**. On the map the swipe has to start at the left edge, since Leaflet owns dragging

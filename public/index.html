@@ -177,6 +177,10 @@
   .mk{width:13px;height:13px;position:relative}
   .mk-dot{width:13px;height:13px;border-radius:50%;background:var(--toner);
     border:2.5px solid #fff;box-shadow:0 0 0 1px var(--toner)}
+  /* pinned stop: highlighter star instead of the toner dot */
+  .mk-star{width:15px;height:15px;margin:-1px;line-height:15px;text-align:center;
+    font-size:14px;color:var(--marker);text-shadow:0 0 2px var(--toner),
+    1px 0 0 var(--toner),-1px 0 0 var(--toner),0 1px 0 var(--toner),0 -1px 0 var(--toner)}
   .mk-name{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:none;
     max-width:132px;width:max-content;background:var(--card);border:1px solid var(--toner);
     padding:1px 4px;border-radius:2px;font-size:9.5px;font-weight:700;line-height:1.5;
@@ -492,7 +496,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v26</span></div>
+  <div class="foot"><span class="ver">v27</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -997,9 +1001,13 @@ function tileUrl(){ return state.dark?TILE_DARK:TILE_LIGHT; }
 function meIcon(){ return L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[16,16],iconAnchor:[8,8]}); }
 function stopIcon(s){
   // Pins carry the stop's own name; lines are revealed by opening the popup.
+  // A pinned stop trades the toner dot for a highlighter star, so you can
+  // pick your regular stops out of a crowded map at a glance.
   const nm=esc(stopName(s));
+  const fav=isFav(s.code);
   return L.divIcon({className:"",
-    html:`<div class="mk"><div class="mk-name">${nm}</div><div class="mk-dot"></div></div>`,
+    html:`<div class="mk"><div class="mk-name">${nm}</div>`+
+      (fav?`<div class="mk-star">★</div>`:`<div class="mk-dot"></div>`)+`</div>`,
     iconSize:[14,14],iconAnchor:[7,7],popupAnchor:[0,-16]});
 }
 function ensureMap(){
@@ -1033,15 +1041,29 @@ function popupHtml(s){
     <div class="pp-sec">${t("arrivingSoon")}</div>${rows}
     <div class="pp-hint">${t("ppHint")}</div>`;
 }
+/* What the map draws: the stops around you plus any pinned stop that the
+   nearby sweep didn't return — a favourite should be findable on the map
+   for the same reason it's pinned to the top of the list. */
+function mapStops(){
+  const out=state.stops.slice();
+  const have={}; out.forEach(s=>{ have[String(s.code)]=1; });
+  favs.forEach(f=>{
+    const s=state.favLive[String(f.code)];
+    if(s&&!have[String(f.code)]&&isFinite(s.lat)) out.push(s);
+  });
+  return out;
+}
 function renderMap(){
   ensureMap();
   setTimeout(()=>map.invalidateSize(),0);
-  const codes=state.stops.map(s=>s.code).join(",");
+  const drawn=mapStops();
+  // the key includes which stops are pinned, so pinning rebuilds the pins
+  const codes=drawn.map(s=>s.code).join(",")+"|"+favs.map(f=>f.code).join(",");
   if(codes!==state._mapCodes){
     layerStops.clearLayers(); mapMarkers={};
     L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:1000}).addTo(layerStops);
     const b=[[here.lat,here.lng]];
-    state.stops.forEach(s=>{
+    drawn.forEach(s=>{
       if(!isFinite(s.lat)||!isFinite(s.lng)) return;
       const m=L.marker([s.lat,s.lng],{icon:stopIcon(s)}).addTo(layerStops);
       m.bindPopup(()=>popupHtml(s));
@@ -1058,7 +1080,7 @@ function renderMap(){
             markStopDead(s.code);
             m.closePopup(); layerStops.removeLayer(m); delete mapMarkers[s.code];
             state.stops=state.stops.filter(x=>x.code!==s.code);
-            state._mapCodes=state.stops.map(x=>x.code).join(",");
+            state._mapCodes=null;   // force a rebuild with the pin gone
             updateRadiusLabel(); renderView(); return;
           }
           if(m.isPopupOpen()) m.setPopupContent(popupHtml(s));
@@ -1071,9 +1093,12 @@ function renderMap(){
     if(!state.mapFitted&&!cyc.on&&b.length>1){ map.fitBounds(b,{padding:[50,50],maxZoom:16}); state.mapFitted=true; }
     state._mapCodes=codes;
   } else {
-    state.stops.forEach(s=>{
+    drawn.forEach(s=>{
       const m=mapMarkers[s.code]; if(!m) return;
-      if((s._drawn||0)!==s.lines.length){ m.setIcon(stopIcon(s)); s._drawn=s.lines.length;
+      // redraw when the line count changes OR the stop was pinned/unpinned
+      const fav=isFav(s.code)?1:0;
+      if((s._drawn||0)!==s.lines.length||s._fav!==fav){
+        m.setIcon(stopIcon(s)); s._drawn=s.lines.length; s._fav=fav;
         const el=m.getElement(); if(el&&!el._lp){ el._lp=1; onLongPress(el,()=>startCycle(s)); } }
       if(m.isPopupOpen&&m.isPopupOpen()) m.setPopupContent(popupHtml(s));
     });
@@ -2412,7 +2437,7 @@ function openAbout(){
   $("#ab-h").textContent=t("aboutH");
   $("#ab-body").innerHTML=`<div class="ab">${t("aboutBody")}
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
-    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v26</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v27</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
