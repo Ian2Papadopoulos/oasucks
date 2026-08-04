@@ -519,7 +519,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v27</span></div>
+  <div class="foot"><span class="ver">v28</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -991,6 +991,11 @@ function setView(v,dir){
   $("#list").style.display=v==="list"?"":"none";
   $$("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
   $("#lphint").textContent = v==="map"?t("lpMap"):t("lpList");
+  // The two tabs are different heights, so a leftover scroll offset from
+  // one makes the other land mid-page with the scrollbar flashing. Pin to
+  // the top on every switch — the map has nothing to scroll anyway, and a
+  // fresh list read always starts from its first stop.
+  window.scrollTo(0,0);
   renderView();
   if(dir){                       // slide the incoming view in, swipe-style
     const el=v==="map"?$("#mapwrap"):$("#list");
@@ -1012,27 +1017,34 @@ function setView(v,dir){
  * so without this it read as "swipe back to the list" every time — the
  * slider sits in #radwrap, which is a sibling of #mapwrap and so was not
  * covered by the map exemption below. */
-/* The decision happens in touchmove, NOT in touchend.
+/* The decision happens in touchmove, NOT in touchend, and the listeners
+ * live on the WHOLE WINDOW, not on .wrap.
  *
- * This is the whole reason list→map used to fail "randomly" while
- * map→list was fine. The list tab scrolls; the map tab has nothing to
- * scroll. So on the list, the moment a swipe carries any vertical
- * component the browser claims the gesture for scrolling and fires
- * `touchcancel` — and a handler that makes its decision in `touchend`
- * never hears anything again. It looked random because it depended on
- * whether your thumb happened to travel perfectly flat for the first few
- * pixels. Firing as soon as the threshold is crossed can't be swallowed
- * that way, and an unmistakably vertical drag bails out early so a
- * genuine scroll never turns into a tab change. */
-const SWIPE={edge:34,minX:60,slope:0.75,scroll:1.4,lock:12,maxMs:900};
+ * Two failures this shape fixes, both peculiar to the list tab because
+ * the list scrolls and the map does not:
+ *
+ *  1. DEAD ZONES. .wrap is only as tall as its content. With one or two
+ *     stops the rest of the screen — the area under the v## label — is
+ *     bare <body>, OUTSIDE .wrap, so a swipe that started there never
+ *     reached the old listener. Landing on the window means every pixel
+ *     of the viewport is swipeable.
+ *
+ *  2. THE SCROLL BLEED. A passive touchmove can't stop the page, so an
+ *     arced thumb scrolled the list vertically mid-swipe; when the view
+ *     then flipped to the shorter map, the retained scroll snapped back
+ *     and the scrollbar flashed. Now the move listener is NON-passive:
+ *     the instant the gesture commits to horizontal we preventDefault(),
+ *     which freezes the scroll for the rest of the gesture, and setView
+ *     pins the page to the top on the switch itself so the map always
+ *     lands clean. A gesture that commits to vertical is released
+ *     untouched, so normal list scrolling is unaffected. */
+const SWIPE={edge:34,dead:8,hlock:12,vert:1.5,minX:52,slope:0.8,maxMs:900};
 const NO_SWIPE="input,select,textarea,button,a,label,.seg,.radwrap,.leaflet-control";
 function initSwipes(){
-  const zone=$(".wrap");
-  if(!zone) return;
-  let sx=0,sy=0,t0=0,live=false;
-  const stop=()=>{ live=false; };
-  zone.addEventListener("touchstart",e=>{
-    live=false;
+  let sx=0,sy=0,t0=0,live=false,axis=0;   // axis: 0 undecided, 1 horizontal, -1 vertical
+  const stop=()=>{ live=false; axis=0; };
+  window.addEventListener("touchstart",e=>{
+    stop();
     if(e.touches.length!==1) return;
     if(document.querySelector(".sheet-bg.on,.picker.on,.rp.on,.cyc.on")) return;
     const t=e.touches[0];
@@ -1040,21 +1052,36 @@ function initSwipes(){
     if(e.target.closest("#mapwrap") && t.clientX>SWIPE.edge) return;  // let the map pan
     sx=t.clientX; sy=t.clientY; t0=Date.now(); live=true;
   },{passive:true});
-  zone.addEventListener("touchmove",e=>{
+  window.addEventListener("touchmove",e=>{
     if(!live) return;
     if(e.touches.length!==1) return stop();                           // second finger: not a swipe
     const t=e.touches[0];
     const dx=t.clientX-sx, dy=t.clientY-sy;
     const ax=Math.abs(dx), ay=Math.abs(dy);
-    if(ay>SWIPE.lock && ay>ax*SWIPE.scroll) return stop();            // that's a scroll, hands off
-    if(Date.now()-t0>SWIPE.maxMs) return stop();                      // dawdling, not a swipe
-    if(ax>=SWIPE.minX && ay<=ax*SWIPE.slope){
-      stop();                                                         // ignore the rest of the gesture
-      if(dx<0) setView("map",-1); else setView("list",1);
+    /* Lock to one axis and stay there for the rest of the gesture.
+       The bias is deliberate: this is a tab swipe, so anything that isn't
+       CLEARLY a vertical scroll (ay dominating ax by 1.5x) is treated as
+       a horizontal candidate the moment it travels ~12px sideways. A real
+       scroll is near-vertical and trips the vertical test long before ax
+       reaches 12; a thumb's diagonal arc does not, so it is no longer
+       mistaken for a scroll the way it was when list->map "almost never"
+       fired. */
+    if(!axis){
+      if(ay>=SWIPE.dead && ay>ax*SWIPE.vert) axis=-1;                 // clearly a scroll
+      else if(ax>=SWIPE.hlock) axis=1;                                // horizontal enough: ours
+      else return;                                                    // undecided: keep watching
     }
-  },{passive:true});
-  zone.addEventListener("touchend",stop,{passive:true});
-  zone.addEventListener("touchcancel",stop,{passive:true});
+    if(axis<0) return stop();                                         // hand the scroll back to the page
+    e.preventDefault();                                               // horizontal: freeze the scroll bleed
+    if(Date.now()-t0>SWIPE.maxMs) return stop();                      // dawdling, not a flick
+    if(ax>=SWIPE.minX && ay<=ax*SWIPE.slope){
+      const dir=dx<0?"map":"list";
+      stop();
+      setView(dir, dir==="map"?-1:1);
+    }
+  },{passive:false});
+  window.addEventListener("touchend",stop,{passive:true});
+  window.addEventListener("touchcancel",stop,{passive:true});
 }
 function renderView(){ state.view==="map"?renderMap():renderList(); }
 
