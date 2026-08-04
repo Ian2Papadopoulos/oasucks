@@ -95,12 +95,15 @@ https://oasa-stop.<your-subdomain>.workers.dev
   blocked — tap **Αλλαγή / Change** and allow location, or in Chrome: site settings →
   Location → Allow.
 - **Language:** ☰ menu → Γλώσσα / Language.
-- **☰ menu:** find a line and preview its route, live bus map, language, about.
+- **☰ menu:** find a line and preview its route, live bus map, language, about, and
+  **Terms & privacy** (`/legal.html`).
 - **Reports:** tap the red **!** — the map shows only what's currently flagged (buses
   and metro stations), and **Report an issue** underneath lets you file one. Test it
-  from a bus: pick *On a bus*, wait for the candidate list, confirm your vehicle, pick
-  the issue. Withdraw your own report from the list under the map; it disappears for
-  everyone. You can't report a bus you're not on, or a station more than 600 m away.
+  from a bus: pick *On a bus*, give it ~15 s (it watches your GPS, then samples vehicle
+  positions three times), then confirm your vehicle from the ranked list. One marked
+  **✓ moving with you** is a confirmed report; picking a dashed one files an
+  *unconfirmed* flag that shows hollow for 5 minutes until someone agrees. Withdraw your
+  own from the list under the map. A station must be within 600 m.
 
 ### If something's off
 - **Empty boards / "no arrivals":** normal late at night or on quiet lines — check a
@@ -108,7 +111,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v14"` to `v15` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v15"` to `v16` in `public/sw.js` and redeploy to force an update.
 
 ---
 
@@ -119,6 +122,21 @@ Change any file, then just:
 npx wrangler deploy
 ```
 The same URL updates. On the phone, pull to refresh (or reopen) to pick up changes.
+
+## Before you publish it publicly
+
+1. **Set your contact address.** Replace `CONTACT@EXAMPLE.COM` in `PRIVACY.md`,
+   `TERMS.md` and `public/legal.html` — it is the GDPR contact and the DSA
+   notice-and-action channel, and it is linked from the app's ☰ menu.
+2. **Pick your URL first, not later.** Push subscriptions and PWA installs are bound to
+   the origin: change the URL after people install and their alerts go dead and their
+   home-screen icon points at the old address. Renaming the worker in `wrangler.toml`
+   creates a *new* worker and needs the secrets re-uploaded; attaching a **custom
+   domain** to the existing worker (Workers & Pages → your worker → Settings → Domains
+   & Routes → Add → Custom Domain) changes the URL with no code change and no secret
+   re-upload.
+3. **Check the About screen** still carries the "unofficial · not affiliated with OASA"
+   banner, and say the same in your launch post.
 
 ## Costs
 

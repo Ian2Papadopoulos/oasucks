@@ -18,6 +18,7 @@
  *  GET  /reports?by=ID          → active user reports (inspector/issue flags)
  *  POST /reports                → file (or renew) a report
  *  POST /reports/delete         → withdraw a report (reporter-only)
+ *  POST /reports/vote           → corroborate / contradict someone else's
  *  GET  /metro                  → static Athens metro station list
  *  GET  /lines                  → every OASA line (id, code, description)
  *  GET  /live?lat=&lng=         → live vehicle positions around a point
@@ -28,7 +29,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v27";
+const APP_VERSION = "v28";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -834,11 +835,19 @@ async function syncSchedules(env) {
   return n;
 }
 
+/* Retention, not just housekeeping. report_log holds no coordinates and
+ * no reporter id, but it is still a record of what people reported and
+ * when, so it gets a stated lifetime like everything else — see
+ * PRIVACY.md, which quotes these two numbers. */
+const REPORT_LOG_DAYS = 90;
 async function pruneOld(env) {
   if (!dbReady(env)) return;
   await initSchema(env);
-  const cutoff = Math.floor(Date.now() / 1000) - TRACK.retentionDays * 86400;
-  await env.DB.prepare("DELETE FROM stop_event WHERE ts < ?").bind(cutoff).run();
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare("DELETE FROM stop_event WHERE ts < ?")
+    .bind(now - TRACK.retentionDays * 86400).run();
+  await env.DB.prepare("DELETE FROM report_log WHERE ts < ?")
+    .bind(now - REPORT_LOG_DAYS * 86400).run();
 }
 
 /* ===================== batch "nearby" endpoint ==================== *
@@ -1036,7 +1045,10 @@ async function handleNearby(url, env, ctx) {
   // response is edge-cached and shared, so no `mine` marking here.
   let reports = [];
   if (env && env.ALERTS) {
-    try { reports = (await readReports(env, now)).map(r => publicReport(r, "")); } catch (_) { }
+    try {
+      reports = (await readReports(env, now))
+        .filter(r => visibleTo(r, "")).map(r => publicReport(r, ""));
+    } catch (_) { }
   }
 
   const res = new Response(JSON.stringify({
@@ -1081,12 +1093,39 @@ const REPORT_TYPES = {
 const YELLOW_TTL = 3600;          // 60 min for every yellow flag
 const RED_TTL = 900;              // 15 min: inspectors hop off after a few stops
 const RED_METRO_TTL = 7200;       // 2 h on the metro, per spec
-const MAX_ACTIVE_PER_REPORTER = 10;
+const UNCONF_TTL = 300;           // 5 min while nobody has corroborated it
+const MAX_ACTIVE_PER_REPORTER = 2;
 
+/* ---------------------- two-tier reports --------------------------- *
+ * Identifying the vehicle a rider is inside is an inference over a feed
+ * that is 30-60 s stale, so it is sometimes simply wrong — and a gate
+ * that says "no" to an honest rider is a worse failure than one that
+ * says "maybe". So location no longer decides WHETHER you can file; it
+ * decides WHAT YOUR REPORT IS WORTH.
+ *
+ *   confirmed (conf:1) — the app matched you to the vehicle, or you are
+ *     at a metro station (stations don't move, so that check is real).
+ *     Full TTL, solid marker, red/yellow line in the arrivals list.
+ *   unconfirmed (conf:0) — you picked from the plausible list but the
+ *     matcher couldn't agree. Visible, hollow, 5 minutes, and it does
+ *     NOT annotate arrivals.
+ *
+ * An unconfirmed report is PROMOTED the moment a second, independent
+ * reporter agrees — either by filing the same flag or by voting "still
+ * there". So one person acting alone can never manufacture a solid red
+ * flag, which is the property the strict gate was really protecting,
+ * and it costs an abuser a second device instead of costing an honest
+ * rider their report.
+ *
+ * Two distinct "not there" votes delete a report outright. That is also
+ * the self-service version of the manual purge.
+ * ------------------------------------------------------------------ */
 function reportTtl(r) {
+  if (!r.conf) return UNCONF_TTL;
   if (r.type !== "inspector") return YELLOW_TTL;
   return r.kind === "metro" ? RED_METRO_TTL : RED_TTL;
 }
+const VOTES_TO_KILL = 2;          // distinct "not there" votes that remove a flag
 function reportsReady(env) { return !!(env && env.ALERTS); }
 
 async function readReports(env, now) {
@@ -1097,16 +1136,52 @@ async function readReports(env, now) {
 async function writeReports(env, list) {
   await env.ALERTS.put(REPORTS_KEY, JSON.stringify(list));
 }
-// What clients see: everything except the reporter token.
+/* What clients see: everything except the reporter token and the voter
+   ids. `mine` unlocks the ✕; `voted` greys out the vote buttons. */
 function publicReport(r, by) {
+  const ok = Array.isArray(r.ok) ? r.ok : [];
+  const no = Array.isArray(r.no) ? r.no : [];
   const out = {
     id: r.id, kind: r.kind, type: r.type,
     veh: r.veh || null, routeCode: r.routeCode || null, lineId: r.lineId || null,
     targetId: r.targetId, targetName: r.targetName || "",
     lat: r.lat, lng: r.lng, at: r.at, expires: r.at + reportTtl(r),
+    conf: r.conf ? 1 : 0, confirms: ok.length,
   };
   if (by && r.by === by) out.mine = true;
+  if (by && (r.by === by || ok.includes(by) || no.includes(by))) out.voted = true;
   return out;
+}
+/* Hidden reports are shadow-limited: their author still sees them, so
+   nothing looks broken to them, but nobody else does. */
+function visibleTo(r, by) { return !r.hidden || (by && r.by === by); }
+
+/* ------------------------ reporter reputation ---------------------- *
+ * Anonymous, but not memoryless. Keyed by the same random client token
+ * the reports already carry, in one KV key alongside them:
+ *   f = filed, c = corroborated by someone else, x = contradicted
+ * The two things it can do — refuse to auto-confirm, and shadow-limit —
+ * both need a sustained pattern, never a single unlucky report.
+ * ------------------------------------------------------------------ */
+const REP_KEY = "reports:reputation";
+const REP_TTL_DAYS = 60;
+async function readRep(env) {
+  const m = await env.ALERTS.get(REP_KEY, "json");
+  return (m && typeof m === "object") ? m : {};
+}
+async function writeRep(env, map, now) {
+  // prune ids nobody has seen in two months so the key can't grow forever
+  const cut = now - REP_TTL_DAYS * 86400;
+  for (const k of Object.keys(map)) if (!(map[k] && map[k].t > cut)) delete map[k];
+  await env.ALERTS.put(REP_KEY, JSON.stringify(map));
+}
+function repOf(map, by) { return map[by] || { f: 0, c: 0, x: 0, t: 0 }; }
+/* "ok" — normal. "limited" — may file, never auto-confirmed.
+   "shadow" — may file, but only they can see it. */
+function repVerdict(e) {
+  if (e.x >= 6 && e.x > e.c * 2) return "shadow";
+  if (e.x >= 3 && e.x > e.c + 1) return "limited";
+  return "ok";
 }
 
 /* Every filed (or renewed) report also lands in D1's report_log —
@@ -1130,7 +1205,7 @@ async function handleReports(req, url, env, ctx) {
   if (req.method === "GET") {
     const by = url.searchParams.get("by") || "";
     const active = await readReports(env, now);
-    return json(active.map(r => publicReport(r, by)));
+    return json(active.filter(r => visibleTo(r, by)).map(r => publicReport(r, by)));
   }
 
   const b = await req.json().catch(() => null);
@@ -1139,14 +1214,51 @@ async function handleReports(req, url, env, ctx) {
   if (by.length < 8 || by.length > 80) return json({ error: "by required" }, 400);
 
   const active = await readReports(env, now);
+  const path = url.pathname.replace(/\/+$/, "");
 
-  if (url.pathname.replace(/\/+$/, "").endsWith("/reports/delete")) {
+  if (path.endsWith("/reports/delete")) {
     const i = active.findIndex(r => r.id === b.id);
     if (i < 0) return json({ error: "not found" }, 404);
     if (active[i].by !== by) return json({ error: "not yours" }, 403);
     active.splice(i, 1);
     await writeReports(env, active);
     return json({ ok: true });
+  }
+
+  /* ---- corroboration: "yes, still there" / "no, not there" ----
+     One vote per reporter per report, and never on your own — a report
+     you filed already counts as your own opinion of it. A "yes" from
+     anyone else is what promotes an unconfirmed flag; VOTES_TO_KILL
+     "no"s remove it for everyone. */
+  if (path.endsWith("/reports/vote")) {
+    const r = active.find(x => x.id === b.id);
+    if (!r) return json({ error: "not found" }, 404);
+    if (!visibleTo(r, by)) return json({ error: "not found" }, 404);
+    if (r.by === by) return json({ error: "that's your own report" }, 403);
+    r.ok = Array.isArray(r.ok) ? r.ok : [];
+    r.no = Array.isArray(r.no) ? r.no : [];
+    if (r.ok.includes(by) || r.no.includes(by)) return json({ error: "already voted" }, 409);
+
+    const rep = await readRep(env);
+    const owner = repOf(rep, r.by);
+    const yes = b.vote !== false && b.vote !== "no";
+    if (yes) {
+      r.ok.push(by);
+      owner.c = (owner.c || 0) + 1;
+      // a second person agreeing is exactly what "confirmed" means; the
+      // clock restarts, because it only just became credible
+      if (!r.conf) { r.conf = 1; r.at = now; }
+    } else {
+      r.no.push(by);
+      owner.x = (owner.x || 0) + 1;
+    }
+    owner.t = now; rep[r.by] = owner;
+
+    const killed = r.no.length >= VOTES_TO_KILL;
+    const keep = killed ? active.filter(x => x.id !== r.id) : active;
+    await writeReports(env, keep);
+    if (ctx) ctx.waitUntil(writeRep(env, rep, now));
+    return json(killed ? { ok: true, removed: true } : publicReport(r, by));
   }
 
   // create / renew
@@ -1167,6 +1279,15 @@ async function handleReports(req, url, env, ctx) {
   };
   // (No free-text note in this version — anything sent is ignored.)
 
+  const rep = await readRep(env);
+  const me = repOf(rep, by);
+  const verdict = repVerdict(me);
+
+  /* Did the app manage to match this rider to the target? A reporter who
+     keeps getting contradicted never gets the benefit of that doubt. */
+  const claimed = b.confirmed === true || b.confirmed === 1;
+  let conf = (claimed && verdict === "ok") ? 1 : 0;
+
   // Same reporter re-flagging the same thing renews it; a different
   // reporter files their own record (which also keeps the flag alive,
   // and keeps withdrawal rights separate per user).
@@ -1174,6 +1295,7 @@ async function handleReports(req, url, env, ctx) {
     r.by === by && r.kind === kind && r.type === type && r.targetId === targetId);
   if (mine) {
     Object.assign(mine, fields, { at: now });
+    if (conf) mine.conf = 1;       // renewing can upgrade, never downgrade
     await writeReports(env, active);
     if (ctx) ctx.waitUntil(logReport(env, mine, now, true));
     return json(publicReport(mine, by));
@@ -1181,11 +1303,32 @@ async function handleReports(req, url, env, ctx) {
   if (active.filter(r => r.by === by).length >= MAX_ACTIVE_PER_REPORTER) {
     return json({ error: "too many active reports" }, 429);
   }
-  const rec = { id: crypto.randomUUID(), by, at: now, ...fields };
+
+  /* An independent second reporter on the same target+type IS the
+     corroboration: promote the existing flag and credit its author. */
+  const others = active.filter(r =>
+    r.by !== by && r.kind === kind && r.type === type && r.targetId === targetId);
+  let promoted = 0;
+  for (const o of others) {
+    o.ok = Array.isArray(o.ok) ? o.ok : [];
+    if (!o.ok.includes(by)) o.ok.push(by);
+    const owner = repOf(rep, o.by);
+    owner.c = (owner.c || 0) + 1; owner.t = now; rep[o.by] = owner;
+    if (!o.conf) { o.conf = 1; o.at = now; promoted++; }
+  }
+  // ...and someone else already standing behind it confirms ours too
+  if (others.length && verdict !== "shadow") conf = 1;
+
+  const rec = { id: crypto.randomUUID(), by, at: now, conf, ok: [], no: [], ...fields };
+  if (verdict === "shadow") rec.hidden = 1;
   active.push(rec);
+  me.f = (me.f || 0) + 1; me.t = now; rep[by] = me;
   await writeReports(env, active);
-  if (ctx) ctx.waitUntil(logReport(env, rec, now, false));
-  return json(publicReport(rec, by));
+  if (ctx) ctx.waitUntil(Promise.all([
+    logReport(env, rec, now, false),
+    writeRep(env, rep, now),
+  ]));
+  return json({ ...publicReport(rec, by), promoted });
 }
 
 /* ===================== Athens metro stations ====================== *
@@ -1409,7 +1552,13 @@ async function handleLive(url, env) {
  * own exact fix; we return everything within a generous 1.5 km so
  * that filtering has raw material to work with.
  * ------------------------------------------------------------------ */
-const SCAN = { stopRadius: 600, stopProbe: 10, maxRoutes: 14, keepM: 1500, cache: 10 };
+/* stopProbe/maxRoutes are deliberately wider than /live's: on a big
+ * avenue the line you are actually riding is easily the 15th route to
+ * turn up, and a candidate that is never fetched can never be matched.
+ * Budget: 5 stop lists + 14 route lookups + 20 vehicle calls = 39, still
+ * inside the 50-subrequest free-tier ceiling. The follow-up samples pass
+ * ?routes= and cost 6. */
+const SCAN = { stopRadius: 600, stopProbe: 14, maxRoutes: 20, keepM: 1500, cache: 10 };
 
 /* OASA sometimes stamps each fix with its own time. If it does, the
  * client can measure real staleness per vehicle instead of assuming it.
@@ -1580,10 +1729,13 @@ export default {
       return json({ days, type: type || "all", kind: kind || "all", top: results || [] });
     }
 
-    if (p.endsWith("/reports") || p.endsWith("/reports/delete")) {
+    if (p.endsWith("/reports") || p.endsWith("/reports/delete") || p.endsWith("/reports/vote")) {
       if (req.method === "POST") {
-        const bucket = p.endsWith("/delete") ? "reports-del" : "reports";
-        const limit = p.endsWith("/delete") ? 30 : 20;
+        const bucket = p.endsWith("/delete") ? "reports-del"
+          : p.endsWith("/vote") ? "reports-vote" : "reports";
+        // filing is the expensive, abusable one; voting is a tap, and
+        // withdrawing your own is always harmless
+        const limit = p.endsWith("/delete") ? 30 : p.endsWith("/vote") ? 40 : 8;
         if (!rateLimit(ip, bucket, limit, 60)) return tooMany();
       }
       return handleReports(req, url, env, ctx);

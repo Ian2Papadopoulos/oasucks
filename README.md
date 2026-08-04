@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v27.**
+version: v28.**
 
 **The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
 everything else: [look up a line](#find-a-line) and preview its route, a
@@ -13,7 +13,8 @@ everything else: [look up a line](#find-a-line) and preview its route, a
 it and a problem map of Athens opens — only the buses and metro stations that currently
 carry a flag, red for a ticket inspector, yellow for anything else. Under the map,
 **Report an issue** lets you flag the bus you are actually riding (the app works out
-which one, and you must be within **100 m** of it) or a metro station within 600 m.
+which one) or a metro station within 600 m. A report the app could not match to your
+vehicle still goes up — faint, short-lived, and needing a second rider to agree.
 See [Reports](#reports-red-exclamation-mark) for the exact rules.
 
 > The service-stats screen (line reliability, bunching, missing trips) still exists in
@@ -27,6 +28,8 @@ See [Reports](#reports-red-exclamation-mark) for the exact rules.
 | `public/index.html` | The whole app (UI + logic). No build step, no framework. |
 | `worker.js` | Cloudflare Worker — serves the app, proxies the OASA API, stores reports. |
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon-*.png` | PWA install + offline shell. |
+| `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). |
+| `LICENSE`, `PRIVACY.md`, `TERMS.md` | MIT licence and the documents the hosted service runs under — see [Legal](#legal). |
 
 ## The one thing you must understand
 
@@ -163,31 +166,76 @@ The issue menu changes with the category, so a metro station only ever offers
 
 ### Which bus am I on?
 
-You can't pick a line off a list any more — the app has to identify the vehicle you're
-sitting in, which is hard downtown where six buses share one jam. It runs two passes:
+You can't pick a line off a list — the app has to identify the vehicle you're sitting
+in, which is hard downtown where six buses share one jam.
 
-1. **Reach.** Every live vehicle on the lines serving the stops around you. Standing
-   still the gate is the **100 m** rule. *While you're moving it widens* — by exactly how
-   far a bus travels during the feed's staleness (speed × ~40 s, capped at 900 m),
-   because a moving bus's reported position lags reality by that much. Without this the
-   vehicle you are sitting in falls outside 100 m and never appears, while a bus parked
-   at the kerb — whose stale fix has caught up with reality — does.
-2. **Velocity.** A second sample ~6 s later, and this is where the decision is made. A
-   stale feed shifts a bus's *position* but not its *velocity*: if you're on board, your
-   velocity and the bus's are the same vector even when the reported positions are 300 m
-   apart. So heading and pace agreement identify your bus precisely where distance
-   fails. The remaining gap is then split into **along-track** (how far the bus is
-   "behind itself" — what staleness looks like) and **cross-track** (sideways — what a
-   *different street* looks like); a big cross-track offset disqualifies a bus no matter
-   how well its speed matches. The along-track figure also gives the fix's age, so the
-   bus can be dead-reckoned forward to where it actually is now.
+**The problem, in numbers.** An OASA position fix is 30–60 s old by the time you see
+it, and our own cache adds up to 10 s more. A bus doing 8 m/s therefore reports itself
+**250–450 m behind** where it actually is. The error is proportional to speed, so it
+collapses to zero the moment the bus stops — which is why, before v28, the app "only
+found my bus when we pulled into a stop". Meanwhile `navigator.geolocation` returns
+`speed: null` on most single fixes (Android's fused provider only fills it from raw
+GNSS doppler; iOS returns -1), so the slack that was meant to cover the staleness was
+usually zero.
 
-   If nothing is moving — bus at a light, you on foot — there's no velocity to compare,
-   so the app stays quiet and leaves plain proximity ranking alone rather than inventing
-   a verdict.
+**What it does now** — four passes, ~15 s, updating the list as it goes:
 
-You always confirm with a tap — the app ranks, it never picks for you. If no bus is
-within range it says so and refuses the report rather than guessing.
+0. **Track yourself first.** `watchPosition` collects several fixes over ~8 s and fits
+   a least-squares velocity to them. Never one fix's `speed` field: displacement always
+   exists, `speed` often doesn't. If accuracy stays worse than 150 m the app says the
+   signal is too weak instead of scanning and blaming the feed.
+1. **Shortlist wide.** Every live vehicle the server returns — it trims at 1.5 km, and
+   nothing tighter is applied. Candidates are ranked by *plausibility*, not distance:
+   sideways offset from your path costs full price, lag **along** your own path is
+   nearly free, because that is exactly what a stale fix looks like from a seat. A bus
+   400 m behind you on your street now outranks one 60 m away on a parallel one.
+2. **Co-movement decides.** Two more samples ~5.5 s apart. A stale feed shifts a bus's
+   *position* but not the *direction* it is travelling, and direction — unlike speed —
+   needs no knowledge of when the feed's fixes were taken. So heading agreement is the
+   primary test; pace is checked only when OASA timestamps both ends. The remaining gap
+   splits into **along-track** (the bus "behind itself" — staleness) and **cross-track**
+   (sideways — a *different street*); a big cross-track offset disqualifies a bus however
+   well its speed matches. Along-track also gives the fix's age, so the bus is
+   dead-reckoned forward to where it actually is.
+3. **The 100 m rule, as a verdict.** Standing still, only a vehicle genuinely within
+   ~100 m (+ your GPS accuracy) counts as "yours" — so watching a bus drive past still
+   isn't reportable. **This radius is deliberately not widened by speed**: speed widens
+   the shortlist, never the verdict. On a moving bus, co-movement is the only route to
+   a confirmed report.
+
+You always confirm with a tap — the app ranks, it never picks for you.
+
+### Confirmed and unconfirmed reports
+
+Identifying the vehicle you're inside is an inference over a stale feed, so it is
+sometimes simply wrong. A gate that says *no* to an honest rider is a worse failure
+than one that says *maybe*, so since v28 location does not decide **whether** you can
+file — it decides **what your report is worth**.
+
+| | Confirmed | Unconfirmed |
+|---|---|---|
+| How | co-moving with you, within 100 m, or at a metro station | you picked from the list, the matcher couldn't agree |
+| Marker | solid | **hollow, dashed** |
+| Arrivals list | red/yellow line under the direction | **nothing** |
+| Lifetime | 15 min / 1 h / 2 h as below | **5 minutes** |
+
+An unconfirmed report is **promoted the moment a second, independent reporter agrees** —
+either by filing the same flag or by tapping *"Yes, still there"* on it. So one person
+acting alone can never manufacture a solid red flag (which is the property the strict
+gate was really protecting), and it costs an abuser a second device instead of costing
+an honest rider their report.
+
+**Corroboration.** Every report anyone else filed carries *"Yes, still there"* /
+*"Not there"*. One vote per person, never on your own. **Two distinct "not there" votes
+delete a report outright** — the self-service version of the manual purge below.
+
+**Reputation.** Reports carry the same anonymous device token used for withdrawal, and
+the Worker keeps three counters against it (filed / corroborated / contradicted, pruned
+after 60 days). A reporter whose flags keep getting contradicted stops being
+auto-confirmed; one whose record is much worse still gets a `200` on every report but
+only they can see the result. Neither trigger fires on a single unlucky report.
+
+At most **2 active reports per person** at a time.
 
 Flags then show up on the reports map and inline in the list view: a flagged bus gets
 red **"Ticket inspector X minutes ago"** (or a yellow issue line) under its direction,
@@ -201,18 +249,21 @@ The rules:
 | Red (inspector) on a metro station | **2 h** |
 | Yellow (breakdown / overcrowded) | **60 min** |
 
-Re-reporting the same thing renews the timer. Nobody can cancel someone else's report:
-a flag disappears only when it expires or when **the reporter who filed it** withdraws
-it (the app keeps an anonymous device token in `localStorage`; the server never exposes
-it, so withdrawals can't be forged).
+Re-reporting the same thing renews the timer. **Nobody can cancel someone else's report
+outright** — a flag disappears when it expires, when **the reporter who filed it**
+withdraws it (the app keeps an anonymous device token in `localStorage`; the server
+never exposes it, so withdrawals can't be forged), or when two independent riders vote
+"not there".
 
 **History for statistics:** active flags live in KV and vanish when they expire, but
 every filed report is *also* appended to D1's `report_log` table (timestamp, kind,
-type, target, line — no user data). `GET /reports/toplist?days=30&type=inspector`
-returns the most-reported buses/lines/stations, ready for a future public stats page.
+type, target, line — **no coordinates and no reporter id**).
+`GET /reports/toplist?days=30&type=inspector` returns the most-reported
+buses/lines/stations, ready for a future public stats page. Rows are deleted after
+**90 days** by the same cron that prunes tracking events.
 
 Reports live in the same KV namespace as the alert rules (`ALERTS`), in a single key —
-no extra setup (`GET/POST /reports`, `POST /reports/delete`). The Worker enforces the
+no extra setup (`GET/POST /reports`, `POST /reports/delete`, `POST /reports/vote`). The Worker enforces the
 same rules as the UI: only `bus` and `metro` categories, and only the types each one
 allows. Without a KV binding the app still runs; reporting just returns "not
 configured". Metro stations (lines M1/M2/M3) are a static list served by the Worker at
@@ -295,11 +346,43 @@ small by design. The controls that exist:
   parameterized queries (no SQL injection); Leaflet is self-hosted (no third-party CDN
   code path).
 
-What an attacker *could* still do: file plausible-looking fake flags (bounded by the
-rate limit, and each expires), or — from a different Cloudflare account/IP set — spread
-load past the per-isolate limiter. Neither exposes data; the residual risk is report
-*spam/integrity*, which a Turnstile challenge on `POST /reports` would further reduce if
-you ever need it.
+- **Report integrity is layered.** A lone reporter can file at most 2 active flags, and
+  none of them can become a *confirmed* red flag without a second, independent device
+  agreeing. Two "not there" votes delete a flag. Persistent bad reporters lose
+  auto-confirmation, then get shadow-limited.
+
+What an attacker *could* still do: file plausible-looking **unconfirmed** flags (bounded
+by the rate limit and the 2-report cap, each expiring in 5 minutes), or — from a
+different Cloudflare account/IP set — spread load past the per-isolate limiter. Neither
+exposes data; the residual risk is report *spam*, which a Turnstile challenge on
+`POST /reports` would further reduce if you ever need it.
+
+## Legal
+
+Publishing this to more than a few friends brings obligations that the code alone
+doesn't discharge. What ships in this repo:
+
+| File | What it is |
+|---|---|
+| `LICENSE` | MIT, for **the code only** — it does not license OASA's data, and it does not protect you as the *operator* of a running service |
+| `PRIVACY.md` | GDPR Art. 13 notice: what's processed, legal basis, retention, recipients, rights |
+| `TERMS.md` | No-warranty, liability limits, acceptable use, the fare rule, DSA notice-and-action |
+| `public/legal.html` | The in-app rendering of both, linked from ☰ → *Terms & privacy* and from About |
+
+**Before you publish, you must:**
+
+1. **Replace `CONTACT@EXAMPLE.COM`** in `PRIVACY.md`, `TERMS.md` and
+   `public/legal.html` with an address you actually monitor. It is your GDPR contact
+   and your DSA notice-and-action channel; a policy pointing at nothing is worse than
+   no policy.
+2. Keep the **"unofficial · not affiliated with OASA / ΟΣΥ / ΣΤΑΣΥ"** banner visible —
+   it is the first thing on the About screen, and it should be in your launch post too.
+3. **Don't add a free-text field, comments or photo upload to reports.** The fixed menu
+   is doing most of the defamation-risk work in this project.
+
+The design already minimises exposure: no accounts, no analytics, no cookies banner
+(only strictly-necessary `localStorage`), no third-party scripts, no stored location,
+and a history log that carries neither coordinates nor reporter ids.
 
 ## Tuning
 

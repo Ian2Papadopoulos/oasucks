@@ -1,0 +1,42 @@
+MIT License
+
+Copyright (c) 2026 OASUCKS contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+SCOPE OF THIS LICENCE
+
+This licence covers the source code in this repository and nothing else.
+
+  * Transit data (stops, routes, vehicle positions, arrival estimates) is
+    retrieved at runtime from OASA's telematics service. It belongs to OASA
+    and is NOT licensed here. Nothing in this repository grants you any right
+    to it.
+  * Map tiles are © CARTO, map data © OpenStreetMap contributors, used under
+    their own terms.
+  * Reports submitted by users of a running instance belong to the people who
+    submitted them and are governed by that instance's terms of use.
+
+This licence also disclaims warranty for the CODE. It says nothing about, and
+provides no protection for, anyone who OPERATES a public service built from
+it — that is a separate legal relationship with its own obligations (privacy,
+intermediary liability, consumer protection). See TERMS.md and PRIVACY.md for
+the documents the hosted instance runs under.

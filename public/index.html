@@ -83,7 +83,13 @@
   @keyframes drop{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
   .menu-item{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);
     border:none;border-top:1px dashed var(--rule);color:var(--toner);font-family:var(--mono);
-    font-size:12px;font-weight:700;letter-spacing:.02em;padding:11px 12px;cursor:pointer;text-align:left}
+    font-size:12px;font-weight:700;letter-spacing:.02em;padding:11px 12px;cursor:pointer;
+    text-align:left;text-decoration:none}
+  /* the disclaimer, in the app's one accent colour so it is the first
+     thing read on the About screen */
+  .unofficial{background:var(--marker);border:1px solid var(--toner);border-radius:2px;
+    padding:9px 11px;margin-bottom:12px;font-family:var(--mono);font-size:11px;
+    font-weight:700;line-height:1.5;letter-spacing:.02em}
   .menu-item:first-child{border-top:none}
   .menu-item:active{background:var(--paper)}
   .menu-item .mi{width:18px;height:18px;display:grid;place-items:center;flex:none;
@@ -147,11 +153,12 @@
   .seg button:last-child{border-right:none}
   .seg button.on{background:var(--toner);color:var(--paper)}
   .hint{color:var(--ink3);font-size:10.5px;margin-top:9px;text-align:center;line-height:1.5}
-  /* swipe transitions between list and map */
-  .slide-l{animation:slideL .18s ease-out}
-  .slide-r{animation:slideR .18s ease-out}
-  @keyframes slideL{from{transform:translateX(14px);opacity:.35}to{transform:none;opacity:1}}
-  @keyframes slideR{from{transform:translateX(-14px);opacity:.35}to{transform:none;opacity:1}}
+  /* swipe transitions between list and map — unhurried enough to read as
+     a page turn rather than a flicker */
+  .slide-l{animation:slideL .3s cubic-bezier(.22,.61,.36,1)}
+  .slide-r{animation:slideR .3s cubic-bezier(.22,.61,.36,1)}
+  @keyframes slideL{from{transform:translateX(26px);opacity:.25}to{transform:none;opacity:1}}
+  @keyframes slideR{from{transform:translateX(-26px);opacity:.25}to{transform:none;opacity:1}}
   @media (prefers-reduced-motion:reduce){ .slide-l,.slide-r{animation:none} }
 
   /* ---------------------------- radius --------------------------------- */
@@ -342,21 +349,34 @@
   .flag.yellow{border-color:#B8860B;background:var(--marker)}
   .flag.bus{border-radius:3px;width:17px;height:17px}
   .flag.metro{border-radius:2px;width:15px;height:15px;transform:rotate(45deg)}
+  /* unconfirmed: hollow, so it reads as "someone says so" rather than
+     "this is the case" — same shape and colour, no fill */
+  .flag.faint{background:#fff!important;opacity:.9;border-style:dashed}
   .rep-legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:9px;
     color:var(--ink3);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em}
   .rep-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px;
     vertical-align:-1px;border:2px solid var(--ink3);background:#fff}
   .rep-legend i.red{background:#C42B1C;border-color:#C42B1C}
   .rep-legend i.yellow{background:var(--marker);border-color:#B8860B}
+  .rep-legend i.hollow{background:#fff;border-style:dashed;border-color:var(--toner)}
   .repitem{display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px dashed var(--rule)}
   .repitem:first-of-type{border-top:none}
   .repitem .rb{width:4px;align-self:stretch;background:var(--ink3);flex:none}
   .repitem .rb.red{background:#C42B1C} .repitem .rb.yellow{background:var(--marker)}
+  .repitem .rb.faint{background:repeating-linear-gradient(180deg,
+    currentColor 0 3px,transparent 3px 6px);opacity:.55}
+  .repitem.faint .rt{font-weight:400}
   .repitem .ri{flex:1;min-width:0}
   .repitem .rt{font-weight:700;font-size:12px}
   .repitem .rs{color:var(--ink3);font-size:10.5px;margin-top:2px;line-height:1.45}
   .repitem .rx{background:var(--card);border:1px solid var(--rule);color:var(--ink3);
     width:26px;height:26px;cursor:pointer;flex:none;font-family:var(--mono);border-radius:2px}
+  .rvote{display:flex;gap:6px;margin-top:6px}
+  .rvote .rv{background:var(--card);border:1px solid var(--rule);color:var(--ink3);
+    padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:var(--mono);
+    border-radius:2px;letter-spacing:.04em}
+  .rvote .rv:active{border-color:var(--toner);color:var(--toner)}
+  .rvote .rv[disabled]{opacity:.4}
   .flagline{font-size:10.5px;font-weight:700;margin-top:3px;letter-spacing:.02em}
   .flagline.red{color:#C42B1C}
   .flagline.yellow{color:#8A6D0B;background:var(--marker);display:inline-block;padding:0 4px}
@@ -367,6 +387,8 @@
     padding:8px 10px;cursor:pointer;font-family:var(--mono);border-radius:2px}
   .cand:active{border-color:var(--toner)}
   .cand.hot{border-color:var(--toner);border-width:2px;padding:7px 9px}
+  /* still tappable — picking it just files an unconfirmed report */
+  .cand.cold{border-style:dashed}
   .cand-tile{min-width:42px;height:26px;padding:0 6px;background:var(--toner);color:var(--paper);
     font-weight:700;font-size:12px;display:grid;place-items:center;flex:none;border-radius:2px}
   .cand-txt{flex:1;min-width:0;display:block}
@@ -472,6 +494,7 @@
       <button class="menu-item" id="m-lang"><span class="mi">⇄</span><span id="m-lang-t"></span>
         <span class="mi-side" id="m-lang-v"></span></button>
       <button class="menu-item" id="m-about"><span class="mi">i</span><span id="m-about-t"></span></button>
+      <a class="menu-item" id="m-legal" href="./legal.html"><span class="mi">§</span><span id="m-legal-t"></span></a>
     </nav>
     <div class="locbar">
       <span class="dot"></span><span id="locwhere" class="where">…</span>
@@ -679,12 +702,31 @@ const T={
   legendIssue:"θέμα", legendInsp:"ελεγκτής",
   confirmBus:"Σε ποιο λεωφορείο είσαι;", scanBus:"Εντοπισμός λεωφορείων γύρω σου…",
   scanRefine:"Έλεγχος ποιο κινείται μαζί σου…", withYou:"κινείται μαζί σου",
+  gpsFix:"Εντοπισμός της θέσης σου…",
+  gpsWeak:"Πολύ αδύναμο σήμα GPS για να ξεχωρίσουμε όχημα. Δοκίμασε ξανά σε λίγο.",
+  unsure:"αβέβαιο",
   noBusNear:"Κανένα λεωφορείο δίπλα σου. Η αναφορά γίνεται μόνο από μέσα στο όχημα.",
   pickWhere:"Διάλεξε πρώτα πού βρίσκεσαι.",
   rescan:"↻ Νέα σάρωση", nearestStation:"Ποιος σταθμός;",
   noMetroNear:"Κανένας σταθμός μετρό σε 600 μ. από εσένα.",
   onboardNote:"Μόνο για το λεωφορείο που είσαι μέσα.",
   metroNote:"Μόνο για σταθμούς σε 600 μ. από εσένα.",
+  /* two-tier reports */
+  unconfirmed:"Χωρίς επιβεβαίωση", legendUnconf:"χωρίς επιβεβαίωση",
+  unconfNote:"Δεν επιβεβαιώθηκε η θέση σου, οπότε η αναφορά μπαίνει αχνή και για λίγο. "+
+    "Μόλις συμφωνήσει κι άλλος επιβάτης, γίνεται κανονική.",
+  stillThere:"Ναι, είναι εδώ", notThere:"Δεν είναι εδώ",
+  voteThanks:"Ευχαριστούμε — καταγράφηκε", voteDone:"Το έχεις ήδη ψηφίσει",
+  confirms:n=>n===1?"1 επιβεβαίωση":`${n} επιβεβαιώσεις`,
+  /* first-report notice + legal */
+  firstH:"Πριν στείλεις την πρώτη σου αναφορά",
+  firstP:"Οι αναφορές είναι δημόσιες, ανώνυμες και ανεπιβεβαίωτες. Στέλνεις μόνο τη γραμμή ή τον "+
+    "σταθμό και τι είδες — ποτέ όνομα, φωτογραφία ή σχόλιο. Είσαι υπεύθυνος/η για ό,τι δηλώνεις. "+
+    "Η εφαρμογή δεν είναι εργαλείο αποφυγής κομίστρου: έχε πάντα έγκυρο εισιτήριο.",
+  agree:"Κατάλαβα",
+  unofficial:"Ανεπίσημη εφαρμογή· δεν σχετίζεται με ΟΑΣΑ / ΟΣΥ / ΣΤΑΣΥ.",
+  mLegal:"Όροι & απόρρητο", legalH:"Όροι & απόρρητο",
+  openTerms:"Όροι χρήσης", openPrivacy:"Πολιτική απορρήτου",
   back:"← Πίσω",
   mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
   favAdded:"★ Προστέθηκε στα αγαπημένα", favRemoved:"Αφαιρέθηκε από τα αγαπημένα",
@@ -702,9 +744,13 @@ const T={
   aboutBody:`<p><b>OASUCKS</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
     γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
     <p><b>Αναφορές.</b> Οι επιβάτες σημαίνουν τι βλέπουν: ελεγκτής (κόκκινο) ή πρόβλημα (κίτρινο).
-    Μπορείς να σημάνεις μόνο το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι κόκκινες
+    Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι κόκκινες
     σημάνσεις σβήνουν μετά από 15′ στα λεωφορεία και 2 ώρες στο μετρό, οι κίτρινες μετά από 60′.
     Μόνο όποιος έκανε μια αναφορά μπορεί να τη σβήσει νωρίτερα.</p>
+    <p><b>Επιβεβαίωση.</b> Αν η εφαρμογή δεν καταφέρει να σε ταιριάξει με το όχημα, η αναφορά
+    μπαίνει <i>χωρίς επιβεβαίωση</i>: φαίνεται αχνή, κρατάει 5′ και δεν βάζει ένδειξη στη λίστα
+    αφίξεων. Μόλις συμφωνήσει δεύτερος επιβάτης γίνεται κανονική — έτσι κανείς δεν μπορεί μόνος
+    του να στήσει ψεύτικη σήμανση. Δύο «δεν είναι εδώ» τη σβήνουν για όλους.</p>
     <p><b>Ιδιωτικότητα.</b> Χωρίς λογαριασμό και χωρίς παρακολούθηση. Η τοποθεσία σου μένει στη
     συσκευή — στέλνεται μόνο η θέση αυτού που αναφέρεις. Οι αναφορές συνδέονται με ένα ανώνυμο
     τυχαίο αναγνωριστικό που φυλάσσεται τοπικά.</p>
@@ -745,12 +791,31 @@ const T={
   legendIssue:"issue", legendInsp:"inspector",
   confirmBus:"Which bus are you on?", scanBus:"Finding buses around you…",
   scanRefine:"Checking which one moves with you…", withYou:"moving with you",
+  gpsFix:"Getting your position…",
+  gpsWeak:"GPS signal too weak to tell vehicles apart. Try again in a moment.",
+  unsure:"unsure",
   noBusNear:"No bus next to you. You can only report from on board.",
   pickWhere:"First pick where you are.",
   rescan:"↻ Scan again", nearestStation:"Which station?",
   noMetroNear:"No metro station within 600 m of you.",
   onboardNote:"Only for the bus you're riding.",
   metroNote:"Only for stations within 600 m of you.",
+  /* two-tier reports */
+  unconfirmed:"Unconfirmed", legendUnconf:"unconfirmed",
+  unconfNote:"We couldn't confirm where you are, so this goes up faint and short-lived. "+
+    "It becomes a full flag as soon as another rider agrees.",
+  stillThere:"Yes, still there", notThere:"Not there",
+  voteThanks:"Thanks — recorded", voteDone:"You've already voted on this",
+  confirms:n=>n===1?"1 confirmation":`${n} confirmations`,
+  /* first-report notice + legal */
+  firstH:"Before your first report",
+  firstP:"Reports are public, anonymous and unverified. You send only the line or station and "+
+    "what you saw — never a name, a photo or a comment. You are responsible for what you file. "+
+    "This app is not a fare-evasion tool: always carry a valid ticket.",
+  agree:"Got it",
+  unofficial:"Unofficial app; not affiliated with OASA / OSY / STASY.",
+  mLegal:"Terms & privacy", legalH:"Terms & privacy",
+  openTerms:"Terms of use", openPrivacy:"Privacy policy",
   back:"← Back",
   mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
   favAdded:"★ Pinned to favourites", favRemoved:"Removed from favourites",
@@ -768,9 +833,13 @@ const T={
   aboutBody:`<p><b>OASUCKS</b> shows live bus and trolley arrivals for the stops around you,
     using the unofficial OASA telematics API.</p>
     <p><b>Reports.</b> Riders flag what they see: a ticket inspector (red) or a problem (yellow).
-    You can only flag the bus you are riding or a metro station within 600 m. Red flags expire
+    You flag the bus you are riding, or a metro station within 600 m. Red flags expire
     after 15 min on buses and 2 hours on the metro, yellow ones after 60 min. Only the person who
     filed a report can clear it early.</p>
+    <p><b>Confirmation.</b> If the app can't match you to the vehicle, your report goes up
+    <i>unconfirmed</i>: faint, five minutes, and it doesn't annotate the arrivals list. As soon
+    as a second rider agrees it becomes a full flag — so nobody acting alone can manufacture
+    one. Two "not there" votes remove it for everyone.</p>
     <p><b>Privacy.</b> No account, no tracking. Your location stays on the device — only the
     position of what you report is sent. Reports are tied to an anonymous random id kept locally.</p>
     <p><b>The data.</b> Unofficial, from OASA. The times are their own estimates and they are
@@ -887,6 +956,7 @@ function applyStatics(){
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
   $("#m-line-t").textContent=t("mLine"); $("#m-live-t").textContent=t("mLive");
   $("#m-lang-t").textContent=t("mLang"); $("#m-about-t").textContent=t("mAbout");
+  $("#m-legal-t").textContent=t("mLegal");
   $("#m-lang-v").textContent=LANG==="el"?"ΕΛ → EN":"EN → ΕΛ";
   $("#live-title").textContent=t("liveH");
   $("#s-h").textContent=t("sheetH"); $("#s-p").textContent=t("sheetP");
@@ -935,8 +1005,15 @@ function setView(v,dir){
  * dragging, so a swipe that starts on it is ignored *unless* it starts
  * at the very left edge — the conventional "back" gesture. Sheets and
  * full-screen panels suppress it entirely, and the gesture must be
- * clearly horizontal and quick so it never fights vertical scrolling. */
-const SWIPE={edge:34,minX:60,maxY:55,maxMs:700};
+ * clearly horizontal and quick so it never fights vertical scrolling.
+ *
+ * A gesture that STARTS on a control belongs to that control, full stop.
+ * Dragging the radius slider is a long horizontal travel by definition,
+ * so without this it read as "swipe back to the list" every time — the
+ * slider sits in #radwrap, which is a sibling of #mapwrap and so was not
+ * covered by the map exemption below. */
+const SWIPE={edge:34,minX:70,maxY:55,maxMs:800};
+const NO_SWIPE="input,select,textarea,button,a,label,.seg,.radwrap,.leaflet-control";
 function initSwipes(){
   const zone=$(".wrap");
   if(!zone) return;
@@ -946,8 +1023,13 @@ function initSwipes(){
     if(e.touches.length!==1) return;
     if(document.querySelector(".sheet-bg.on,.picker.on,.rp.on,.cyc.on")) return;
     const t=e.touches[0];
+    if(e.target.closest(NO_SWIPE)) return;                            // the control owns it
     if(e.target.closest("#mapwrap") && t.clientX>SWIPE.edge) return;  // let the map pan
     sx=t.clientX; sy=t.clientY; t0=Date.now(); live=true;
+  },{passive:true});
+  // a second finger, or a drag that wandered onto a control, cancels it
+  zone.addEventListener("touchmove",e=>{
+    if(live&&e.touches.length!==1) live=false;
   },{passive:true});
   zone.addEventListener("touchend",e=>{
     if(!live) return; live=false;
@@ -1614,17 +1696,26 @@ function stopCycle(quiet){
 const TYPES_BY_KIND={ bus:["breakdown","crowded","inspector"], metro:["inspector"] };
 /* You may only flag the vehicle you are inside, or a station you are
    standing at — these numbers are what "inside" and "at" mean.
-   busRadius is the STANDING-STILL rule; while you're moving it widens by
-   how far a bus travels during the feed's staleness (see reachRadius). */
-const ONBOARD={ busRadius:100, metroRadius:600, maxRoutes:14,
-  refineMs:6000, minMove:20,
+
+   busRadius is the STANDING-STILL rule and it is no longer a filter: see
+   the long note above findMyBus for why gating the SHORTLIST on distance
+   was the bug, and why the distance rule now lives in the verdict. */
+const ONBOARD={ busRadius:100, metroRadius:600, maxRoutes:20,
+  shortlist:10,       // candidates the co-movement pass is allowed to weigh
+  gateM:1500,         // how far out a candidate may start (the server's own trim)
+  trackMs:8000,       // how long we watch our OWN position before scanning
+  trackMin:3,         // fixes that make a track usable
+  sampleMs:5500,      // gap between vehicle samples
+  samples:3,          // total vehicle samples (1 up front + 2 while refining)
+  minMove:20,
   staleS:40,          // assumed worst-case age of an OASA position fix
   maxRadius:900,      // never widen past this, however fast we're going
   moveMs:2,           // m/s above which we treat the rider as "in traffic"
   cosOK:0.75,         // heading agreement for "moving with you"
-  paceOK:0.6,         // slower/faster ratio that still counts as the same
+  paceOK:0.5,         // slower/faster ratio that still counts as the same
   crossMax:80,        // sideways offset that still counts as the same street
-  maxStaleS:75 };     // most staleness we'll believe when inferring a fix's age
+  maxStaleS:75,       // most staleness we'll believe when inferring a fix's age
+  accMax:150 };       // above this the fix is too vague to reason about at all
 const isRed=r=>r.type==="inspector";
 function agoTxt(sec){
   const m=Math.max(0,Math.round(sec/60));
@@ -1642,16 +1733,23 @@ function activeReports(){
   const now=Date.now()/1000;
   return (state.reports||[]).filter(r=>r.expires>now);
 }
+/* An unconfirmed flag is visible on the report map, but it does NOT get
+   to put a red line under an arrival in the main list — that is the
+   loudest surface in the app and it only speaks for corroborated
+   reports. See the two-tier note in worker.js. */
+const isConf=r=>!!(r&&r.conf);
+function confirmedReports(){ return activeReports().filter(isConf); }
+
 /* Which report, if any, applies to this arrival row? Prefer an exact
    vehicle match, fall back to a report filed against the whole line. */
 function reportForArrival(a){
-  const rs=activeReports().filter(r=>r.kind==="bus");
+  const rs=confirmedReports().filter(r=>r.kind==="bus");
   return rs.find(r=>r.veh && a.veh && r.veh===a.veh)
       || rs.find(r=>!r.veh && r.routeCode===a.code)
       || null;
 }
 function reportForMetro(id){
-  return activeReports().find(r=>r.kind==="metro"&&r.targetId===String(id))||null;
+  return confirmedReports().find(r=>r.kind==="metro"&&r.targetId===String(id))||null;
 }
 function flagLine(r){
   if(!r) return "";
@@ -1688,8 +1786,9 @@ async function loadMetro(){
   catch{ state.metro=[]; }
   return state.metro;
 }
-function flagIcon(kind,level){
-  return L.divIcon({className:"",html:`<div class="flag ${level} ${kind}"></div>`,
+function flagIcon(kind,level,conf){
+  return L.divIcon({className:"",
+    html:`<div class="flag ${level} ${kind}${conf?"":" faint"}"></div>`,
     iconSize:[17,17],iconAnchor:[8,8],popupAnchor:[0,-10]});
 }
 /* A flagged bus keeps driving after it was reported, so the pin has to
@@ -1728,8 +1827,10 @@ function drawReportMap(){
     // Leaflet renders tooltip strings as HTML, so escape before interpolating.
     const name=r.kind==="bus"?`🚌 ${esc(r.lineId||"")} · ${esc(issueLabel(r.type))}`
       :`Ⓜ ${esc(r.targetName||"")} · ${esc(issueLabel(r.type))}`;
-    L.marker([la,ln],{icon:flagIcon(r.kind,isRed(r)?"red":"yellow"),zIndexOffset:600})
-      .addTo(replayer).bindTooltip(`${name} · ${esc(agoTxt(Date.now()/1000-r.at))}`,{direction:"top"});
+    const tail=esc(agoTxt(Date.now()/1000-r.at))+(isConf(r)?"":` · ${esc(t("unconfirmed"))}`);
+    L.marker([la,ln],{icon:flagIcon(r.kind,isRed(r)?"red":"yellow",isConf(r)),
+        zIndexOffset:isConf(r)?600:500})
+      .addTo(replayer).bindTooltip(`${name} · ${tail}`,{direction:"top"});
     b.extend([la,ln]);
   });
   if(b.isValid()) repmap.fitBounds(b,{padding:[40,40],maxZoom:15});
@@ -1741,13 +1842,24 @@ function renderReportList(){
   $("#rep-sub").textContent=`${reps.length} ${t("reports").toLowerCase()}`;
   const legend=`<div class="rep-legend">
     <span><i class="yellow"></i>${t("legendIssue")}</span>
-    <span><i class="red"></i>${t("legendInsp")}</span></div>`;
+    <span><i class="red"></i>${t("legendInsp")}</span>
+    <span><i class="hollow"></i>${t("legendUnconf")}</span></div>`;
   const items=reps.length?reps.map(r=>{
-    const cls=isRed(r)?"red":"yellow";
+    const cls=(isRed(r)?"red":"yellow")+(isConf(r)?"":" faint");
     const where=r.targetName||r.lineId||"";
-    return `<div class="repitem"><div class="rb ${cls}"></div><div class="ri">
+    const tags=[agoTxt(Date.now()/1000-r.at)];
+    if(!isConf(r)) tags.push(t("unconfirmed"));
+    if(r.confirms) tags.push(t("confirms")(r.confirms));
+    if(r.mine) tags.push(t("mineOnly"));
+    /* Anyone but the author can vouch for or knock down a flag. A "yes"
+       from a second person is what turns an unconfirmed report into a
+       real one; two "no"s remove it for everybody. */
+    const vote=(!r.mine&&!r.voted)?`<div class="rvote">
+        <button class="rv yes" data-id="${r.id}">${t("stillThere")}</button>
+        <button class="rv no" data-id="${r.id}">${t("notThere")}</button></div>`:"";
+    return `<div class="repitem${isConf(r)?"":" faint"}"><div class="rb ${cls}"></div><div class="ri">
       <div class="rt">${esc(issueLabel(r.type))}${r.lineId?" · "+esc(r.lineId):""}</div>
-      <div class="rs">${esc(where)}<br>${agoTxt(Date.now()/1000-r.at)}${r.mine?" · "+t("mineOnly"):""}</div>
+      <div class="rs">${esc(where)}<br>${esc(tags.join(" · "))}</div>${vote}
       </div>${r.mine?`<button class="rx" data-id="${r.id}">✕</button>`:""}</div>`;
   }).join(""):`<div class="note">${t("noReports")}</div>`;
   box.innerHTML=`<button class="rep-cta" id="rep-new">${t("reportCta")}</button>${legend}${items}`;
@@ -1761,6 +1873,19 @@ function renderReportList(){
           body:JSON.stringify({id:btn.dataset.id,by:myId()})});
         await refreshReports(); drawReportMap(); renderReportList(); renderView();
       }catch(_){ btn.disabled=false; }
+    };
+  });
+  box.querySelectorAll(".rv").forEach(btn=>{
+    btn.onclick=async()=>{
+      const yes=btn.classList.contains("yes");
+      btn.parentElement.querySelectorAll(".rv").forEach(b=>b.disabled=true);
+      try{
+        const res=await fetch(base()+"/reports/vote",{method:"POST",cache:"no-store",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({id:btn.dataset.id,by:myId(),vote:yes?"yes":"no"})});
+        toast(res.status===409?t("voteDone"):t("voteThanks"));
+        await refreshReports(); drawReportMap(); renderReportList(); renderView();
+      }catch(_){ btn.parentElement.querySelectorAll(".rv").forEach(b=>b.disabled=false); }
     };
   });
 }
@@ -1780,22 +1905,35 @@ function repBadge(){
 
 /* ---------------- "which bus am I on?" -----------------------------
  * You can only flag the vehicle you are actually inside, so the app has
- * to work out which one that is. Two passes:
+ * to work out which one that is.
  *
- *  1. PROXIMITY. Every live vehicle on the lines that serve the stops
- *     around you, kept only if it is within busRadius of your GPS fix.
- *     From a seat that is a handful of metres; from the pavement the
- *     bus you are watching drive past also qualifies — which is why
- *     you always confirm by tapping, and why the list is ranked, not
- *     auto-picked.
+ * WHY THE OLD VERSION FAILED ON A MOVING BUS. It shortlisted vehicles by
+ * distance and only then compared velocities. But an OASA fix is 30-60 s
+ * old, so a bus doing 8 m/s reports itself 250-450 m behind where it
+ * actually is — and the shortlist threw it away before the velocity
+ * comparison ever saw it. The error is proportional to speed, so it
+ * vanishes the moment the bus stops: hence "it only finds my bus when we
+ * pull into a stop". Worse, the slack that was supposed to cover this was
+ * scaled by navigator.geolocation's `speed`, which is null on most single
+ * fixes — so in practice there was no slack at all.
  *
- *  2. CO-MOVEMENT (the tie-breaker downtown, where six buses sit in the
- *     same jam). A second position sample ~6s later: if you are on
- *     board, your GPS and the vehicle move the same way — similar
- *     heading, similar distance covered — and the gap between you stays
- *     small. Those get flagged "moving with you" and float to the top.
- *     If nobody moved, the pass simply says nothing and proximity order
- *     stands.
+ * WHAT IT DOES NOW.
+ *  0. TRACK YOURSELF FIRST. watchMe() collects several fixes over ~8 s and
+ *     fits a velocity to them. Never trust one fix's `speed` field; a
+ *     least-squares fit over real displacement always exists.
+ *  1. SHORTLIST WIDE. Every live vehicle the server returns (it trims at
+ *     1.5 km) ranked by PLAUSIBILITY, not raw distance: sideways offset
+ *     from your path costs full price, lag along your own path is nearly
+ *     free, because that is exactly what a stale fix looks like from a
+ *     seat. Nothing is discarded for being "too far".
+ *  2. CO-MOVEMENT decides. Two more samples ~5.5 s apart. If you are on
+ *     board, your track and the vehicle's point the same way — and
+ *     direction, unlike speed, is completely immune to the feed's timing
+ *     being unknown. Those get "moving with you" and float to the top.
+ *  3. THE 100 m RULE STILL BITES, but as a verdict rather than a filter:
+ *     see onboardOK(). Standing on the pavement watching a bus go past,
+ *     nothing co-moves with you and nothing is within 100 m, so you still
+ *     cannot flag it.
  * ------------------------------------------------------------------ */
 /* Returns {generated, buses[]} — the timestamp matters: the first sample
    may come from the Worker's 10 s cache, so measuring velocity against
@@ -1856,6 +1994,79 @@ function myPosition(){
       {enableHighAccuracy:true,timeout:6000,maximumAge:0});
   });
 }
+
+/* Watch our own position for a while and hand back a TRACK, not a point.
+   One getCurrentPosition gives `speed:null` on most Android fixes (the
+   fused provider only fills it from raw GNSS doppler) and -1 on iOS, so
+   anything scaled by it silently became zero. Several fixes always give
+   displacement, and displacement always gives velocity. */
+function watchMe(ms,onFix){
+  return new Promise(res=>{
+    const fixes=[]; let id=null,done=false,timer=null;
+    const finish=()=>{
+      if(done) return; done=true;
+      clearTimeout(timer);
+      if(id!=null){ try{ navigator.geolocation.clearWatch(id); }catch(_){} }
+      res(track(fixes));
+    };
+    timer=setTimeout(finish,ms);
+    if(!navigator.geolocation){ finish(); return; }
+    try{
+      id=navigator.geolocation.watchPosition(p=>{
+        const c=p.coords;
+        if(!isFinite(c.latitude)||!isFinite(c.longitude)) return;
+        rememberPos(p);
+        fixes.push({lat:c.latitude,lng:c.longitude,acc:c.accuracy||0,
+          speed:(isFinite(c.speed)&&c.speed>=0)?c.speed:null,
+          heading:(isFinite(c.heading)&&c.heading>=0)?c.heading:null,
+          t:(p.timestamp?p.timestamp/1000:Date.now()/1000)});
+        if(onFix) onFix(fixes.length,fixes[fixes.length-1]);
+        // enough spread to fit a line? don't make the rider wait out the timer
+        if(fixes.length>=ONBOARD.trackMin&&
+           (fixes[fixes.length-1].t-fixes[0].t)>=ms/1000*0.6) finish();
+      },()=>finish(),{enableHighAccuracy:true,timeout:ms,maximumAge:0});
+    }catch(_){ finish(); }
+  });
+}
+
+/* Least-squares velocity through a set of fixes: fit east(t) and north(t)
+   independently and take the slopes. Robust to the metre-scale jitter a
+   single pair of fixes would turn into a wild vector. */
+function fitVelocity(fixes){
+  if(!fixes||fixes.length<2) return null;
+  const o=fixes[0], t0=o.t;
+  let n=0,st=0,stt=0,sx=0,sy=0,stx=0,sty=0;
+  fixes.forEach(f=>{
+    const d=vec(o,f), dt=f.t-t0;
+    n++; st+=dt; stt+=dt*dt; sx+=d[0]; sy+=d[1]; stx+=dt*d[0]; sty+=dt*d[1];
+  });
+  const den=n*stt-st*st;
+  if(!(Math.abs(den)>1e-6)) return null;
+  return [(n*stx-st*sx)/den,(n*sty-st*sy)/den];
+}
+
+/* Roll a set of fixes up into {pos, v, speed, acc, fixes, ok}. */
+function track(fixes){
+  const list=(fixes||[]).slice().sort((a,b)=>a.t-b.t);
+  const last=list[list.length-1]||null;
+  const pos=last||{lat:here.lat,lng:here.lng,acc:999,speed:null,heading:null,t:Date.now()/1000};
+  const span=list.length>1?(list[list.length-1].t-list[0].t):0;
+  let v=null;
+  // a fit needs both several fixes and a few seconds of them; otherwise
+  // fall back to whatever the device volunteered on the last one
+  if(list.length>=3&&span>=4) v=fitVelocity(list);
+  if(!v&&list.length>=2&&span>=2){
+    const d=vec(list[0],last); v=[d[0]/span,d[1]/span];
+  }
+  if(!v&&last&&last.speed!=null&&last.heading!=null){
+    const rad=last.heading*Math.PI/180;
+    v=[last.speed*Math.sin(rad),last.speed*Math.cos(rad)];   // heading is from north, clockwise
+  }
+  const accs=list.map(f=>f.acc).filter(a=>isFinite(a)&&a>0).sort((a,b)=>a-b);
+  const acc=accs.length?accs[Math.floor(accs.length/2)]:(pos.acc||999);
+  return { pos, v, speed:v?len(v):0, acc, fixes:list, span,
+           ok:list.length>0&&acc<=ONBOARD.accMax };
+}
 /* metres east/north between two points — small-angle flat projection,
    which is plenty over the few dozen metres travelled in 6 seconds. */
 function vec(a,b){
@@ -1883,114 +2094,171 @@ function cosAngle(u,v){
 
    Standing still the gate stays ~100 m, so the product rule — you can't
    flag a bus you're merely watching go past — is unchanged. */
-function reachRadius(pos){
-  const acc=Math.min(100,Math.max(0,(pos&&pos.acc)||0));
-  const spd=Math.max(0,(pos&&pos.speed)||0);
-  const slack=spd>ONBOARD.moveMs ? spd*ONBOARD.staleS : 0;
-  return Math.min(ONBOARD.maxRadius, ONBOARD.busRadius+acc+slack);
-}
-// kept for the metro path and any older call sites
+/* The standing-still rule: ~100 m plus whatever the fix is worth. This is
+   deliberately NOT widened by speed. Speed widens the SHORTLIST (see
+   plausibility) because a stale fix lags; it must not widen the VERDICT,
+   or "within reach" would mean 450 m on a moving bus and the rule would
+   stop meaning anything. While moving, co-movement is the only route to
+   a confirmed report. */
 function acceptRadius(acc){ return ONBOARD.busRadius+Math.min(100,Math.max(0,acc||0)); }
-async function findMyBus(){
-  const p0=await myPosition();
-  const scan=await sampleBuses(p0);
+
+/* How believable is "I am sitting inside that vehicle", in metres of
+   doubt? Standing still we have nothing but distance. Moving, we split
+   the gap between the bus's reported position and us into:
+     along — displacement along OUR direction of travel. Positive means
+             the bus is behind us, which is exactly what a stale fix
+             looks like from on board, so it is nearly free.
+     cross — sideways. A bus one street over has this no matter how
+             stale it is, so it is charged in full.
+   This is the inversion of the old behaviour: a bus 400 m behind us on
+   our own street now outranks one 60 m away on a parallel one. */
+function plausibility(at,me){
+  const raw=haversine(at.lat,at.lng,me.pos.lat,me.pos.lng);
+  if(!me.v||me.speed<ONBOARD.moveMs) return raw;
+  const unit=[me.v[0]/me.speed,me.v[1]/me.speed];
+  const off=vec(at,me.pos);                       // bus fix → me
+  const along=off[0]*unit[0]+off[1]*unit[1];
+  const cross=Math.hypot(off[0]-along*unit[0],off[1]-along*unit[1]);
+  const reach=me.speed*ONBOARD.maxStaleS+120;     // furthest a stale fix can lag
+  const lag=along<0 ? -along*1.5                  // ahead of us: not staleness
+                    : Math.max(0,along-reach);    // behind us: free up to `reach`
+  return cross+lag;
+}
+
+async function findMyBus(onProgress){
+  const me=await watchMe(ONBOARD.trackMs,onProgress&&(n=>onProgress({phase:"fix",fixes:n})));
+  if(!me.ok) return { me, p0:me.pos, t0:Date.now()/1000, list:[], badFix:true };
+  if(onProgress) onProgress({phase:"scan"});
+  const scan=await sampleBuses(me.pos);
   const near={};
-  const lim=reachRadius(p0);
   (scan.buses||[]).forEach(c=>{
-    const d=haversine(c.lat,c.lng,p0.lat,p0.lng);
-    if(d>lim) return;
+    const d=haversine(c.lat,c.lng,me.pos.lat,me.pos.lng);
+    if(d>ONBOARD.gateM) return;                   // the server's own trim, nothing tighter
     // the same vehicle can surface on two route variants — keep the closest
     if(!near[c.veh]||d<near[c.veh].d){
-      near[c.veh]={...c,d,p0:{lat:c.lat,lng:c.lng},t0:c.ts||scan.generated};
+      near[c.veh]={...c,d,rawD:d,p0:{lat:c.lat,lng:c.lng},t0:c.ts||scan.generated};
     }
   });
-  return { p0, t0:scan.generated, list:Object.values(near).sort((a,b)=>a.d-b.d) };
+  const list=Object.values(near).map(c=>{
+    c.cost=plausibility(c,me); c.withYou=false; return c;
+  }).sort(candOrder).slice(0,ONBOARD.shortlist);
+  return { me, p0:me.pos, t0:scan.generated, list };
+}
+function candOrder(a,b){
+  return (b.withYou?1:0)-(a.withYou?1:0) || a.cost-b.cost || a.d-b.d;
 }
 
-/* Second look, ~6 s later. This is where the real decision happens.
+/* Two more looks, ~5.5 s apart. This is where the real decision happens.
  *
  * The insight: a stale feed shifts a bus's REPORTED POSITION, but not
- * its VELOCITY. If you are on board, your velocity and the bus's are the
- * same vector even when the reported positions are 300 m apart — so
- * velocity agreement identifies your bus in exactly the situation where
- * distance fails. We then dead-reckon each candidate forward by the age
- * of its fix and use that (much smaller) gap only as a sanity check and
- * tiebreak, never as the gate.
+ * the DIRECTION it is travelling. If you are on board, your track and the
+ * bus's point the same way even when the reported positions are 300 m
+ * apart — and direction, unlike speed, needs no knowledge of when the
+ * feed's fixes were actually taken. So heading agreement is the primary
+ * test and pace is applied only when OASA timestamps both ends.
  *
- * If nothing is moving — bus at a light, you standing still — there's no
- * velocity to compare, so we stay quiet and leave proximity ranking
- * alone rather than inventing a verdict. */
-async function refineMyBus(cands,p0,t0){
-  const tStart=Date.now()/1000;
-  await new Promise(r=>setTimeout(r,ONBOARD.refineMs));
-  const codes=[...new Set(cands.map(c=>String((c.route||{}).code||"")).filter(Boolean))].slice(0,4);
-  const [p1,scan]=await Promise.all([
-    myPosition(),
-    sampleBuses(p0,{fresh:true,routes:codes}),
-  ]);
-  const now={};
-  (scan.buses||[]).forEach(v=>{ now[v.veh]={lat:v.lat,lng:v.lng,ts:v.ts}; });
+ * Three samples rather than two: a single 6 s baseline at walking-pace
+ * speeds is barely larger than GPS noise, and OASA often repeats the
+ * same fix across one interval and jumps across the next. Duplicated
+ * fixes are dropped, so the baseline stretches to whatever the feed
+ * actually gave us.
+ *
+ * onProgress fires after each round so the list re-ranks in front of the
+ * rider instead of sitting still for 12 s. */
+async function refineMyBus(cands,me0,t0,onProgress){
+  const codes=[...new Set(cands.map(c=>String((c.route||{}).code||"")).filter(Boolean))].slice(0,6);
+  const hist=new Map();
+  cands.forEach(c=>hist.set(c.veh,[{lat:c.p0.lat,lng:c.p0.lng,ts:c.ts||null,t:c.t0||t0}]));
+  let fixes=me0.fixes.slice();
 
-  /* How far apart the two samples really are. Server timestamps are the
-     better source — a first sample served from the scan cache is genuinely
-     older than the wait we just did — but they're whole seconds and can be
-     missing, and an underestimate here inflates every speed (a 58 m step
-     over a bogus 1 s reads as 209 km/h and fails the pace test). The time
-     we actually waited is a hard lower bound, so take the larger. */
-  const wall=Math.max(1,(Date.now()/1000)-tStart);
-  const t1=scan.generated||(Date.now()/1000);
-  const dtFeed=Math.max(wall,(t1-(t0||0))||0);
-  const dtMe=Math.max(wall,(p1.t-p0.t)||0);
+  for(let round=1;round<ONBOARD.samples;round++){
+    const seg=await watchMe(ONBOARD.sampleMs);
+    fixes=fixes.concat(seg.fixes);
+    const wall=Date.now()/1000;
+    let scan;
+    try{ scan=await sampleBuses(me0.pos,{fresh:true,routes:codes}); }catch(_){ scan=null; }
+    if(scan) (scan.buses||[]).forEach(v=>{
+      const h=hist.get(v.veh); if(!h) return;
+      const prev=h[h.length-1];
+      // an unchanged fix is not a new observation — recording it would
+      // read as "this bus is parked" and destroy the baseline
+      if(Math.abs(v.lat-prev.lat)<1e-7&&Math.abs(v.lng-prev.lng)<1e-7) return;
+      h.push({lat:v.lat,lng:v.lng,ts:v.ts||null,t:Math.max(scan.generated||0,wall)});
+    });
+    const me=scoreCands(cands,hist,fixes);
+    if(onProgress) onProgress(cands.slice().sort(candOrder),round,me);
+  }
+  return { list:cands.slice().sort(candOrder), me:track(fixes) };
+}
 
-  // my velocity: prefer the device's own speed/heading, else derive it
-  const mineVec=vec(p0,p1);
-  const myV=[mineVec[0]/dtMe,mineVec[1]/dtMe];
-  const mySpeed=(p1.speed!=null?p1.speed:len(myV));
-
+/* Turn the accumulated position histories into a verdict per candidate.
+   Returns the rider's own track, which is what onboardOK() needs. */
+function scoreCands(cands,hist,fixes){
+  const me=track(fixes);
   cands.forEach(c=>{
-    const cur=now[c.veh];
-    if(!cur){ c.withYou=false; return; }
-    const moved=vec(c.p0,{lat:cur.lat,lng:cur.lng});
-    const busV=[moved[0]/dtFeed,moved[1]/dtFeed];
-    const busSpeed=len(busV);
-    c.rawD=haversine(cur.lat,cur.lng,p1.lat,p1.lng);
+    const h=hist.get(c.veh)||[];
+    const last=h[h.length-1]||c.p0;
+    c.lat=last.lat; c.lng=last.lng;
+    c.rawD=haversine(last.lat,last.lng,me.pos.lat,me.pos.lng);
+    c.d=c.rawD; c.withYou=false; c.age=0;
 
-    if(mySpeed<ONBOARD.moveMs||busSpeed<ONBOARD.moveMs){
-      // nothing is moving (bus at a light, rider on foot): no velocity to
-      // compare, so no verdict — fall back to the reported distance.
-      c.withYou=false; c.d=c.rawD; return;
+    // nothing moved, or the feed never gave us a second distinct fix:
+    // no velocity to compare, so no verdict — plausibility ranking stands
+    if(h.length<2||!me.v||me.speed<ONBOARD.moveMs){
+      c.cost=plausibility(last,me); return;
     }
+    const first=h[0];
+    const moved=vec(first,last), dist=len(moved);
+    if(dist<ONBOARD.minMove){ c.cost=plausibility(last,me); return; }
+    const dir=[moved[0]/dist,moved[1]/dist];
 
-    /* Split the gap between the bus's reported position and me into:
-         along  — distance along its direction of travel (what a stale
-                  fix looks like: the bus is simply "behind" itself)
-         cross  — sideways offset (what a DIFFERENT street looks like)
+    /* Split the gap between the bus's reported position and me along its
+       OWN direction of travel:
+         along — what a stale fix looks like (the bus is behind itself)
+         cross — what a DIFFERENT street looks like
        A stale fix inflates `along` and leaves `cross` at GPS-noise level;
-       a bus one street over inflates `cross` no matter how stale it is.
-       That's the discriminator distance alone could never provide. */
-    const unit=[busV[0]/busSpeed,busV[1]/busSpeed];
-    const off=vec({lat:cur.lat,lng:cur.lng},p1);        // bus fix → me
-    const along=off[0]*unit[0]+off[1]*unit[1];
-    const cross=Math.hypot(off[0]-along*unit[0],off[1]-along*unit[1]);
+       a bus one street over inflates `cross` however stale it is. */
+    const off=vec(last,me.pos);
+    const along=off[0]*dir[0]+off[1]*dir[1];
+    const cross=Math.hypot(off[0]-along*dir[0],off[1]-along*dir[1]);
+    c.cross=cross; c.along=along;
 
-    /* Age of the fix. OASA gives a timestamp on some feeds; when it
-       doesn't, infer it — if I'm on board, the along-track gap is exactly
-       how far the bus has travelled since its last ping. */
-    const age=cur.ts
-      ? Math.max(0,Math.min(120,(Date.now()/1000)-cur.ts))
-      : Math.max(0,Math.min(ONBOARD.maxStaleS,along/busSpeed));
-    const proj=project({lat:cur.lat,lng:cur.lng},busV,age);
-    c.lat=proj.lat; c.lng=proj.lng;
-    c.d=haversine(proj.lat,proj.lng,p1.lat,p1.lng);
+    /* Pace, and the dead-reckoning that follows it, both need to know how
+       much real time the bus's displacement took. Only OASA's own stamps
+       can tell us that — our sample interval is an upper bound on it, not
+       a measurement. With stamps: compare speeds. Without: assume we are
+       together, which makes the along-track lag itself the age of the fix. */
+    let paceOK=true, busSpeed=me.speed;
+    if(first.ts&&last.ts&&last.ts>first.ts){
+      busSpeed=dist/(last.ts-first.ts);
+      const ratio=Math.min(me.speed,busSpeed)/Math.max(me.speed,busSpeed);
+      paceOK=ratio>ONBOARD.paceOK;
+      c.age=Math.max(0,Math.min(ONBOARD.maxStaleS,(Date.now()/1000)-last.ts));
+    }else{
+      c.age=Math.max(0,Math.min(ONBOARD.maxStaleS,along/Math.max(busSpeed,0.5)));
+    }
+    const proj=project(last,[dir[0]*busSpeed,dir[1]*busSpeed],c.age);
+    c.d=haversine(proj.lat,proj.lng,me.pos.lat,me.pos.lng);
 
-    const cos=cosAngle(myV,busV);
-    const ratio=Math.min(mySpeed,busSpeed)/Math.max(mySpeed,busSpeed);
-    c.agree=cos>ONBOARD.cosOK&&ratio>ONBOARD.paceOK;
-    const sameStreet=cross<=Math.max(ONBOARD.crossMax,p1.acc||0);
-    const explainable=along>=-150&&along<=busSpeed*ONBOARD.maxStaleS+150;
+    const cos=cosAngle(me.v,dir);
+    const sameStreet=cross<=Math.max(ONBOARD.crossMax,me.acc||0);
+    const reach=me.speed*ONBOARD.maxStaleS+150;
+    const explainable=along>=-150&&along<=reach;
+    c.agree=cos>ONBOARD.cosOK&&paceOK;
     c.withYou=c.agree&&sameStreet&&explainable;
+    c.cost=cross+Math.max(0,along-reach);
   });
-  return cands.sort((a,b)=>(b.withYou?1:0)-(a.withYou?1:0)||a.d-b.d);
+  return me;
+}
+
+/* The product rule, applied at the point of decision rather than as a
+   filter on the shortlist: you may flag a vehicle that is co-moving with
+   you, or one genuinely within arm's reach. Standing on the pavement
+   watching a bus go past satisfies neither. */
+function onboardOK(c,me){
+  if(!c) return false;
+  if(c.withYou) return true;
+  return (c.d!=null?c.d:c.rawD)<=acceptRadius(me&&me.acc);
 }
 /* move a point by a velocity vector (m/s, east/north) for `secs` */
 function project(p,v,secs){
@@ -2000,7 +2268,31 @@ function project(p,v,secs){
 
 /* -------------------- report form (2 steps) ------------------------ */
 const reportForm={open:false};
+const NOTICE_KEY="repNotice";
+/* Shown once, before anyone's first report. It is the app's only
+   acceptable-use statement at the point it actually matters, and it is
+   also what makes "you are responsible for what you file" something the
+   rider has read rather than something buried in the terms. */
 function openReportForm(){
+  if(!localStorage.getItem(NOTICE_KEY)){ firstReportNotice(); return; }
+  reportFormBody();
+}
+function firstReportNotice(){
+  const box=$("#rep-strip");
+  reportForm.open=true;
+  box.innerHTML=`<div class="field"><label>${t("firstH")}</label>
+      <div class="note">${esc(t("firstP"))}</div></div>
+    <button class="rep-cta" id="rf-ok" style="margin-top:12px">${t("agree")}</button>
+    <button class="ghost" id="rf-cancel">${t("cancel")}</button>`;
+  $("#rf-ok").onclick=()=>{
+    try{ localStorage.setItem(NOTICE_KEY,"1"); }catch(_){}
+    reportFormBody();
+  };
+  $("#rf-cancel").onclick=()=>{
+    reportForm.open=false; drawReportMap(); renderReportList();
+  };
+}
+function reportFormBody(){
   const box=$("#rep-strip");
   reportForm.open=true;
   // No category preselected: scanning for buses costs a burst of API
@@ -2038,10 +2330,25 @@ function openReportForm(){
   async function pickBus(){
     busy=true;
     const myKind=kind;
-    let found;
-    try{ found=await findMyBus(); }catch(_){ found={p0:here,t0:Date.now()/1000,list:[]}; }
+    const alive=()=>reportForm.open&&kind===myKind;
+    const note=txt=>{ const b=$("#rf-body"); if(b) b.textContent=txt; };
+    let found=null, me=null;
+    try{
+      found=await findMyBus(p=>{ if(alive()) note(p.phase==="scan"?t("scanBus"):t("gpsFix")); });
+    }catch(_){ found=null; }
     busy=false;
-    if(!reportForm.open||kind!==myKind) return;
+    if(!alive()) return;
+
+    // A vague fix can't identify anything; say so instead of scanning and
+    // then blaming the feed for the empty list it was always going to give.
+    if(!found||found.badFix){
+      box.innerHTML=kindChips()+
+        `<div class="note">${t("gpsWeak")}</div>
+         <button class="ghost" id="rf-again">${t("rescan")}</button>
+         <button class="ghost" id="rf-cancel">${t("cancel")}</button>`;
+      wireKind(); $("#rf-again").onclick=step1; $("#rf-cancel").onclick=close;
+      return;
+    }
     if(!found.list.length){
       box.innerHTML=kindChips()+
         `<div class="note">${t("noBusNear")}</div>
@@ -2050,22 +2357,30 @@ function openReportForm(){
       wireKind(); $("#rf-again").onclick=step1; $("#rf-cancel").onclick=close;
       return;
     }
-    const cands=found.list.slice(0,8);
-    drawCands(cands,true);
-    // second opinion arrives a few seconds later and re-ranks in place
-    refineMyBus(cands,found.p0,found.t0).then(list=>{
-      if(reportForm.open&&kind===myKind&&!target) drawCands(list,false);
+    const cands=found.list;
+    me=found.me;
+    drawCands(cands.slice().sort(candOrder),1);
+    // further opinions arrive every few seconds and re-rank in place
+    refineMyBus(cands,found.me,found.t0,(list,round,mNow)=>{
+      me=mNow||me;
+      if(alive()&&!target) drawCands(list,round+1);
+    }).then(res=>{
+      me=res.me||me;
+      if(alive()&&!target) drawCands(res.list,ONBOARD.samples);
     }).catch(()=>{});
 
-    function drawCands(list,pending){
+    function drawCands(list,round){
+      const pending=round<ONBOARD.samples;
       box.innerHTML=kindChips()+
         `<div class="field"><label>${t("confirmBus")}</label>
           <div class="cands" id="rf-cands">${list.map((c,i)=>{
             const dest=destOf((LANG==="en"?(c.route.en||c.route.el):(c.route.el||c.route.en))||"");
-            return `<button class="cand${c.withYou?" hot":""}" data-i="${i}">
+            const ok=onboardOK(c,me);
+            return `<button class="cand${c.withYou?" hot":""}${ok?"":" cold"}" data-i="${i}">
               <span class="cand-tile num">${esc(c.route.id||"")}</span>
               <span class="cand-txt"><span class="cand-dest">${esc(dest)}</span>
-                <span class="cand-meta">${fmtDist(c.d)}${c.withYou?` · ✓ ${t("withYou")}`:""}</span></span>
+                <span class="cand-meta">${fmtDist(c.d)}${c.withYou?` · ✓ ${t("withYou")}`
+                  :(ok?"":` · ${t("unsure")}`)}</span></span>
             </button>`; }).join("")}</div></div>
          <div class="shint">${pending?t("scanRefine"):t("onboardNote")}</div>
          <button class="ghost" id="rf-again">${t("rescan")}</button>
@@ -2074,7 +2389,12 @@ function openReportForm(){
       box.querySelectorAll(".cand").forEach(b=>b.onclick=()=>{
         const c=list[+b.dataset.i];
         target={ id:c.veh, name:destOf((LANG==="en"?(c.route.en||c.route.el):(c.route.el||c.route.en))||""),
-          lineId:c.route.id||"", routeCode:c.route.code, veh:c.veh, lat:c.lat, lng:c.lng };
+          lineId:c.route.id||"", routeCode:c.route.code, veh:c.veh, lat:c.lat, lng:c.lng,
+          /* The location check no longer BLOCKS the choice — it grades it.
+             A graded-down report is filed as unconfirmed: visible, hollow,
+             short-lived, and it needs a second rider to agree before it
+             counts. See the two-tier note in worker.js. */
+          confirmed:onboardOK(c,me) };
         step2();
       });
     }
@@ -2103,8 +2423,11 @@ function openReportForm(){
     wireKind(); $("#rf-cancel").onclick=close;
     box.querySelectorAll(".cand").forEach(b=>b.onclick=()=>{
       const m=near[+b.dataset.i];
+      /* Stations don't move and don't go stale, so the 600 m rule is a
+         real measurement here — a metro report is always confirmed. */
       target={ id:m.id, name:(LANG==="en"?(m.name_en||m.name):m.name)||"",
-        lineId:m.lines.map(l=>"M"+l).join("/"), routeCode:null, veh:null, lat:m.lat, lng:m.lng };
+        lineId:m.lines.map(l=>"M"+l).join("/"), routeCode:null, veh:null,
+        lat:m.lat, lng:m.lng, confirmed:true };
       step2();
     });
   }
@@ -2121,6 +2444,7 @@ function openReportForm(){
         <div class="chips" id="rf-type">${types.map(x=>
           `<button class="chip${x===type?" on":""}" data-t="${x}">${esc(issueLabel(x))}</button>`).join("")}
         </div></div>
+      ${target.confirmed?"":`<div class="shint">${t("unconfNote")}</div>`}
       <button class="rep-cta" id="rf-send" style="margin-top:14px">${t("send")}</button>
       <button class="ghost" id="rf-back">${t("back")}</button>
       <div class="note" id="rf-msg" style="display:none"></div>`;
@@ -2143,7 +2467,8 @@ function openReportForm(){
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({ by:myId(), kind, type,
           targetId:target.id, targetName:target.name, lineId:target.lineId,
-          routeCode:target.routeCode, veh:target.veh, lat:target.lat, lng:target.lng })});
+          routeCode:target.routeCode, veh:target.veh, lat:target.lat, lng:target.lng,
+          confirmed:!!target.confirmed })});
       let j={}; try{ j=await res.json(); }catch(_){}
       if(!res.ok){ fail(j.error||("HTTP "+res.status)); return; }
       reportForm.open=false;
@@ -2435,9 +2760,16 @@ async function loadLive(){
 function openAbout(){
   toggleMenu(false);
   $("#ab-h").textContent=t("aboutH");
-  $("#ab-body").innerHTML=`<div class="ab">${t("aboutBody")}
+  /* The disclaimer sits at the TOP, before anything else — an unofficial
+     app that borrows an operator's name has to say so where it will
+     actually be read, not in a footer. */
+  $("#ab-body").innerHTML=`<div class="ab">
+    <div class="unofficial">${esc(t("unofficial"))}</div>
+    ${t("aboutBody")}
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
-    <p class="ver" style="letter-spacing:.1em;margin-top:14px">OASUCKS · v27</p></div>`;
+    <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
+      · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v28</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
