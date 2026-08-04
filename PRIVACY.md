@@ -64,9 +64,8 @@ We do not sell, rent or share your data with anyone else.
 |---|---|
 | Your location | Not stored at all |
 | IP address | ≤ 60 seconds, in memory only |
-| An active report (including its coordinates and the reporter's anonymous id) | Until it expires: **5 minutes** unconfirmed, **15 minutes** (bus inspector), **1 hour** (other bus issues), **2 hours** (metro inspector). Then it is deleted outright. |
+| An active report (including its coordinates and the reporter's anonymous id) | Until it expires: **15 minutes** (bus inspector), **1 hour** (other bus issues), **2 hours** (metro inspector, broken lift). Then it is deleted outright. |
 | Report history log (time, line, station, issue type — **no coordinates, no reporter id**) | **90 days**, then deleted automatically |
-| Reporter reputation counters (anonymous id + three integers) | **60 days** after the id was last seen |
 | Push subscription | Until you turn alerts off |
 | Anything in `localStorage` | Until you clear your browser data or uninstall |
 

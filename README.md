@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v30.**
+version: v31.**
 
 **The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
 everything else: [look up a line](#find-a-line) and preview its route, a
@@ -11,10 +11,10 @@ everything else: [look up a line](#find-a-line) and preview its route, a
 
 **Community reports.** The old line-stats button is now the red exclamation mark. Tap
 it and a problem map of Athens opens — only the buses and metro stations that currently
-carry a flag, every one of them red and labelled on the map with what is wrong. Under it,
+carry a flag, every one of them red and labelled with what is wrong. Under it,
 **Report an issue** lets you flag the bus you are actually riding (the app works out
-which one) or a metro station within 600 m. A report the app could not match to your
-vehicle still goes up — faint, short-lived, and needing a second rider to agree.
+which one) or a metro station within 600 m. Every report is trusted; when several
+people flag the same thing it becomes one marker carrying the head count.
 See [Reports](#reports-red-exclamation-mark) for the exact rules.
 
 > The service-stats screen (line reliability, bunching, missing trips) still exists in
@@ -93,6 +93,13 @@ JSON to host at `/.well-known/assetlinks.json`.
 2. Auto-refreshes every 30s (the thin progress bar up top is the countdown), pulling
    fresh arrivals *and* the current report flags together.
 
+**Row order:** favourites first, then stops that actually have a bus coming (within
+15 minutes) by distance, then the rest by distance. The nearest shelter is useless if
+nothing calls there for half an hour, so it yields to one a little further with a bus
+in four minutes — and if the 10-row cap is full it drops off the list entirely (it
+stays on the map). The server details 14 stops so there are live candidates to promote;
+see [PARAMETERS.md](PARAMETERS.md).
+
 **Favourites:** long-press a stop's header in the list to pin it — it gets a ★ and
 sorts to the top, and stays there across refreshes. A pinned stop that's out of range
 is still shown (its arrivals are fetched separately), which is the point: your home
@@ -151,10 +158,12 @@ cached 15 s. Pan the map and tap **↻** to load another area. Tune the ceilings
 The ❗ button in the header opens the reports view. The map is a **problem map**: it
 shows *only* what is currently flagged — the flagged buses (following their live
 positions, so a reported bus keeps moving on the map) and the flagged metro stations.
-Every flag is **red**, and each pin carries a permanent label above it saying what it is
-— *Ticket inspectors*, *No A/C*, *Elevator not working* — so the map answers "what and
-where" without a tap. Nothing that is fine is drawn. The full list of active reports
-sits underneath, newest first, above a **Report an issue** button.
+Every flag is **red**, and each pin carries a label above it saying what it is —
+*Ticket inspectors*, *No A/C*, *Elevator not working* — so the map answers "what and
+where" without a tap. Below zoom 15 the labels hide (a dozen of them overlap into
+noise at city scale) and the pin's count badge carries the weight; tap a pin and the
+popup says the same thing. Nothing that is fine is drawn. The full list of active
+reports sits underneath, busiest first, above a **Report an issue** button.
 
 You can only report what you are actually next to — two categories, no free text:
 
@@ -208,41 +217,31 @@ usually zero.
 
 You always confirm with a tap — the app ranks, it never picks for you.
 
-### Confirmed and unconfirmed reports
+### Every report is trusted — the count is the signal
 
-Identifying the vehicle you're inside is an inference over a stale feed, so it is
-sometimes simply wrong. A gate that says *no* to an honest rider is a worse failure
-than one that says *maybe*, so since v28 location does not decide **whether** you can
-file — it decides **what your report is worth**.
+There is no confirmation tier and no voting. A rider who files a flag is believed,
+and it stands until it expires or its author withdraws it.
 
-| | Confirmed | Unconfirmed |
-|---|---|---|
-| How | co-moving with you, within 100 m, or at a metro station | you picked from the list, the matcher couldn't agree |
-| Marker | solid | **hollow, dashed** |
-| Arrivals list | red/yellow line under the direction | **nothing** |
-| Lifetime | 15 min / 1 h / 2 h as below | **5 minutes** |
+What replaces corroboration is simply the **head count**. Each reporter files their
+own record (that is what keeps withdrawal rights per-person), so the number of
+records sharing `kind|targetId|type` *is* the number of distinct people reporting the
+same thing. The app collapses them into **one** marker and one list row carrying that
+number — otherwise four people flagging the same bus would stack four identical pins.
+"3 reports" reads heavier than "1" without anyone having to vote on anything.
 
-An unconfirmed report is **promoted the moment a second, independent reporter agrees** —
-either by filing the same flag or by tapping *"Yes, still there"* on it. So one person
-acting alone can never manufacture a solid red flag (which is the property the strict
-gate was really protecting), and it costs an abuser a second device instead of costing
-an honest rider their report.
+The count shows in three places: a badge on the map pin, `×3` in the map label, and a
+red chip in the report list (which sorts busiest-first).
 
-**Corroboration.** Every report anyone else filed carries *"Yes, still there"* /
-*"Not there"*. One vote per person, never on your own. **Two distinct "not there" votes
-delete a report outright** — the self-service version of the manual purge below.
-
-**Reputation.** Reports carry the same anonymous device token used for withdrawal, and
-the Worker keeps three counters against it (filed / corroborated / contradicted, pruned
-after 60 days). A reporter whose flags keep getting contradicted stops being
-auto-confirmed; one whose record is much worse still gets a `200` on every report but
-only they can see the result. Neither trigger fires on a single unlucky report.
+Abuse control is now blunt and cheap: at most **2 active reports per device**, per-IP
+rate limits, and every flag expiring on its own. A false flag is cleared by its author
+(✕) or by the [admin purge](#clearing-bad-reports-eg-after-testing) — there is no
+longer a way for other riders to vote one down.
 
 At most **2 active reports per person** at a time.
 
 Flags then show up on the reports map and inline in the list view: a flagged bus gets
-red **"Ticket inspectors X minutes ago"** under its direction, matched to that exact
-vehicle, so the other bus on the same line stays clean.
+red **"Ticket inspectors · 3 reports · 4′ ago"** under its direction, matched to that
+exact vehicle, so the other bus on the same line stays clean.
 
 The rules:
 
@@ -252,16 +251,14 @@ The rules:
 | Ticket inspectors at a metro station | **2 h** — they work a station, not a trip |
 | Elevator not working (metro) | **2 h** — a facility fault, not a passing event |
 | Breakdown / overcrowded / no A/C (bus) | **60 min** |
-| Anything still **unconfirmed** | **5 min**, whatever it claims |
 
 All of these live in one table, `TTL` in `worker.js` — see
 [PARAMETERS.md](PARAMETERS.md).
 
-Re-reporting the same thing renews the timer. **Nobody can cancel someone else's report
-outright** — a flag disappears when it expires, when **the reporter who filed it**
-withdraws it (the app keeps an anonymous device token in `localStorage`; the server
-never exposes it, so withdrawals can't be forged), or when two independent riders vote
-"not there".
+Re-reporting the same thing renews your own record's timer without inflating the count.
+**Nobody can cancel someone else's report** — a flag disappears when it expires or when
+**the reporter who filed it** withdraws it (the app keeps an anonymous device token in
+`localStorage`; the server never exposes it, so withdrawals can't be forged).
 
 **History for statistics:** active flags live in KV and vanish when they expire, but
 every filed report is *also* appended to D1's `report_log` table (timestamp, kind,
@@ -271,7 +268,7 @@ buses/lines/stations, ready for a future public stats page. Rows are deleted aft
 **90 days** by the same cron that prunes tracking events.
 
 Reports live in the same KV namespace as the alert rules (`ALERTS`), in a single key —
-no extra setup (`GET/POST /reports`, `POST /reports/delete`, `POST /reports/vote`). The Worker enforces the
+no extra setup (`GET/POST /reports`, `POST /reports/delete`). The Worker enforces the
 same rules as the UI: only `bus` and `metro` categories, and only the types each one
 allows. Without a KV binding the app still runs; reporting just returns "not
 configured". Metro stations (lines M1/M2/M3) are a static list served by the Worker at
@@ -354,16 +351,16 @@ small by design. The controls that exist:
   parameterized queries (no SQL injection); Leaflet is self-hosted (no third-party CDN
   code path).
 
-- **Report integrity is layered.** A lone reporter can file at most 2 active flags, and
-  none of them can become a *confirmed* red flag without a second, independent device
-  agreeing. Two "not there" votes delete a flag. Persistent bad reporters lose
-  auto-confirmation, then get shadow-limited.
+- **Report volume is capped, not judged.** Since v31 every report is trusted, so the
+  controls are blunt: at most 2 active flags per device, 8 filings/min per IP, and
+  every flag expires on its own.
 
-What an attacker *could* still do: file plausible-looking **unconfirmed** flags (bounded
-by the rate limit and the 2-report cap, each expiring in 5 minutes), or — from a
-different Cloudflare account/IP set — spread load past the per-isolate limiter. Neither
-exposes data; the residual risk is report *spam*, which a Turnstile challenge on
-`POST /reports` would further reduce if you ever need it.
+What an attacker *could* still do: file plausible-looking flags (bounded by the rate
+limit and the 2-report cap, each expiring on its own), or — from a different Cloudflare
+account/IP set — spread load past the per-isolate limiter. Neither exposes data; the
+residual risk is report *spam*, and with corroboration removed the remedies are the
+author's ✕, the admin purge, and — if it ever becomes a real problem — a Turnstile
+challenge on `POST /reports`.
 
 ## Legal
 

@@ -18,7 +18,6 @@
  *  GET  /reports?by=ID          → active user reports (inspector/issue flags)
  *  POST /reports                → file (or renew) a report
  *  POST /reports/delete         → withdraw a report (reporter-only)
- *  POST /reports/vote           → corroborate / contradict someone else's
  *  GET  /metro                  → static Athens metro station list
  *  GET  /lines                  → every OASA line (id, code, description)
  *  GET  /live?lat=&lng=         → live vehicle positions around a point
@@ -29,7 +28,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v30";
+const APP_VERSION = "v31";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -943,7 +942,7 @@ async function handleNearby(url, env, ctx) {
   const lng = parseFloat(url.searchParams.get("lng"));
   if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
   const radius = Math.min(2000, Math.max(200, +(url.searchParams.get("radius") || 600)));
-  const limit = Math.min(12, Math.max(1, +(url.searchParams.get("limit") || 10)));
+  const limit = Math.min(16, Math.max(1, +(url.searchParams.get("limit") || 14)));
   const markers = Math.min(150, Math.max(limit, +(url.searchParams.get("markers") || 60)));
   // Map pins show the stop name now, so line metadata is only needed for the
   // stops the list renders. Everything else lazy-loads when its popup opens.
@@ -1046,8 +1045,7 @@ async function handleNearby(url, env, ctx) {
   let reports = [];
   if (env && env.ALERTS) {
     try {
-      reports = (await readReports(env, now))
-        .filter(r => visibleTo(r, "")).map(r => publicReport(r, ""));
+      reports = publicList(await readReports(env, now), "");
     } catch (_) { }
   }
 
@@ -1093,48 +1091,37 @@ const REPORT_TYPES = {
 };
 
 /* How long a flag lives, in seconds, by category and type. The split is
- * about how fast the thing stops being true, not about colour: inspectors
- * ride a few stops and hop off a bus, but work a metro station for hours;
- * a broken air-con or lift lasts the whole trip or the whole day. An
- * unconfirmed flag is short-lived whatever it claims — see the two-tier
- * note below. Documented in PARAMETERS.md. */
+ * about how fast the thing stops being true: inspectors ride a few stops
+ * and hop off a bus, but work a metro station for hours; a broken air-con
+ * or lift lasts the whole trip or the whole day. Documented in
+ * PARAMETERS.md. */
 const TTL = {
-  unconfirmed: 300,                                                    // 5 min
   bus:   { inspector: 900, breakdown: 3600, crowded: 3600, noac: 3600 },
   metro: { inspector: 7200, lift: 7200 },
 };
 const DEFAULT_TTL = 3600;
 const MAX_ACTIVE_PER_REPORTER = 2;
 
-/* ---------------------- two-tier reports --------------------------- *
- * Identifying the vehicle a rider is inside is an inference over a feed
- * that is 30-60 s stale, so it is sometimes simply wrong — and a gate
- * that says "no" to an honest rider is a worse failure than one that
- * says "maybe". So location no longer decides WHETHER you can file; it
- * decides WHAT YOUR REPORT IS WORTH.
+/* ------------------------ trust model ------------------------------ *
+ * Every report is taken at face value. There is no confirmation tier and
+ * no voting: a rider who files a flag is believed, and the flag stands
+ * until it expires or its author withdraws it.
  *
- *   confirmed (conf:1) — the app matched you to the vehicle, or you are
- *     at a metro station (stations don't move, so that check is real).
- *     Full TTL, solid marker, red line in the arrivals list.
- *   unconfirmed (conf:0) — you picked from the plausible list but the
- *     matcher couldn't agree. Visible, hollow, 5 minutes, and it does
- *     NOT annotate arrivals.
+ * What replaces corroboration as a signal is simply the COUNT. Each
+ * reporter files their own record for a target (that is what keeps
+ * withdrawal rights per-person), so the number of records sharing
+ * kind+targetId+type IS the number of distinct people reporting the same
+ * thing. The apps groups them into one marker and shows that number, so
+ * "4 reports" reads as stronger than "1" without anyone having to vote.
  *
- * An unconfirmed report is PROMOTED the moment a second, independent
- * reporter agrees — either by filing the same flag or by voting "still
- * there". So one person acting alone can never manufacture a solid red
- * flag, which is the property the strict gate was really protecting,
- * and it costs an abuser a second device instead of costing an honest
- * rider their report.
- *
- * Two distinct "not there" votes delete a report outright. That is also
- * the self-service version of the manual purge.
+ * The remaining abuse controls are blunt and cheap: MAX_ACTIVE_PER_REPORTER
+ * caps how many flags one device can hold up at once, per-IP rate limits
+ * cap how fast they arrive, and every flag expires on its own. A false
+ * flag can still be cleared by its author or by the admin purge.
  * ------------------------------------------------------------------ */
 function reportTtl(r) {
-  if (!r.conf) return TTL.unconfirmed;
   return (TTL[r.kind] && TTL[r.kind][r.type]) || DEFAULT_TTL;
 }
-const VOTES_TO_KILL = 2;          // distinct "not there" votes that remove a flag
 function reportsReady(env) { return !!(env && env.ALERTS); }
 
 async function readReports(env, now) {
@@ -1145,52 +1132,31 @@ async function readReports(env, now) {
 async function writeReports(env, list) {
   await env.ALERTS.put(REPORTS_KEY, JSON.stringify(list));
 }
-/* What clients see: everything except the reporter token and the voter
-   ids. `mine` unlocks the ✕; `voted` greys out the vote buttons. */
-function publicReport(r, by) {
-  const ok = Array.isArray(r.ok) ? r.ok : [];
-  const no = Array.isArray(r.no) ? r.no : [];
+/* What clients see: everything except the reporter token. `mine` unlocks
+   the ✕. `count` is how many distinct people have filed this same flag —
+   one record per person per target+type, so the group size is the head
+   count. The client groups by the same key to draw one marker. */
+function publicReport(r, by, count) {
   const out = {
     id: r.id, kind: r.kind, type: r.type,
     veh: r.veh || null, routeCode: r.routeCode || null, lineId: r.lineId || null,
     targetId: r.targetId, targetName: r.targetName || "",
     lat: r.lat, lng: r.lng, at: r.at, expires: r.at + reportTtl(r),
-    conf: r.conf ? 1 : 0, confirms: ok.length,
+    count: count || 1,
   };
   if (by && r.by === by) out.mine = true;
-  if (by && (r.by === by || ok.includes(by) || no.includes(by))) out.voted = true;
   return out;
 }
-/* Hidden reports are shadow-limited: their author still sees them, so
-   nothing looks broken to them, but nobody else does. */
-function visibleTo(r, by) { return !r.hidden || (by && r.by === by); }
-
-/* ------------------------ reporter reputation ---------------------- *
- * Anonymous, but not memoryless. Keyed by the same random client token
- * the reports already carry, in one KV key alongside them:
- *   f = filed, c = corroborated by someone else, x = contradicted
- * The two things it can do — refuse to auto-confirm, and shadow-limit —
- * both need a sustained pattern, never a single unlucky report.
- * ------------------------------------------------------------------ */
-const REP_KEY = "reports:reputation";
-const REP_TTL_DAYS = 60;
-async function readRep(env) {
-  const m = await env.ALERTS.get(REP_KEY, "json");
-  return (m && typeof m === "object") ? m : {};
+/* The identity of a flag: same thing wrong with the same vehicle/station. */
+function reportKey(r) { return `${r.kind}|${r.targetId}|${r.type}`; }
+function countByKey(list) {
+  const n = new Map();
+  for (const r of list) n.set(reportKey(r), (n.get(reportKey(r)) || 0) + 1);
+  return n;
 }
-async function writeRep(env, map, now) {
-  // prune ids nobody has seen in two months so the key can't grow forever
-  const cut = now - REP_TTL_DAYS * 86400;
-  for (const k of Object.keys(map)) if (!(map[k] && map[k].t > cut)) delete map[k];
-  await env.ALERTS.put(REP_KEY, JSON.stringify(map));
-}
-function repOf(map, by) { return map[by] || { f: 0, c: 0, x: 0, t: 0 }; }
-/* "ok" — normal. "limited" — may file, never auto-confirmed.
-   "shadow" — may file, but only they can see it. */
-function repVerdict(e) {
-  if (e.x >= 6 && e.x > e.c * 2) return "shadow";
-  if (e.x >= 3 && e.x > e.c + 1) return "limited";
-  return "ok";
+function publicList(list, by) {
+  const n = countByKey(list);
+  return list.map(r => publicReport(r, by, n.get(reportKey(r))));
 }
 
 /* Every filed (or renewed) report also lands in D1's report_log —
@@ -1213,8 +1179,7 @@ async function handleReports(req, url, env, ctx) {
 
   if (req.method === "GET") {
     const by = url.searchParams.get("by") || "";
-    const active = await readReports(env, now);
-    return json(active.filter(r => visibleTo(r, by)).map(r => publicReport(r, by)));
+    return json(publicList(await readReports(env, now), by));
   }
 
   const b = await req.json().catch(() => null);
@@ -1232,42 +1197,6 @@ async function handleReports(req, url, env, ctx) {
     active.splice(i, 1);
     await writeReports(env, active);
     return json({ ok: true });
-  }
-
-  /* ---- corroboration: "yes, still there" / "no, not there" ----
-     One vote per reporter per report, and never on your own — a report
-     you filed already counts as your own opinion of it. A "yes" from
-     anyone else is what promotes an unconfirmed flag; VOTES_TO_KILL
-     "no"s remove it for everyone. */
-  if (path.endsWith("/reports/vote")) {
-    const r = active.find(x => x.id === b.id);
-    if (!r) return json({ error: "not found" }, 404);
-    if (!visibleTo(r, by)) return json({ error: "not found" }, 404);
-    if (r.by === by) return json({ error: "that's your own report" }, 403);
-    r.ok = Array.isArray(r.ok) ? r.ok : [];
-    r.no = Array.isArray(r.no) ? r.no : [];
-    if (r.ok.includes(by) || r.no.includes(by)) return json({ error: "already voted" }, 409);
-
-    const rep = await readRep(env);
-    const owner = repOf(rep, r.by);
-    const yes = b.vote !== false && b.vote !== "no";
-    if (yes) {
-      r.ok.push(by);
-      owner.c = (owner.c || 0) + 1;
-      // a second person agreeing is exactly what "confirmed" means; the
-      // clock restarts, because it only just became credible
-      if (!r.conf) { r.conf = 1; r.at = now; }
-    } else {
-      r.no.push(by);
-      owner.x = (owner.x || 0) + 1;
-    }
-    owner.t = now; rep[r.by] = owner;
-
-    const killed = r.no.length >= VOTES_TO_KILL;
-    const keep = killed ? active.filter(x => x.id !== r.id) : active;
-    await writeReports(env, keep);
-    if (ctx) ctx.waitUntil(writeRep(env, rep, now));
-    return json(killed ? { ok: true, removed: true } : publicReport(r, by));
   }
 
   // create / renew
@@ -1288,56 +1217,26 @@ async function handleReports(req, url, env, ctx) {
   };
   // (No free-text note in this version — anything sent is ignored.)
 
-  const rep = await readRep(env);
-  const me = repOf(rep, by);
-  const verdict = repVerdict(me);
-
-  /* Did the app manage to match this rider to the target? A reporter who
-     keeps getting contradicted never gets the benefit of that doubt. */
-  const claimed = b.confirmed === true || b.confirmed === 1;
-  let conf = (claimed && verdict === "ok") ? 1 : 0;
-
   // Same reporter re-flagging the same thing renews it; a different
-  // reporter files their own record (which also keeps the flag alive,
-  // and keeps withdrawal rights separate per user).
+  // reporter files their own record, which keeps withdrawal rights
+  // separate per user AND is what makes the head count meaningful.
   const mine = active.find(r =>
     r.by === by && r.kind === kind && r.type === type && r.targetId === targetId);
   if (mine) {
     Object.assign(mine, fields, { at: now });
-    if (conf) mine.conf = 1;       // renewing can upgrade, never downgrade
     await writeReports(env, active);
     if (ctx) ctx.waitUntil(logReport(env, mine, now, true));
-    return json(publicReport(mine, by));
+    return json(publicReport(mine, by, countByKey(active).get(reportKey(mine))));
   }
   if (active.filter(r => r.by === by).length >= MAX_ACTIVE_PER_REPORTER) {
     return json({ error: "too many active reports" }, 429);
   }
 
-  /* An independent second reporter on the same target+type IS the
-     corroboration: promote the existing flag and credit its author. */
-  const others = active.filter(r =>
-    r.by !== by && r.kind === kind && r.type === type && r.targetId === targetId);
-  let promoted = 0;
-  for (const o of others) {
-    o.ok = Array.isArray(o.ok) ? o.ok : [];
-    if (!o.ok.includes(by)) o.ok.push(by);
-    const owner = repOf(rep, o.by);
-    owner.c = (owner.c || 0) + 1; owner.t = now; rep[o.by] = owner;
-    if (!o.conf) { o.conf = 1; o.at = now; promoted++; }
-  }
-  // ...and someone else already standing behind it confirms ours too
-  if (others.length && verdict !== "shadow") conf = 1;
-
-  const rec = { id: crypto.randomUUID(), by, at: now, conf, ok: [], no: [], ...fields };
-  if (verdict === "shadow") rec.hidden = 1;
+  const rec = { id: crypto.randomUUID(), by, at: now, ...fields };
   active.push(rec);
-  me.f = (me.f || 0) + 1; me.t = now; rep[by] = me;
   await writeReports(env, active);
-  if (ctx) ctx.waitUntil(Promise.all([
-    logReport(env, rec, now, false),
-    writeRep(env, rep, now),
-  ]));
-  return json({ ...publicReport(rec, by), promoted });
+  if (ctx) ctx.waitUntil(logReport(env, rec, now, false));
+  return json(publicReport(rec, by, countByKey(active).get(reportKey(rec))));
 }
 
 /* ===================== Athens metro stations ====================== *
@@ -1747,14 +1646,11 @@ export default {
       return json({ days, type: type || "all", kind: kind || "all", top: results || [] });
     }
 
-    if (p.endsWith("/reports") || p.endsWith("/reports/delete") || p.endsWith("/reports/vote")) {
+    if (p.endsWith("/reports") || p.endsWith("/reports/delete")) {
       if (req.method === "POST") {
-        const bucket = p.endsWith("/delete") ? "reports-del"
-          : p.endsWith("/vote") ? "reports-vote" : "reports";
-        // filing is the expensive, abusable one; voting is a tap, and
-        // withdrawing your own is always harmless
-        const limit = p.endsWith("/delete") ? 30 : p.endsWith("/vote") ? 40 : 8;
-        if (!rateLimit(ip, bucket, limit, 60)) return tooMany();
+        // filing is the abusable one; withdrawing your own is harmless
+        const del = p.endsWith("/delete");
+        if (!rateLimit(ip, del ? "reports-del" : "reports", del ? 30 : 8, 60)) return tooMany();
       }
       return handleReports(req, url, env, ctx);
     }

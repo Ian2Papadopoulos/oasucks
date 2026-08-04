@@ -348,41 +348,30 @@
   .flag.red{border-color:#C42B1C;background:#C42B1C}
   .flag.bus{border-radius:3px;width:17px;height:17px}
   .flag.metro{border-radius:2px;width:15px;height:15px;transform:rotate(45deg)}
-  /* unconfirmed: hollow, so it reads as "someone says so" rather than
-     "this is the case" — same shape and colour, no fill */
-  .flag.faint{background:#fff!important;opacity:.9;border-style:dashed}
-  /* the always-on label above each pin: says WHAT is wrong without a tap */
+  .flag{position:relative}
+  /* how many people said it, riding on the pin so it survives label hiding */
+  .flag-n{position:absolute;top:-7px;right:-8px;min-width:14px;height:14px;padding:0 3px;
+    background:var(--toner);color:#fff;border:1px solid #fff;border-radius:8px;
+    font-family:var(--mono);font-size:9px;font-weight:700;line-height:12px;text-align:center}
+  .flag.metro .flag-n{transform:rotate(-45deg)}
+  /* the label above each pin: says WHAT is wrong without a tap. Hidden
+     below REPMAP.labelZoom, where a dozen of them would overlap. */
+  .nolabels .leaflet-tooltip.flaglabel{display:none}
   .leaflet-tooltip.flaglabel{background:#C42B1C;color:#fff;border:none;border-radius:2px;
     font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.04em;
     padding:2px 5px;white-space:nowrap;box-shadow:1px 1px 0 rgba(23,23,26,.25)}
   .leaflet-tooltip.flaglabel::before{border-top-color:#C42B1C}
-  .leaflet-tooltip.flaglabel.faint{background:var(--card);color:#C42B1C;
-    border:1px dashed #C42B1C;padding:1px 4px}
-  .leaflet-tooltip.flaglabel.faint::before{display:none}
-  .rep-legend{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:9px;
-    color:var(--ink3);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em}
-  .rep-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:4px;
-    vertical-align:-1px;border:2px solid var(--ink3);background:#fff}
-  .rep-legend i.red{background:#C42B1C;border-color:#C42B1C}
-  .rep-legend i.hollow{background:#fff;border-style:dashed;border-color:var(--toner)}
   .repitem{display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px dashed var(--rule)}
   .repitem:first-of-type{border-top:none}
   .repitem .rb{width:4px;align-self:stretch;background:var(--ink3);flex:none}
   .repitem .rb.red{background:#C42B1C}
-  .repitem .rb.faint{background:repeating-linear-gradient(180deg,
-    currentColor 0 3px,transparent 3px 6px);opacity:.55}
-  .repitem.faint .rt{font-weight:400}
   .repitem .ri{flex:1;min-width:0}
   .repitem .rt{font-weight:700;font-size:12px}
+  .repitem .rn{display:inline-block;margin-left:6px;background:#C42B1C;color:#fff;
+    padding:0 5px;border-radius:2px;font-size:9.5px;letter-spacing:.04em;vertical-align:1px}
   .repitem .rs{color:var(--ink3);font-size:10.5px;margin-top:2px;line-height:1.45}
   .repitem .rx{background:var(--card);border:1px solid var(--rule);color:var(--ink3);
     width:26px;height:26px;cursor:pointer;flex:none;font-family:var(--mono);border-radius:2px}
-  .rvote{display:flex;gap:6px;margin-top:6px}
-  .rvote .rv{background:var(--card);border:1px solid var(--rule);color:var(--ink3);
-    padding:5px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:var(--mono);
-    border-radius:2px;letter-spacing:.04em}
-  .rvote .rv:active{border-color:var(--toner);color:var(--toner)}
-  .rvote .rv[disabled]{opacity:.4}
   .flagline{font-size:10.5px;font-weight:700;margin-top:3px;letter-spacing:.02em}
   .flagline.red{color:#C42B1C}
   /* candidate pickers: "which bus are you on / which station" */
@@ -392,8 +381,6 @@
     padding:8px 10px;cursor:pointer;font-family:var(--mono);border-radius:2px}
   .cand:active{border-color:var(--toner)}
   .cand.hot{border-color:var(--toner);border-width:2px;padding:7px 9px}
-  /* still tappable — picking it just files an unconfirmed report */
-  .cand.cold{border-style:dashed}
   .cand-tile{min-width:42px;height:26px;padding:0 6px;background:var(--toner);color:var(--paper);
     font-weight:700;font-size:12px;display:grid;place-items:center;flex:none;border-radius:2px}
   .cand-txt{flex:1;min-width:0;display:block}
@@ -524,7 +511,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v30</span></div>
+  <div class="foot"><span class="ver">v31</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -622,11 +609,13 @@
 
 <script>
 const CONFIG={proxyBase:"",refreshMs:30000,idleMs:45000,idleAfter:240000,sleepAfter:900000,
-  // listStops is a HARD cap on the list: the map draws every marker, but the
-  // list only ever shows this many closest stops, and every one of them has
-  // its arrivals loaded (see fillVisibleArrivals). Loading arrivals is the
-  // expensive call, so this is the number that governs cost per refresh.
-  listStops:10,maxMarkers:120,maxRows:6,
+  // listStops is a HARD cap on how many rows the list shows; listPool is how
+  // many the server details, and it is wider on purpose — the extra stops are
+  // the candidates that get promoted when a nearer one has nothing coming
+  // (see listStops()). Every row shown has its arrivals loaded (see
+  // fillVisibleArrivals). Arrivals are the expensive call, so listPool is the
+  // number that governs cost per refresh.
+  listStops:10,listPool:14,imminentMin:15,maxMarkers:120,maxRows:6,
   walkSpeed:80,detour:1.35,onward:9,cycleMs:3200};
 const API="https://telematics.oasa.gr/api/";
 const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
@@ -708,25 +697,18 @@ const T={
   whichLine:"Ποια γραμμή;", whichStop:"Ποια στάση;", whichStation:"Ποιος σταθμός;",
   issueType:"Τι συμβαίνει;", noteOpt:"Σχόλιο (προαιρετικό)", send:"Αποστολή",
   noReports:"Καμία ενεργή αναφορά.", agoShort:"πριν", mineOnly:"Μόνο εσύ μπορείς να τη σβήσεις",
-  legendIssue:"αναφορά", legendInsp:"ελεγκτές",
   confirmBus:"Σε ποιο λεωφορείο είσαι;", scanBus:"Εντοπισμός λεωφορείων γύρω σου…",
   scanRefine:"Έλεγχος ποιο κινείται μαζί σου…", withYou:"κινείται μαζί σου",
   gpsFix:"Εντοπισμός της θέσης σου…",
   gpsWeak:"Πολύ αδύναμο σήμα GPS για να ξεχωρίσουμε όχημα. Δοκίμασε ξανά σε λίγο.",
-  unsure:"αβέβαιο",
   noBusNear:"Κανένα λεωφορείο δίπλα σου. Η αναφορά γίνεται μόνο από μέσα στο όχημα.",
   pickWhere:"Διάλεξε πρώτα πού βρίσκεσαι.",
   rescan:"↻ Νέα σάρωση", nearestStation:"Ποιος σταθμός;",
   noMetroNear:"Κανένας σταθμός μετρό σε 600 μ. από εσένα.",
   onboardNote:"Μόνο για το λεωφορείο που είσαι μέσα.",
   metroNote:"Μόνο για σταθμούς σε 600 μ. από εσένα.",
-  /* two-tier reports */
-  unconfirmed:"Χωρίς επιβεβαίωση", legendUnconf:"χωρίς επιβεβαίωση",
-  unconfNote:"Δεν επιβεβαιώθηκε η θέση σου, οπότε η αναφορά μπαίνει αχνή και για λίγο. "+
-    "Μόλις συμφωνήσει κι άλλος επιβάτης, γίνεται κανονική.",
-  stillThere:"Ναι, είναι εδώ", notThere:"Δεν είναι εδώ",
-  voteThanks:"Ευχαριστούμε — καταγράφηκε", voteDone:"Το έχεις ήδη ψηφίσει",
-  confirms:n=>n===1?"1 επιβεβαίωση":`${n} επιβεβαιώσεις`,
+  /* how many people are saying the same thing */
+  nReports:n=>n===1?"1 αναφορά":`${n} αναφορές`,
   /* first-report notice + legal */
   firstH:"Πριν στείλεις την πρώτη σου αναφορά",
   firstP:"Οι αναφορές είναι δημόσιες αλλα τελειως ανώνυμες. Η εφαρμογή δεν είναι εργαλείο "+
@@ -756,10 +738,9 @@ const T={
     γράφει από πάνω της τι είναι. Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε
     600 μ. Οι ελεγκτές σβήνουν μετά από 15′ στα λεωφορεία και 2 ώρες στο μετρό, οι βλάβες μετά
     από 60′. Μόνο όποιος έκανε μια αναφορά μπορεί να τη σβήσει νωρίτερα.</p>
-    <p><b>Επιβεβαίωση.</b> Αν η εφαρμογή δεν καταφέρει να σε ταιριάξει με το όχημα, η αναφορά
-    μπαίνει <i>χωρίς επιβεβαίωση</i>: φαίνεται αχνή, κρατάει 5′ και δεν βάζει ένδειξη στη λίστα
-    αφίξεων. Μόλις συμφωνήσει δεύτερος επιβάτης γίνεται κανονική — έτσι κανείς δεν μπορεί μόνος
-    του να στήσει ψεύτικη σήμανση. Δύο «δεν είναι εδώ» τη σβήνουν για όλους.</p>
+    <p><b>Πόσοι το είπαν.</b> Κάθε αναφορά μετράει το ίδιο. Όταν περισσότεροι αναφέρουν το ίδιο
+    πράγμα για το ίδιο όχημα ή σταθμό, μπαίνουν σε μία σήμανση με τον αριθμό τους — «3 αναφορές»
+    διαβάζεται πιο βαριά από «1», χωρίς να χρειάζεται κανείς να ψηφίσει.</p>
     <p><b>Ιδιωτικότητα.</b> Χωρίς λογαριασμό και χωρίς παρακολούθηση. Η τοποθεσία σου μένει στη
     συσκευή — στέλνεται μόνο η θέση αυτού που αναφέρεις. Οι αναφορές συνδέονται με ένα ανώνυμο
     τυχαίο αναγνωριστικό που φυλάσσεται τοπικά.</p>
@@ -798,25 +779,18 @@ const T={
   whichLine:"Which line?", whichStop:"Which stop?", whichStation:"Which station?",
   issueType:"What's happening?", noteOpt:"Note (optional)", send:"Send",
   noReports:"No active reports.", agoShort:"ago", mineOnly:"Only you can clear it",
-  legendIssue:"report", legendInsp:"inspectors",
   confirmBus:"Which bus are you on?", scanBus:"Finding buses around you…",
   scanRefine:"Checking which one moves with you…", withYou:"moving with you",
   gpsFix:"Getting your position…",
   gpsWeak:"GPS signal too weak to tell vehicles apart. Try again in a moment.",
-  unsure:"unsure",
   noBusNear:"No bus next to you. You can only report from on board.",
   pickWhere:"First pick where you are.",
   rescan:"↻ Scan again", nearestStation:"Which station?",
   noMetroNear:"No metro station within 600 m of you.",
   onboardNote:"Only for the bus you're riding.",
   metroNote:"Only for stations within 600 m of you.",
-  /* two-tier reports */
-  unconfirmed:"Unconfirmed", legendUnconf:"unconfirmed",
-  unconfNote:"We couldn't confirm where you are, so this goes up faint and short-lived. "+
-    "It becomes a full flag as soon as another rider agrees.",
-  stillThere:"Yes, still there", notThere:"Not there",
-  voteThanks:"Thanks — recorded", voteDone:"You've already voted on this",
-  confirms:n=>n===1?"1 confirmation":`${n} confirmations`,
+  /* how many people are saying the same thing */
+  nReports:n=>n===1?"1 report":`${n} reports`,
   /* first-report notice + legal */
   firstH:"Before your first report",
   firstP:"Reports are public but completely anonymous. This app is not a fare-evasion tool, "+
@@ -846,10 +820,9 @@ const T={
     what it is, right on the map. You flag the bus you are riding, or a metro station within
     600 m. Inspector flags expire after 15 min on buses and 2 hours on the metro, faults after
     60 min. Only the person who filed a report can clear it early.</p>
-    <p><b>Confirmation.</b> If the app can't match you to the vehicle, your report goes up
-    <i>unconfirmed</i>: faint, five minutes, and it doesn't annotate the arrivals list. As soon
-    as a second rider agrees it becomes a full flag — so nobody acting alone can manufacture
-    one. Two "not there" votes remove it for everyone.</p>
+    <p><b>How many said it.</b> Every report counts the same. When several people report the
+    same thing about the same vehicle or station they collapse into one flag carrying the
+    number — "3 reports" reads heavier than "1", with nobody having to vote.</p>
     <p><b>Privacy.</b> No account, no tracking. Your location stays on the device — only the
     position of what you report is sent. Reports are tied to an anonymous random id kept locally.</p>
     <p><b>The data.</b> Unofficial, from OASA. The times are their own estimates and they are
@@ -1273,13 +1246,34 @@ function toggleFav(s){
   renderView();
   if($("#stopcard").classList.contains("on")) renderStopCard();
 }
+/* Does this stop have a bus worth waiting for? */
+function hasImminent(s){
+  return (s.arrivals||[]).some(a=>isFinite(a.min)&&a.min<=CONFIG.imminentMin);
+}
+/* Promotion tier: 0 = a bus is coming, 1 = nothing coming, or we don't
+   know yet. "Don't know" deliberately ranks WITH dead rather than with
+   live: an un-loaded stop is one the server didn't detail, i.e. outside
+   listPool, and letting those pass for live would float far unknowns
+   over near stops only to demote them a second later once their arrivals
+   land. /nearby returns the pool's arrivals in the same response, so in
+   practice the tier is known by first paint and nothing reshuffles. */
+function listRank(s){ return hasImminent(s)?0:1; }
+
 /* The list: favourites first (in the order pinned), then the nearest
-   stops. A favourite that isn't in range is carried in from `favLive`. */
-/* The list is capped at CONFIG.listStops stops TOTAL — favourites first,
-   then the nearest others to fill up to the cap. Favourites count toward
-   the cap rather than adding on top of it: the old `+pinned.length` let
-   each pinned stop push an un-loaded stop past the loaded window, which
-   is exactly what produced the rows stuck on the grey loading bars. */
+   stops. A favourite that isn't in range is carried in from `favLive`.
+   Capped at CONFIG.listStops TOTAL — favourites count toward the cap
+   rather than adding on top of it, or a pinned stop would push an
+   un-loaded one past the loaded window and it would sit forever on the
+   grey loading bars.
+
+   Within the un-pinned remainder, distance is the sort key but a DEAD
+   stop yields to a live one: the nearest shelter is useless if nothing
+   calls there for half an hour, and the point of the screen is "what can
+   I actually catch". So the order is (has an imminent arrival, then
+   distance) — a stop 300 m away with a bus in 4 minutes outranks one at
+   60 m whose next bus is in 40. The server details CONFIG.listPool stops,
+   which is wider than the cap precisely so there are live candidates to
+   promote. */
 function listStops(){
   const byCode={};
   (state.stops||[]).forEach(s=>{ byCode[String(s.code)]=s; });
@@ -1288,7 +1282,8 @@ function listStops(){
     const live=byCode[String(f.code)]||state.favLive[String(f.code)];
     if(live) pinned.push(live);
   });
-  const rest=(state.stops||[]).filter(s=>!isFav(s.code));
+  const rest=(state.stops||[]).filter(s=>!isFav(s.code))
+    .sort((a,b)=>listRank(a)-listRank(b)||a.dist-b.dist);
   // never drop a favourite the user explicitly pinned, even past the cap
   const cap=Math.max(CONFIG.listStops,pinned.length);
   return pinned.concat(rest).slice(0,cap);
@@ -1379,7 +1374,7 @@ async function loadArrivals(s){
 /* One request instead of ~9: the Worker fans out to OASA for us. */
 async function loadStopsBatch(){
   const u=`${base()}/nearby?lat=${here.lat}&lng=${here.lng}&radius=${state.radius}`
-        +`&limit=${CONFIG.listStops}&markers=${CONFIG.maxMarkers}`;
+        +`&limit=${CONFIG.listPool}&markers=${CONFIG.maxMarkers}`;
   const r=await fetch(u,{cache:"no-store"});
   if(!r.ok) throw new Error("nearby "+r.status);
   const j=await r.json();
@@ -1777,10 +1772,11 @@ const TYPES_BY_KIND={ bus:["breakdown","crowded","noac","inspector"],
 /* You may only flag the vehicle you are inside, or a station you are
    standing at — these numbers are what "inside" and "at" mean.
 
-   busRadius is the STANDING-STILL rule and it is no longer a filter: see
-   the long note above findMyBus for why gating the SHORTLIST on distance
-   was the bug, and why the distance rule now lives in the verdict. */
-const ONBOARD={ busRadius:100, metroRadius:600, maxRoutes:20,
+   Locality is enforced by the SHORTLIST, not by a verdict: only vehicles
+   the server returned within gateM are offered, ranked by plausibility.
+   See the long note above findMyBus for why gating on raw distance was
+   the bug that made a moving bus impossible to flag. */
+const ONBOARD={ metroRadius:600, maxRoutes:20,
   shortlist:10,       // candidates the co-movement pass is allowed to weigh
   gateM:800,          // how far out a candidate may start (matches SCAN.keepM)
   trackMs:8000,       // how long we watch our OWN position before scanning
@@ -1816,28 +1812,44 @@ function activeReports(){
   const now=Date.now()/1000;
   return (state.reports||[]).filter(r=>r.expires>now);
 }
-/* An unconfirmed flag is visible on the report map, but it does NOT get
-   to put a red line under an arrival in the main list — that is the
-   loudest surface in the app and it only speaks for corroborated
-   reports. See the two-tier note in worker.js. */
-const isConf=r=>!!(r&&r.conf);
-function confirmedReports(){ return activeReports().filter(isConf); }
+/* Every report is trusted. What used to be a confirmation tier is now
+   just a head count: each reporter files their own record for a target,
+   so N records sharing kind+targetId+type means N different people are
+   saying the same thing. We collapse them into ONE flag carrying that
+   number — otherwise four people reporting the same bus would stack four
+   identical pins on top of each other. */
+function reportKey(r){ return `${r.kind}|${r.targetId}|${r.type}`; }
+function groupedReports(){
+  const by=new Map();
+  activeReports().forEach(r=>{
+    const k=reportKey(r), g=by.get(k);
+    if(!g){ by.set(k,{...r,count:1,mineId:r.mine?r.id:null}); return; }
+    g.count++;
+    g.mine=g.mine||r.mine;
+    if(r.mine) g.mineId=r.id;
+    // the group speaks with its most recent voice, and its freshest position
+    if(r.at>g.at){ g.at=r.at; g.lat=r.lat; g.lng=r.lng; }
+    if(r.expires>g.expires) g.expires=r.expires;
+  });
+  return [...by.values()];
+}
 
-/* Which report, if any, applies to this arrival row? Prefer an exact
-   vehicle match, fall back to a report filed against the whole line. */
+/* Which flag, if any, applies to this arrival row? Prefer an exact
+   vehicle match, fall back to one filed against the whole line. */
 function reportForArrival(a){
-  const rs=confirmedReports().filter(r=>r.kind==="bus");
+  const rs=groupedReports().filter(r=>r.kind==="bus");
   return rs.find(r=>r.veh && a.veh && r.veh===a.veh)
       || rs.find(r=>!r.veh && r.routeCode===a.code)
       || null;
 }
 function reportForMetro(id){
-  return confirmedReports().find(r=>r.kind==="metro"&&r.targetId===String(id))||null;
+  return groupedReports().find(r=>r.kind==="metro"&&r.targetId===String(id))||null;
 }
 function flagLine(r){
   if(!r) return "";
   const ago=agoTxt(Date.now()/1000-r.at);
-  return `<div class="flagline red">${esc(issueLabel(r.type))} · ${ago}</div>`;
+  const n=r.count>1?` · ${esc(t("nReports")(r.count))}`:"";
+  return `<div class="flagline red">${esc(issueLabel(r.type))}${n} · ${ago}</div>`;
 }
 
 let repmap=null, replayer=null;
@@ -1849,6 +1861,7 @@ function openReports(){
     L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true,attribution:TILE_ATTR}).addTo(repmap);
     replayer=L.layerGroup().addTo(repmap);
     repmap.setView([here.lat,here.lng],14);
+    repmap.on("zoomend",syncFlagLabels);
   }
   setTimeout(()=>repmap.invalidateSize(),70);
   loadMetro();
@@ -1868,9 +1881,12 @@ async function loadMetro(){
   catch{ state.metro=[]; }
   return state.metro;
 }
-function flagIcon(kind,level,conf){
+function flagIcon(kind,count){
+  // the head count rides on the pin, so a busy flag reads as busy even
+  // when its label is hidden at low zoom
+  const badge=count>1?`<span class="flag-n">${count>9?"9+":count}</span>`:"";
   return L.divIcon({className:"",
-    html:`<div class="flag ${level} ${kind}${conf?"":" faint"}"></div>`,
+    html:`<div class="flag red ${kind}">${badge}</div>`,
     iconSize:[17,17],iconAnchor:[8,8],popupAnchor:[0,-10]});
 }
 /* A flagged bus keeps driving after it was reported, so the pin has to
@@ -1892,6 +1908,16 @@ async function refreshFlagPositions(){
   state.busPos=Object.assign(state.busPos||{},pos);
 }
 
+/* Zoomed out, a dozen permanent labels overlap into an unreadable pile,
+   so below this zoom they're hidden and the pin's count badge carries the
+   weight; tap a pin for the popup, which says the same thing. */
+const REPMAP={ labelZoom:15 };
+function syncFlagLabels(){
+  if(!repmap) return;
+  const el=repmap.getContainer();
+  el.classList.toggle("nolabels", repmap.getZoom()<REPMAP.labelZoom);
+}
+
 /* The map is a problem map: only buses and metro stations that carry an
    active flag are drawn. Nothing "ok" appears — if it's on here, it's a
    problem. (Your own dot stays, purely so the pins have a reference.) */
@@ -1901,55 +1927,46 @@ function drawReportMap(){
   const b=L.latLngBounds([]);
   L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:900}).addTo(replayer);
   b.extend([here.lat,here.lng]);
-  activeReports().forEach(r=>{
+  groupedReports().forEach(r=>{
     const live=(r.kind==="bus"&&r.veh&&state.busPos)?state.busPos[r.veh]:null;
     const la=live?live.lat:r.lat, ln=live?live.lng:r.lng;
     if(!isFinite(la)||!isFinite(ln)) return;
     // lineId/targetName come straight from a POST /reports body — untrusted.
     // Leaflet renders tooltip strings as HTML, so escape before interpolating.
-    const name=r.kind==="bus"?`🚌 ${esc(r.lineId||"")} · ${esc(issueLabel(r.type))}`
-      :`Ⓜ ${esc(r.targetName||"")} · ${esc(issueLabel(r.type))}`;
-    const tail=esc(agoTxt(Date.now()/1000-r.at))+(isConf(r)?"":` · ${esc(t("unconfirmed"))}`);
-    const m=L.marker([la,ln],{icon:flagIcon(r.kind,"red",isConf(r)),
-        zIndexOffset:isConf(r)?600:500}).addTo(replayer);
-    /* The label sits ON the map, permanently, above the pin: the whole
-       point of this screen is "what is wrong and where", and a pin you
-       have to tap to identify answers only half of that. */
-    m.bindTooltip(esc(issueLabel(r.type)),
-      {permanent:true,direction:"top",offset:[0,-9],
-       className:"flaglabel"+(isConf(r)?"":" faint")});
-    m.bindPopup(`${name} · ${tail}`);
+    const who=r.kind==="bus"?`🚌 ${esc(r.lineId||"")}`:`Ⓜ ${esc(r.targetName||"")}`;
+    const n=r.count>1?` · ${esc(t("nReports")(r.count))}`:"";
+    const m=L.marker([la,ln],{icon:flagIcon(r.kind,r.count),zIndexOffset:600}).addTo(replayer);
+    /* The label sits ON the map above the pin, because the whole point of
+       this screen is "what is wrong and where" and a pin you must tap to
+       identify answers only half of that. Below REPMAP.labelZoom they are
+       hidden — at city scale a dozen of them overlap into noise — and the
+       popup carries the same words on tap instead. */
+    m.bindTooltip(esc(issueLabel(r.type))+(r.count>1?` ×${r.count}`:""),
+      {permanent:true,direction:"top",offset:[0,-9],className:"flaglabel"});
+    m.bindPopup(`${who} · ${esc(issueLabel(r.type))}${n} · ${esc(agoTxt(Date.now()/1000-r.at))}`);
     b.extend([la,ln]);
   });
   if(b.isValid()) repmap.fitBounds(b,{padding:[40,40],maxZoom:15});
+  syncFlagLabels();
 }
 
 function renderReportList(){
   const box=$("#rep-strip");
-  const reps=activeReports().sort((a,b)=>b.at-a.at);
+  // one row per flagged thing, busiest-and-freshest first
+  const reps=groupedReports().sort((a,b)=>b.count-a.count||b.at-a.at);
   $("#rep-sub").textContent=`${reps.length} ${t("reports").toLowerCase()}`;
-  const legend=`<div class="rep-legend">
-    <span><i class="red"></i>${t("legendIssue")}</span>
-    <span><i class="hollow"></i>${t("legendUnconf")}</span></div>`;
   const items=reps.length?reps.map(r=>{
-    const cls="red"+(isConf(r)?"":" faint");
     const where=r.targetName||r.lineId||"";
     const tags=[agoTxt(Date.now()/1000-r.at)];
-    if(!isConf(r)) tags.push(t("unconfirmed"));
-    if(r.confirms) tags.push(t("confirms")(r.confirms));
     if(r.mine) tags.push(t("mineOnly"));
-    /* Anyone but the author can vouch for or knock down a flag. A "yes"
-       from a second person is what turns an unconfirmed report into a
-       real one; two "no"s remove it for everybody. */
-    const vote=(!r.mine&&!r.voted)?`<div class="rvote">
-        <button class="rv yes" data-id="${r.id}">${t("stillThere")}</button>
-        <button class="rv no" data-id="${r.id}">${t("notThere")}</button></div>`:"";
-    return `<div class="repitem${isConf(r)?"":" faint"}"><div class="rb ${cls}"></div><div class="ri">
-      <div class="rt">${esc(issueLabel(r.type))}${r.lineId?" · "+esc(r.lineId):""}</div>
-      <div class="rs">${esc(where)}<br>${esc(tags.join(" · "))}</div>${vote}
-      </div>${r.mine?`<button class="rx" data-id="${r.id}">✕</button>`:""}</div>`;
+    // the head count IS the credibility signal now — give it its own chip
+    const n=r.count>1?`<span class="rn">${esc(t("nReports")(r.count))}</span>`:"";
+    return `<div class="repitem"><div class="rb red"></div><div class="ri">
+      <div class="rt">${esc(issueLabel(r.type))}${r.lineId?" · "+esc(r.lineId):""}${n}</div>
+      <div class="rs">${esc(where)}<br>${esc(tags.join(" · "))}</div>
+      </div>${r.mine?`<button class="rx" data-id="${r.mineId}">✕</button>`:""}</div>`;
   }).join(""):`<div class="note">${t("noReports")}</div>`;
-  box.innerHTML=`<button class="rep-cta" id="rep-new">${t("reportCta")}</button>${legend}${items}`;
+  box.innerHTML=`<button class="rep-cta" id="rep-new">${t("reportCta")}</button>${items}`;
   $("#rep-new").onclick=openReportForm;
   box.querySelectorAll(".rx").forEach(btn=>{
     btn.onclick=async()=>{
@@ -1960,19 +1977,6 @@ function renderReportList(){
           body:JSON.stringify({id:btn.dataset.id,by:myId()})});
         await refreshReports(); drawReportMap(); renderReportList(); renderView();
       }catch(_){ btn.disabled=false; }
-    };
-  });
-  box.querySelectorAll(".rv").forEach(btn=>{
-    btn.onclick=async()=>{
-      const yes=btn.classList.contains("yes");
-      btn.parentElement.querySelectorAll(".rv").forEach(b=>b.disabled=true);
-      try{
-        const res=await fetch(base()+"/reports/vote",{method:"POST",cache:"no-store",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({id:btn.dataset.id,by:myId(),vote:yes?"yes":"no"})});
-        toast(res.status===409?t("voteDone"):t("voteThanks"));
-        await refreshReports(); drawReportMap(); renderReportList(); renderView();
-      }catch(_){ btn.parentElement.querySelectorAll(".rv").forEach(b=>b.disabled=false); }
     };
   });
 }
@@ -2017,10 +2021,8 @@ function repBadge(){
  *     board, your track and the vehicle's point the same way — and
  *     direction, unlike speed, is completely immune to the feed's timing
  *     being unknown. Those get "moving with you" and float to the top.
- *  3. THE 100 m RULE STILL BITES, but as a verdict rather than a filter:
- *     see onboardOK(). Standing on the pavement watching a bus go past,
- *     nothing co-moves with you and nothing is within 100 m, so you still
- *     cannot flag it.
+ *  3. YOU CONFIRM WITH A TAP. The app ranks and marks the one that moves
+ *     with you; it never picks for you, and every pick is trusted.
  * ------------------------------------------------------------------ */
 /* Returns {generated, buses[]} — the timestamp matters: the first sample
    may come from the Worker's 10 s cache, so measuring velocity against
@@ -2181,14 +2183,6 @@ function cosAngle(u,v){
 
    Standing still the gate stays ~100 m, so the product rule — you can't
    flag a bus you're merely watching go past — is unchanged. */
-/* The standing-still rule: ~100 m plus whatever the fix is worth. This is
-   deliberately NOT widened by speed. Speed widens the SHORTLIST (see
-   plausibility) because a stale fix lags; it must not widen the VERDICT,
-   or "within reach" would mean 450 m on a moving bus and the rule would
-   stop meaning anything. While moving, co-movement is the only route to
-   a confirmed report. */
-function acceptRadius(acc){ return ONBOARD.busRadius+Math.min(100,Math.max(0,acc||0)); }
-
 /* How believable is "I am sitting inside that vehicle", in metres of
    doubt? Standing still we have nothing but distance. Moving, we split
    the gap between the bus's reported position and us into:
@@ -2279,7 +2273,7 @@ async function refineMyBus(cands,me0,t0,onProgress){
 }
 
 /* Turn the accumulated position histories into a verdict per candidate.
-   Returns the rider's own track, which is what onboardOK() needs. */
+   Returns the rider's own track. */
 function scoreCands(cands,hist,fixes){
   const me=track(fixes);
   cands.forEach(c=>{
@@ -2338,15 +2332,6 @@ function scoreCands(cands,hist,fixes){
   return me;
 }
 
-/* The product rule, applied at the point of decision rather than as a
-   filter on the shortlist: you may flag a vehicle that is co-moving with
-   you, or one genuinely within arm's reach. Standing on the pavement
-   watching a bus go past satisfies neither. */
-function onboardOK(c,me){
-  if(!c) return false;
-  if(c.withYou) return true;
-  return (c.d!=null?c.d:c.rawD)<=acceptRadius(me&&me.acc);
-}
 /* move a point by a velocity vector (m/s, east/north) for `secs` */
 function project(p,v,secs){
   const k=Math.cos(p.lat*Math.PI/180)||1;
@@ -2462,12 +2447,10 @@ function reportFormBody(){
         `<div class="field"><label>${t("confirmBus")}</label>
           <div class="cands" id="rf-cands">${list.map((c,i)=>{
             const dest=destOf((LANG==="en"?(c.route.en||c.route.el):(c.route.el||c.route.en))||"");
-            const ok=onboardOK(c,me);
-            return `<button class="cand${c.withYou?" hot":""}${ok?"":" cold"}" data-i="${i}">
+            return `<button class="cand${c.withYou?" hot":""}" data-i="${i}">
               <span class="cand-tile num">${esc(c.route.id||"")}</span>
               <span class="cand-txt"><span class="cand-dest">${esc(dest)}</span>
-                <span class="cand-meta">${fmtDist(c.d)}${c.withYou?` · ✓ ${t("withYou")}`
-                  :(ok?"":` · ${t("unsure")}`)}</span></span>
+                <span class="cand-meta">${fmtDist(c.d)}${c.withYou?` · ✓ ${t("withYou")}`:""}</span></span>
             </button>`; }).join("")}</div></div>
          <div class="shint">${pending?t("scanRefine"):t("onboardNote")}</div>
          <button class="ghost" id="rf-again">${t("rescan")}</button>
@@ -2476,12 +2459,7 @@ function reportFormBody(){
       box.querySelectorAll(".cand").forEach(b=>b.onclick=()=>{
         const c=list[+b.dataset.i];
         target={ id:c.veh, name:destOf((LANG==="en"?(c.route.en||c.route.el):(c.route.el||c.route.en))||""),
-          lineId:c.route.id||"", routeCode:c.route.code, veh:c.veh, lat:c.lat, lng:c.lng,
-          /* The location check no longer BLOCKS the choice — it grades it.
-             A graded-down report is filed as unconfirmed: visible, hollow,
-             short-lived, and it needs a second rider to agree before it
-             counts. See the two-tier note in worker.js. */
-          confirmed:onboardOK(c,me) };
+          lineId:c.route.id||"", routeCode:c.route.code, veh:c.veh, lat:c.lat, lng:c.lng };
         step2();
       });
     }
@@ -2510,11 +2488,9 @@ function reportFormBody(){
     wireKind(); $("#rf-cancel").onclick=close;
     box.querySelectorAll(".cand").forEach(b=>b.onclick=()=>{
       const m=near[+b.dataset.i];
-      /* Stations don't move and don't go stale, so the 600 m rule is a
-         real measurement here — a metro report is always confirmed. */
       target={ id:m.id, name:(LANG==="en"?(m.name_en||m.name):m.name)||"",
         lineId:m.lines.map(l=>"M"+l).join("/"), routeCode:null, veh:null,
-        lat:m.lat, lng:m.lng, confirmed:true };
+        lat:m.lat, lng:m.lng };
       step2();
     });
   }
@@ -2531,7 +2507,6 @@ function reportFormBody(){
         <div class="chips" id="rf-type">${types.map(x=>
           `<button class="chip${x===type?" on":""}" data-t="${x}">${esc(issueLabel(x))}</button>`).join("")}
         </div></div>
-      ${target.confirmed?"":`<div class="shint">${t("unconfNote")}</div>`}
       <button class="rep-cta" id="rf-send" style="margin-top:14px">${t("send")}</button>
       <button class="ghost" id="rf-back">${t("back")}</button>
       <div class="note" id="rf-msg" style="display:none"></div>`;
@@ -2554,8 +2529,7 @@ function reportFormBody(){
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({ by:myId(), kind, type,
           targetId:target.id, targetName:target.name, lineId:target.lineId,
-          routeCode:target.routeCode, veh:target.veh, lat:target.lat, lng:target.lng,
-          confirmed:!!target.confirmed })});
+          routeCode:target.routeCode, veh:target.veh, lat:target.lat, lng:target.lng })});
       let j={}; try{ j=await res.json(); }catch(_){}
       if(!res.ok){ fail(j.error||("HTTP "+res.status)); return; }
       reportForm.open=false;
@@ -2856,7 +2830,7 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v30</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v31</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

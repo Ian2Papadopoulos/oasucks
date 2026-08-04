@@ -44,9 +44,9 @@ service).
 
 - **Reports are unverified.** They are one person's claim, filed in a hurry, from
   a phone, about a moving vehicle. A flag being absent means nothing at all.
-- **A report marked "unconfirmed" has not been corroborated by anyone** and may
-  well be mistaken. It is shown faint for exactly that reason.
-- **Reports expire on their own** — between 5 minutes and 2 hours depending on
+- **A count of several reports means several people said the same thing.** It is
+  not verification by us, and it does not make the claim true.
+- **Reports expire on their own** — between 15 minutes and 2 hours depending on
   type — and are then deleted.
 - **You are responsible for what you file.** Filing flags you know to be false,
   or filing repeatedly to make the map useless, is a breach of these terms.
@@ -78,8 +78,9 @@ This is our contact point and our notice-and-action mechanism under the Digital
 Services Act (Regulation 2022/2065). We are a micro-scale hosting service and
 rely on the liability exemption in Art. 6 of that Regulation.
 
-You can also knock a report down inside the app: tap **"Not there"** on it. Two
-independent riders doing that removes it for everyone.
+Only the person who filed a report can withdraw it inside the app; other riders
+cannot remove someone else's flag, so genuinely abusive ones come to us at the
+address above.
 
 ## 5. No warranty
 

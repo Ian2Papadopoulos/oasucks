@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v30 defaults** — if you edit the
+breaks if you change it. Values here are the **v31 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -9,7 +9,7 @@ Two files hold almost everything: **`public/index.html`** (the app) and
 `npx wrangler deploy`, done.
 
 > **Read this first.** Three numbers govern cost, and none of them is a radius:
-> `SCAN.maxRoutes`, `SCAN.stopProbe` and `CONFIG.listStops`. Distances only
+> `SCAN.maxRoutes`, `SCAN.stopProbe` and `CONFIG.listPool`. Distances only
 > decide what gets *shown*; the per-route and per-stop fan-outs decide what gets
 > *fetched*. See [What actually costs money](#what-actually-costs-money).
 
@@ -21,8 +21,7 @@ Two files hold almost everything: **`public/index.html`** (the app) and
 
 | Parameter | Default | What it means | If you change it |
 |---|---|---|---|
-| `busRadius` | **100 m** | Standing still, a bus this close counts as "yours". The product rule. | Raising it lets people flag buses they're only watching go past. |
-| `metroRadius` | **600 m** | How near a station you must be to flag it. Stations don't move, so this check is exact. | Lower = stricter; 600 m already covers a large interchange. |
+| `metroRadius` | **600 m** | How near a station you must be for it to appear in the picker. Stations don't move, so this check is exact. | Lower = stricter; 600 m already covers a large interchange. |
 | `gateM` | **800 m** | How far out a vehicle may be and still be a *candidate*. Must match `SCAN.keepM`. | **Below ~700 m the moving-bus matching breaks** — see note under `SCAN.keepM`. |
 | `maxRadius` | **900 m** | Absolute ceiling on any widened radius. | Safety cap; rarely worth touching. |
 | `accMax` | **150 m** | Worse GPS accuracy than this and the app says "signal too weak" instead of guessing. | Raise it and you get confident-looking wrong answers. |
@@ -57,7 +56,6 @@ Two files hold almost everything: **`public/index.html`** (the app) and
 
 | Parameter | Default | What it means |
 |---|---|---|
-| `TTL.unconfirmed` | **300 s** (5 min) | Life of a report the app couldn't match to your vehicle. |
 | `TTL.bus.inspector` | **900 s** (15 min) | Inspectors ride a few stops and get off. |
 | `TTL.bus.breakdown` | **3 600 s** (1 h) | |
 | `TTL.bus.crowded` | **3 600 s** (1 h) | |
@@ -66,19 +64,18 @@ Two files hold almost everything: **`public/index.html`** (the app) and
 | `TTL.metro.lift` | **7 200 s** (2 h) | A broken lift is a facility fault, not a passing event. |
 | `DEFAULT_TTL` | **3 600 s** | Fallback for a type not in the table. |
 | `MAX_ACTIVE_PER_REPORTER` | **2** | Live reports one anonymous device may hold at once. |
-| `VOTES_TO_KILL` | **2** | Distinct "not there" votes that delete a flag for everyone. |
-| `REP_TTL_DAYS` | **60** | How long a reporter's reputation counters are kept after last use. |
 
-### Reputation thresholds
+### Trust model
 
-`worker.js` → `repVerdict()` — `x` = times contradicted, `c` = times corroborated.
+**Every report is believed.** There is no confirmation tier and no voting. What
+signals strength instead is the **head count**: each reporter files their own
+record, so the number of records sharing `kind|targetId|type` is the number of
+distinct people saying it. The app collapses them into one flag showing that
+number (`nReports` in the i18n table).
 
-| Verdict | Rule | Effect |
-|---|---|---|
-| `limited` | `x ≥ 3` and `x > c + 1` | May still file; never auto-confirmed. |
-| `shadow` | `x ≥ 6` and `x > c × 2` | Files return `200`, but only they can see the result. |
-
-Neither fires on a single unlucky report — both need a sustained pattern.
+The remaining controls are blunt and cheap: the cap above, the per-IP rate
+limits below, and the fact that every flag expires on its own. A false flag can
+be cleared by its author (✕) or by the admin purge — see the README.
 
 ### What can be reported
 
@@ -101,7 +98,9 @@ Every flag renders **red**; the type decides the label and the lifetime, never t
 
 | Parameter | Default | What it means | If you change it |
 |---|---|---|---|
-| `listStops` | **10** | Hard cap on rows in the list. Every visible row is guaranteed to have its arrivals loaded. | **The main cost dial** — one OASA arrivals call per row per refresh. |
+| `listStops` | **10** | Hard cap on **rows shown**. Every visible row is guaranteed to have its arrivals loaded. | Display only — cost follows `listPool`. |
+| `listPool` | **14** | Stops the server loads arrivals for. Wider than the cap on purpose: the extra four are the candidates promoted when a nearer stop has nothing coming. | **The main cost dial** — one OASA arrivals call per pooled stop per refresh. |
+| `imminentMin` | **15 min** | An arrival within this many minutes makes a stop "live" and floats it above dead ones. | Raise it and almost everything counts as live, so the sort stops doing anything. |
 | `maxMarkers` | **120** | Stops drawn on the map. Markers are nearly free — no per-stop request. | Raise freely; the map is not what costs money. |
 | `maxRows` | **6** | Arrival rows shown per stop. | Display only. |
 | `refreshMs` | **30 000 ms** | Foreground refresh interval. | Doubling it halves your request rate. |
@@ -110,7 +109,12 @@ Every flag renders **red**; the type decides the label and the lifetime, never t
 | `sleepAfter` | **900 000 ms** (15 min) | No interaction → stop refreshing entirely. |  |
 | `walkSpeed` | **80 m/min** | Used for the "🚶 ~4′" walking estimate. |  |
 | `detour` | **1.35** | Straight-line distance × this ≈ real walking distance. |  |
-| `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`). | Favourites count *within* `listStops`. |
+| `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`). | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
+
+**Row order:** favourites first, then stops with an arrival within `imminentMin`
+by distance, then the rest by distance. A near shelter with nothing coming for
+half an hour yields to one 300 m further with a bus in four minutes; if the cap
+is full it drops off the list entirely (it stays on the map).
 
 The **search radius** is not a constant — it's the slider in the map view
 (200–1000 m, `<input id="radius">`). Widening it adds map markers, not list rows,
@@ -133,7 +137,7 @@ so it does not change the number of arrival calls.
 | `LIVE.stopProbe` | **10** | Stops probed for that map. |
 | `LIVE.maxRoutes` | **28** | Routes fetched for that map. |
 | `LIVE.cache` | **15 s** | Edge cache for it. |
-| `nearby` `limit` | **10** | Stops the server loads arrivals for. Client sends `CONFIG.listStops`. |
+| `nearby` `limit` | **14** | Stops the server loads arrivals for. Client sends `CONFIG.listPool`. |
 | `nearby` `markers` | **60** (client sends 120) | Stops returned for the map. |
 | `OASA_CACHE` | **12 s** | Default edge cache for live OASA calls. |
 | `GEO_CACHE` | **86 400 s** (1 day) | Geocoding cache. |
@@ -156,7 +160,6 @@ All windows are **60 s**, per IP, per Cloudflare edge location.
 | Endpoint | Limit/min |
 |---|---|
 | `POST /reports` (file a flag) | **8** |
-| `POST /reports/vote` | **40** |
 | `POST /reports/delete` | **30** |
 | `/scan`, `/live`, `/stops/search`, `/stops/dead` | **30** |
 | `/api?nocache=1` | **60** |
@@ -174,8 +177,7 @@ one address. For hard guarantees add Cloudflare WAF rate-limiting rules on the z
 |---|---|---|---|
 | `REPORT_LOG_DAYS` | `worker.js` | **90 days** | D1 `report_log` — the anonymous history (no coordinates, no reporter id). |
 | `TRACK.retentionDays` | `worker.js` | **45 days** | D1 `stop_event` — vehicle tracking samples. |
-| `REP_TTL_DAYS` | `worker.js` | **60 days** | Reporter reputation counters. |
-| Active reports | `worker.js` → `TTL` | 5 min – 2 h | Deleted on expiry, coordinates included. |
+| Active reports | `worker.js` → `TTL` | 15 min – 2 h | Deleted on expiry, coordinates included. |
 
 **These numbers are quoted in `PRIVACY.md`.** Change one, change the other, or
 your privacy policy becomes false.
@@ -210,6 +212,12 @@ your privacy policy becomes false.
 | `edge` | **34 px** | On the map, only a swipe starting this close to the left edge counts (the rest pans the map). |
 | `.slide-l/.slide-r` | **0.3 s** | Tab transition duration (CSS). |
 
+`public/index.html` → `REPMAP`
+
+| Parameter | Default | What it means |
+|---|---|---|
+| `labelZoom` | **15** | Below this zoom the permanent issue labels on the report map are hidden — a dozen of them overlap into noise at city scale. The pin and its count badge stay; tap a pin for the popup. |
+
 Long-press to pin a favourite: **430 ms** (`onLongPress` default).
 
 ---
@@ -224,7 +232,8 @@ about 30 OASA subrequests. Subrequests are free; the one browser request is what
 counts. So the levers, in order:
 
 1. **`CONFIG.refreshMs`** — doubling it halves everything.
-2. **`CONFIG.listStops`** — one arrivals lookup per row per refresh.
+2. **`CONFIG.listPool`** — one arrivals lookup per pooled stop per refresh.
+   (`listStops` only decides how many of those you *see*.)
 3. **`SCAN.maxRoutes` / `SCAN.stopProbe`** — only on the report flow, but the
    heaviest single operation in the app.
 4. **`SCAN.cache` / `LIVE.cache` / `ACT_TTL`** — edge caching, so riders standing

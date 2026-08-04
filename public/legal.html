@@ -95,10 +95,10 @@
   <ul>
     <li><strong>Reports are unverified.</strong> They are one person's claim, filed in a hurry,
     from a phone, about a moving vehicle. A flag being absent means nothing at all.</li>
-    <li>A report marked <strong>“unconfirmed”</strong> has not been corroborated by anyone and
-    may well be mistaken. It is shown faint for exactly that reason.</li>
-    <li>Reports expire on their own — between 5 minutes and 2 hours depending on type — and
-    are then deleted.</li>
+    <li><strong>A count of several reports means several people said the same thing.</strong>
+    It is not verification by us, and it does not make the claim true.</li>
+    <li>Reports expire on their own — between 15 minutes and 2 hours depending on type —
+    and are then deleted.</li>
     <li><strong>You are responsible for what you file.</strong></li>
   </ul>
 
@@ -123,8 +123,8 @@
   (line/station, issue type, roughly when you saw it). This is our contact point and
   notice-and-action mechanism under the Digital Services Act (Regulation 2022/2065); we are a
   micro-scale hosting service and rely on the liability exemption in Art. 6.</p>
-  <p>You can also knock a report down inside the app: tap <strong>“Not there”</strong> on it.
-  Two independent riders doing that removes it for everyone.</p>
+  <p>Only the person who filed a report can withdraw it inside the app; other riders cannot
+  remove someone else's flag, so genuinely abusive ones need to come to us.</p>
 
   <h3>6. No warranty</h3>
   <p>The service is provided <strong>“as is” and “as available”</strong>, without warranty of
@@ -205,12 +205,10 @@
     <tr><td>Your location</td><td>Not stored at all</td></tr>
     <tr><td>IP address</td><td>≤60 seconds, in memory only</td></tr>
     <tr><td>An active report (coordinates + anonymous reporter id)</td>
-      <td>Until it expires: 5 min unconfirmed · 15 min bus inspector · 1 h other bus issues ·
-      2 h metro inspector / broken lift. Then deleted outright.</td></tr>
+      <td>Until it expires: 15 min bus inspector · 1 h other bus issues · 2 h metro
+      inspector / broken lift. Then deleted outright.</td></tr>
     <tr><td>Report history log (time, line, station, issue type — <strong>no coordinates, no
       reporter id</strong>)</td><td>90 days, then deleted automatically</td></tr>
-    <tr><td>Reporter reputation counters (anonymous id + three integers)</td>
-      <td>60 days after that id was last seen</td></tr>
     <tr><td>Push subscription</td><td>Until you turn alerts off</td></tr>
     <tr><td>Anything in <code>localStorage</code></td><td>Until you clear browser data</td></tr>
   </table>
