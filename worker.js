@@ -1,12 +1,13 @@
 /**
- * Στάση — Cloudflare Worker backend (v4)
+ * OASUCKS — Cloudflare Worker backend
  * ------------------------------------------------------------------
  *  GET  /api?act=...            → OASA telematics proxy (CORS, 8s timeout, retry)
  *  GET  /geocode?q=...          → address search; accepts greeklish ("filotimou")
  *  GET  /reverse?lat=&lon=      → coordinates → address
  *  GET  /push/key               → VAPID public key (for the browser to subscribe)
  *  POST /push/subscribe         → store a push subscription, returns its id
- *  POST /push/test              → send a test notification
+ *  POST /push/test              → send a test notification (no UI; kept for
+ *                                  debugging via curl)
  *  GET  /rules?sub=ID           → list alert rules
  *  POST /rules                  → create/update an alert rule
  *  POST /rules/delete           → delete an alert rule
@@ -28,7 +29,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v32";
+const APP_VERSION = "v33";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1890,7 +1891,7 @@ export default {
       const sub = b && b.sub ? await env.ALERTS.get(`sub:${b.sub}`, "json") : null;
       if (!sub) return json({ error: "unknown subscription" }, 404);
       const status = await sendPush(sub, {
-        title: "Στάση ✓", body: "Οι ειδοποιήσεις δουλεύουν.", tag: "test", url: "./",
+        title: "OASUCKS ✓", body: "Οι ειδοποιήσεις δουλεύουν.", tag: "test", url: "./",
       }, env);
       return json({ ok: status < 300, status });
     }

@@ -7,8 +7,6 @@
 <title>OASUCKS · Όροι &amp; απόρρητο</title>
 <link rel="apple-touch-icon" href="icon-192.png" />
 <style>
-  /* Same photocopied-timetable palette as the app, minus everything the
-     app needs and a document doesn't. */
   :root{
     --paper:#F7F7F5; --card:#FFFFFF;
     --toner:#17171A; --ink2:#55555C; --ink3:#8C8C94;
@@ -29,27 +27,16 @@
   h1{font-family:var(--mono);font-size:17px;letter-spacing:.06em;margin:12px 0 4px}
   .sub{font-family:var(--mono);font-size:10px;color:var(--ink3);
     text-transform:uppercase;letter-spacing:.14em}
-  h2{font-family:var(--mono);font-size:14px;letter-spacing:.04em;margin:30px 0 8px;
+  h2{font-family:var(--mono);font-size:14px;letter-spacing:.04em;margin:28px 0 8px;
     padding-top:14px;border-top:1px dashed var(--rule)}
-  h3{font-family:var(--mono);font-size:12px;letter-spacing:.04em;margin:20px 0 6px;color:var(--ink2)}
   p,li{color:var(--ink2);font-size:14px}
   strong{color:var(--toner)}
-  ul{padding-left:20px}
-  li{margin:5px 0}
+  ul{padding-left:20px} li{margin:4px 0}
   a{color:var(--toner)}
   .banner{background:var(--marker);border:1px solid var(--toner);padding:11px 13px;
     font-family:var(--mono);font-size:12px;font-weight:700;line-height:1.5;
     color:var(--toner);border-radius:2px;margin-bottom:18px}
-  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;display:block;
-    overflow-x:auto;white-space:nowrap}
-  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
-  th{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.1em;
-    color:var(--ink3);white-space:nowrap}
-  td{color:var(--ink2)}
-  .toc{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
-  .toc a{font-family:var(--mono);font-size:11px;font-weight:700;text-decoration:none;
-    border:1px solid var(--rule);padding:6px 9px;border-radius:2px;color:var(--ink2)}
-  footer{margin-top:34px;padding-top:14px;border-top:2px solid var(--toner);
+  footer{margin-top:30px;padding-top:14px;border-top:2px solid var(--toner);
     font-family:var(--mono);font-size:10.5px;color:var(--ink3);line-height:1.7}
 </style>
 </head>
@@ -58,7 +45,7 @@
   <header>
     <a class="back" href="./">← OASUCKS</a>
     <h1>Όροι &amp; απόρρητο · Terms &amp; privacy</h1>
-    <div class="sub">Τελευταία ενημέρωση · updated 04.08.2026</div>
+    <div class="sub">04.08.2026</div>
   </header>
 
   <div class="banner">
@@ -66,189 +53,94 @@
     Unofficial app. Not affiliated with OASA / OSY / STASY.
   </div>
 
-  <div class="toc">
-    <a href="#terms">Terms of use</a>
-    <a href="#privacy">Privacy policy</a>
-    <a href="#contact">Contact</a>
-  </div>
+  <h2>Terms</h2>
 
-  <!-- ================================ TERMS ============================== -->
-  <h2 id="terms">Terms of use</h2>
+  <p><strong>Unofficial.</strong> OASUCKS is a free, non-commercial app. It is not
+  affiliated with, endorsed by or connected to OASA, OSY, STASY or any authority.
+  Trade marks belong to their owners.</p>
 
-  <h3>1. What this is — and what it isn't</h3>
-  <p>OASUCKS is a <strong>free, unofficial, non-commercial</strong> app that shows live bus
-  and trolley arrivals for Athens, plus flags submitted by other riders.</p>
-  <p><strong>It is not affiliated with, endorsed by, sponsored by or connected to OASA, OSY,
-  STASY, or any other transport operator or public authority.</strong> The name is a joke made
-  by a passenger. Any trade marks mentioned belong to their owners and are used only to say
-  which service the data describes.</p>
+  <p><strong>The data is third-party and often wrong.</strong> Arrival times, positions
+  and routes come from OASA's telematics service. We do not produce or verify them.
+  Vehicle positions are typically 30–60 seconds stale and estimates are regularly out by
+  minutes. <strong>Do not rely on this app for anything that matters.</strong></p>
 
-  <h3>2. The data is third-party, best-effort, and often wrong</h3>
-  <p>Arrival times, vehicle positions, stop locations and route information come from OASA's
-  telematics service. We pass them through; we do not produce, verify or control them.</p>
-  <p><strong>Do not rely on this app for anything that matters.</strong> Arrival estimates are
-  OASA's own predictions and are regularly wrong by minutes. Buses go missing from the feed.
-  Vehicle positions are typically 30–60 seconds stale. If you have a flight, an exam or an
-  interview, leave early and check the operator's own information.</p>
+  <p><strong>Reports are unverified.</strong> They are submitted by other passengers and
+  describe situations on a line or at a station. We do not check them. A report count
+  means several people said the same thing, not that it is true. The absence of a report
+  means nothing.</p>
 
-  <h3>3. Rider reports</h3>
-  <p>Riders file <strong>live reports</strong> — a shared picture of what is happening on
-  the network right now — in two categories. <strong>Issues</strong> (red): breakdown,
-  overcrowding or no air conditioning on a bus; an elevator out of service at a station.
-  <strong>Operational</strong> (blue): fare inspection, security presence, customer service
-  staff.</p>
-  <p><strong>Operational reports are statements about a situation, not about a person.</strong>
-  They record that an activity is taking place on a line or at a station — the same kind of
-  service information as "this bus has no air conditioning". The app provides no way to
-  describe, photograph, name or otherwise identify any individual, and it never will.</p>
-  <ul>
-    <li><strong>Reports are unverified.</strong> They are one person's claim, filed in a hurry,
-    from a phone, about a moving vehicle. A flag being absent means nothing at all.</li>
-    <li><strong>A count of several reports means several people said the same thing.</strong>
-    It is not verification by us, and it does not make the claim true.</li>
-    <li>Reports expire on their own — between 15 minutes and 2 hours depending on type —
-    and are then deleted.</li>
-    <li><strong>You are responsible for what you file.</strong></li>
-  </ul>
+  <p><strong>Not a fare-evasion tool. Always carry a valid ticket.</strong></p>
 
-  <h3>4. What you must not do</h3>
-  <ul>
-    <li>File reports you know to be untrue.</li>
-    <li>Automate reporting, or use more than one device or identity to make a report look
-    corroborated when it isn't.</li>
-    <li>Use the service to identify, follow, harass or target any individual. The app
-    deliberately has no free-text field, no photos and no way to name a person — do not try
-    to work around that.</li>
-    <li><strong>Use the service to avoid paying fares. Always carry a valid ticket.</strong>
-    Reports exist so riders know the state of the service they are paying for.</li>
-    <li>Scrape, overload or attempt to break the service, or use it to place load on OASA's
-    systems.</li>
-  </ul>
-  <p>We may remove any report and block any device that breaks these rules, without notice.</p>
+  <p><strong>You must not</strong> file reports you know to be untrue; automate reporting
+  or use multiple identities; use the service to identify, follow or target any
+  individual; or overload this service or OASA's. We may remove any report and block any
+  device without notice.</p>
 
-  <h3>5. Reporting a problem (notice and action)</h3>
-  <p>If a report is abusive, false, or targets a person, tell us at
-  <a href="mailto:CONTACT@EXAMPLE.COM">CONTACT@EXAMPLE.COM</a> with enough detail to find it
-  (line/station, issue type, roughly when you saw it). This is our contact point and
-  notice-and-action mechanism under the Digital Services Act (Regulation 2022/2065); we are a
-  micro-scale hosting service and rely on the liability exemption in Art. 6.</p>
-  <p>Only the person who filed a report can withdraw it inside the app; other riders cannot
-  remove someone else's flag, so genuinely abusive ones need to come to us.</p>
+  <p><strong>No warranty.</strong> The service is provided "as is" and "as available",
+  without warranty of any kind, including fitness for a particular purpose, availability
+  or accuracy.</p>
 
-  <h3>6. No warranty</h3>
-  <p>The service is provided <strong>“as is” and “as available”</strong>, without warranty of
-  any kind, express or implied, including fitness for a particular purpose, availability,
-  accuracy or uninterrupted operation. It may be wrong, slow, or gone tomorrow. It is run by
-  one person for free.</p>
+  <p><strong>Liability.</strong> To the fullest extent permitted by law, the operator is
+  not liable for any loss arising from use of the service, including missed journeys,
+  fares, fines or appointments. Nothing here excludes liability that cannot lawfully be
+  excluded, and your mandatory consumer rights are unaffected.</p>
 
-  <h3>7. Liability</h3>
-  <p>To the fullest extent permitted by law, the operator is not liable for any loss arising
-  from use of the service — including missed journeys, fares, fines, appointments, or
-  decisions taken on the strength of an arrival time or a rider report.</p>
-  <p><strong>Nothing in these terms excludes or limits liability that cannot lawfully be
-  excluded</strong>, including liability for death or personal injury caused by negligence,
-  for fraud, or for gross negligence or wilful misconduct. Where you use the service as a
-  consumer, your mandatory statutory rights are unaffected.</p>
+  <p><strong>Reporting a problem.</strong> To report an abusive or false report, or
+  anything else, contact <a href="mailto:CONTACT@EXAMPLE.COM">CONTACT@EXAMPLE.COM</a>.
+  This is our contact point and notice-and-action mechanism under Regulation
+  2022/2065 (DSA). Only the person who filed a report can remove it in the app.</p>
 
-  <h3>8. Licences</h3>
-  <p>The app's source code is published under the MIT licence. That licence covers the code
-  only; it does not license OASA's data and it does not transfer any obligation of the
-  operator to you. By filing a report you allow us to display it to other users and to keep an
-  anonymous, coordinate-free record of it for up to 90 days for aggregate statistics.</p>
+  <p><strong>Changes and law.</strong> These terms may change and the service may be
+  modified or withdrawn at any time. Greek law applies; the courts of Athens have
+  jurisdiction, without prejudice to mandatory consumer rules where you live.</p>
 
-  <h3>9. Changes, termination, governing law</h3>
-  <p>These terms may change; the date at the top says when. The service may be modified,
-  restricted or shut down at any time, including because OASA asks us to stop. These terms are
-  governed by Greek law and the courts of Athens have jurisdiction, without prejudice to any
-  mandatory consumer protection rules of the country where you live.</p>
+  <h2>Privacy</h2>
 
-  <!-- =============================== PRIVACY ============================= -->
-  <h2 id="privacy">Privacy policy</h2>
-  <p>No accounts. No sign-up. No advertising. No analytics. The controller under the GDPR
-  (Regulation 2016/679) is the operator of this instance, at
+  <p>No account, no advertising, no analytics, no cookies, no third-party scripts. The
+  controller is the operator of this instance:
   <a href="mailto:CONTACT@EXAMPLE.COM">CONTACT@EXAMPLE.COM</a>.</p>
 
-  <h3>1. What is processed, and why</h3>
-  <table>
-    <tr><th>Data</th><th>Why</th><th>Legal basis</th><th>Where it goes</th></tr>
-    <tr><td>Your location</td><td>Find nearby stops; work out which vehicle you're on</td>
-      <td>Consent, Art. 6(1)(a)</td><td>Sent as coordinates in a request. <strong>Never stored.</strong></td></tr>
-    <tr><td>IP address</td><td>Unavoidable in HTTP; per-address rate limiting</td>
-      <td>Legitimate interests, Art. 6(1)(f)</td><td>In memory ≤60 s. Never written to a database.</td></tr>
-    <tr><td>Anonymous device id</td><td>So you — and only you — can withdraw your own reports</td>
-      <td>Legitimate interests</td><td>Stored with an active report</td></tr>
-    <tr><td>Push subscription</td><td>Sending the alerts you asked for</td>
-      <td>Consent</td><td>Until you disable alerts</td></tr>
-    <tr><td>Report contents</td><td>The feature itself</td>
-      <td>Consent</td><td>Public to other users while active</td></tr>
-  </table>
-
-  <h3>2. What is <em>not</em> processed</h3>
+  <p><strong>What is processed</strong></p>
   <ul>
-    <li><strong>No account, name, email or phone number.</strong></li>
-    <li><strong>No free-text field anywhere in a report.</strong> You choose from a fixed menu.
-    There is no way to type a comment, upload a photo, or name a person — by design.</li>
-    <li><strong>No analytics, advertising or third-party tracking scripts.</strong> Map code
-    (Leaflet) is served from this app's own domain, not a CDN.</li>
-    <li><strong>No cookies.</strong> <code>localStorage</code> holds only your language, pinned
-    stops and anonymous id — strictly necessary storage under the ePrivacy Directive, which is
-    why there is no consent banner.</li>
-    <li><strong>No location history.</strong> Your position answers the request in front of it
-    and is then discarded. The app cannot reconstruct where you have been.</li>
+    <li><strong>Your location</strong> — to find nearby stops and the vehicle you are on.
+    Sent with a request, <strong>never stored</strong>. Legal basis: consent.</li>
+    <li><strong>IP address</strong> — held in memory up to 60 seconds for rate limiting.
+    Not stored. Legal basis: legitimate interests.</li>
+    <li><strong>An anonymous random id</strong> — generated in your browser so you can
+    withdraw your own reports. Legal basis: legitimate interests.</li>
+    <li><strong>Push subscription</strong> — only if you enable alerts. Legal basis:
+    consent.</li>
+    <li><strong>Report contents</strong> — line or station, and what you selected from a
+    fixed menu. Public while active. Legal basis: consent.</li>
   </ul>
 
-  <h3>3. Who else sees your data</h3>
-  <ul>
-    <li><strong>Cloudflare, Inc.</strong> — hosts the app and its storage as our processor
-    (Art. 28), possibly outside the EEA under Standard Contractual Clauses.</li>
-    <li><strong>OASA</strong> (<code>telematics.oasa.gr</code>) — source of all arrival data.
-    Requests are made <em>by our server</em>, so OASA sees our address, not yours.</li>
-    <li><strong>OpenStreetMap / CARTO</strong> — map tiles are fetched <em>by your browser</em>,
-    so they see your IP address and the area you are viewing.</li>
-  </ul>
-  <p>We do not sell, rent or share your data with anyone else.</p>
+  <p>Reports contain <strong>no free text, no photos and nothing identifying any
+  person</strong>. There is no way to enter such information.</p>
 
-  <h3>4. How long things are kept</h3>
-  <table>
-    <tr><th>Thing</th><th>Kept for</th></tr>
-    <tr><td>Your location</td><td>Not stored at all</td></tr>
-    <tr><td>IP address</td><td>≤60 seconds, in memory only</td></tr>
-    <tr><td>An active report (coordinates + anonymous reporter id)</td>
-      <td>Until it expires: 15–30 min for operational reports on a bus · 1 h for bus issues ·
-      2 h for anything at a metro station. Then deleted outright.</td></tr>
-    <tr><td>Report history log (time, line, station, issue type — <strong>no coordinates, no
-      reporter id</strong>)</td><td>90 days, then deleted automatically</td></tr>
-    <tr><td>Push subscription</td><td>Until you turn alerts off</td></tr>
-    <tr><td>Anything in <code>localStorage</code></td><td>Until you clear browser data</td></tr>
-  </table>
+  <p><strong>Retention</strong> — active reports until they expire (15 minutes to 2
+  hours), then deleted with their coordinates. An anonymous history log (time, line,
+  station, report type — no coordinates, no reporter id) for 90 days. Push
+  subscriptions until you disable alerts. Local settings until you clear site data.</p>
 
-  <h3>5. Your rights</h3>
-  <p>You may request access, rectification, erasure, restriction and portability, and object
-  to processing. You may withdraw consent at any time — revoke location permission, or turn
-  off notifications.</p>
-  <p>Because the service holds no identifying data about you, we usually <strong>cannot find
-  “your” records from an email alone</strong>. That is a deliberate design outcome, not an
-  evasion. In practice: <strong>to erase a report</strong>, open the app, find it in the report
-  list and tap ✕ — only you can. <strong>To erase everything else</strong>, clear the site's
-  data in your browser; your anonymous id goes with it and any remaining reports expire on
-  their own within hours.</p>
-  <p>You may complain to a supervisory authority — in Greece, the Hellenic Data Protection
-  Authority, <a href="https://www.dpa.gr">dpa.gr</a>.</p>
+  <p><strong>Recipients</strong> — Cloudflare (hosting, our processor, possibly outside
+  the EEA under Standard Contractual Clauses); OASA (receives our server's requests, not
+  yours); OpenStreetMap / CARTO (your browser fetches map tiles, so they see your IP).
+  Nothing is sold or shared otherwise.</p>
 
-  <h3>6. Children, security, changes</h3>
-  <p>The app is not directed at children and collects no age information. All traffic is
-  HTTPS; reports carry no identity beyond a random token, withdrawal is checked server-side
-  against that token, and reporter tokens are never sent to other users' devices. Material
-  changes are noted by the date at the top of this page.</p>
+  <p><strong>Your rights</strong> — access, rectification, erasure, restriction,
+  portability and objection; you may withdraw consent at any time by revoking location
+  or notification permission. Delete a report in the app with ✕; clear everything else
+  by clearing site data. Written requests:
+  <a href="mailto:CONTACT@EXAMPLE.COM">CONTACT@EXAMPLE.COM</a>. You may complain to the
+  Hellenic Data Protection Authority (<a href="https://www.dpa.gr">dpa.gr</a>).</p>
 
-  <h2 id="contact">Contact</h2>
-  <p><a href="mailto:CONTACT@EXAMPLE.COM">CONTACT@EXAMPLE.COM</a> — privacy requests, DSA
-  notices, and anything else.</p>
+  <p><strong>Security</strong> — all traffic is HTTPS. Reports carry no identity beyond a
+  random token, which is never sent to other users' devices.</p>
 
   <footer>
     OASUCKS · unofficial · not affiliated with OASA / OSY / STASY<br>
     Transit data © OASA · Map data © OpenStreetMap contributors · Tiles © CARTO<br>
-    Source code under the MIT licence.
+    Source under the MIT licence.
   </footer>
 </div>
 </body>

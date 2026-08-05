@@ -92,6 +92,8 @@
     padding:9px 11px;margin-bottom:12px;font-family:var(--mono);font-size:11px;
     font-weight:700;line-height:1.5;letter-spacing:.02em}
   .menu-item:first-child{border-top:none}
+  /* display:flex above beats the UA's [hidden]{display:none} */
+  .menu-item[hidden]{display:none}
   .menu-item:active{background:var(--paper)}
   .menu-item .mi{width:18px;height:18px;display:grid;place-items:center;flex:none;
     border:1px solid var(--rule);font-size:10.5px;font-weight:700;border-radius:2px}
@@ -343,7 +345,15 @@
   .ns .nm{font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)}
   .ns.first .nm{font-weight:700;color:var(--toner)}
 
-  .iconbtn.alert{color:#C42B1C;font-weight:700}
+  .iconbtn.alert{color:var(--red);font-weight:700}
+  /* Drawn, not typed. ◉ and friends have patchy font coverage — on
+     Android they landed as a hollow ring or a tofu box. Two nested
+     circles always render the same everywhere. */
+  .livedot{width:15px;height:15px;border-radius:50%;border:2px solid var(--red);
+    display:grid;place-items:center;flex:none}
+  .livedot::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--red)}
+  .rp-tile .livedot{border-color:var(--paper)}
+  .rp-tile .livedot::after{background:var(--paper)}
   #repmap{flex:1;min-height:190px;position:relative;z-index:0;background:#EDEDEA}
   /* Two categories, two colours. Red = something is wrong. Blue = who is
      present / what is operationally happening. The colour carries the
@@ -378,6 +388,20 @@
   .repitem .rn{display:inline-block;margin-left:6px;background:var(--red);color:#fff;
     padding:0 5px;border-radius:2px;font-size:9.5px;letter-spacing:.04em;vertical-align:1px}
   .repitem .rn.ops{background:var(--blue)}
+  /* ------------------------------ settings ------------------------------ */
+  .setrow{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);
+    border:1px solid var(--rule);color:var(--toner);font-family:var(--mono);font-size:12px;
+    font-weight:700;padding:12px;cursor:pointer;text-align:left;margin-top:9px;border-radius:2px}
+  .setrow:active{border-color:var(--toner)}
+  .setlab{flex:1;min-width:0}
+  .setval{color:var(--ink3);font-size:11px;letter-spacing:.06em;flex:none}
+  /* a switch drawn from two boxes, so it needs no glyph and no image */
+  .sw{width:34px;height:18px;border:1px solid var(--toner);background:var(--paper);
+    flex:none;position:relative;border-radius:2px;transition:background .12s}
+  .sw::after{content:"";position:absolute;top:1px;left:1px;width:14px;height:14px;
+    background:var(--toner);transition:left .12s}
+  .sw.on{background:var(--marker)}
+  .sw.on::after{left:17px}
   .rep-legend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:9px;
     color:var(--ink3);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em}
   .rep-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px;
@@ -495,16 +519,17 @@
       <div class="mark">OASA</div>
       <h1 class="wordmark"><span>O A</span><span>SUCKS</span></h1>
       <div class="spacer"></div>
-      <button class="iconbtn alert" id="reportbtn" aria-label="live reports">◉<span class="badge" id="repcount" style="display:none">0</span></button>
+      <button class="iconbtn alert" id="reportbtn" aria-label="live reports"><span class="livedot"></span><span class="badge" id="repcount" style="display:none">0</span></button>
       <button class="iconbtn" id="bell">🔔<span class="badge" id="bellcount" style="display:none">0</span></button>
       <button class="iconbtn" id="menubtn" aria-label="menu" aria-expanded="false">
         <span class="bars"><i></i><i></i><i></i></span></button>
     </div>
     <nav class="menu" id="menu" hidden>
       <button class="menu-item" id="m-line"><span class="mi">⌕</span><span id="m-line-t"></span></button>
-      <button class="menu-item" id="m-live"><span class="mi">🗺</span><span id="m-live-t"></span></button>
-      <button class="menu-item" id="m-lang"><span class="mi">⇄</span><span id="m-lang-t"></span>
-        <span class="mi-side" id="m-lang-v"></span></button>
+      <!-- Live buses: retired from the menu, code kept intact (openLiveMap,
+           #livebg, /live). Un-hide this button to bring it back. -->
+      <button class="menu-item" id="m-live" hidden><span class="mi">🗺</span><span id="m-live-t"></span></button>
+      <button class="menu-item" id="m-settings"><span class="mi">⚙</span><span id="m-settings-t"></span></button>
       <button class="menu-item" id="m-about"><span class="mi">i</span><span id="m-about-t"></span></button>
       <a class="menu-item" id="m-legal" href="./legal.html"><span class="mi">§</span><span id="m-legal-t"></span></a>
     </nav>
@@ -531,7 +556,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v32</span></div>
+  <div class="foot"><span class="ver">v33</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -577,7 +602,7 @@
 
 <div class="rp" id="rep">
   <div class="rp-hd">
-    <div class="rp-tile" id="rep-tile">◉</div>
+    <div class="rp-tile" id="rep-tile"><span class="livedot"></span></div>
     <div class="rp-txt"><div class="rp-title" id="rep-title">Ζωντανές αναφορές</div>
       <div class="rp-sub" id="rep-sub"></div></div>
     <button class="rp-x" id="rep-x">✕</button>
@@ -619,6 +644,15 @@
 <div class="sheet-bg" id="aboutbg"><div class="sheet">
   <h3 id="ab-h">Σχετικά</h3>
   <div id="ab-body"></div>
+</div></div>
+
+<div class="sheet-bg" id="setbg"><div class="sheet">
+  <h3 id="set-h">Ρυθμίσεις</h3>
+  <button class="setrow" id="set-lang">
+    <span class="setlab" id="set-lang-t"></span><span class="setval" id="set-lang-v"></span></button>
+  <button class="setrow" id="set-empty">
+    <span class="setlab" id="set-empty-t"></span><span class="sw" id="set-empty-sw"></span></button>
+  <div class="shint" id="set-empty-h"></div>
 </div></div>
 
 <div class="cyc" id="cyc"><div class="cycbox">
@@ -741,9 +775,14 @@ const T={
   openTerms:"Όροι χρήσης", openPrivacy:"Πολιτική απορρήτου",
   back:"← Πίσω",
   mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
+  mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις",
+  setEmpty:"Απόκρυψη στάσεων χωρίς αφίξεις",
+  setEmptyH:"Όταν είναι ενεργό, οι στάσεις που δεν έχουν άφιξη τα επόμενα 15′ δεν εμφανίζονται "+
+    "στη λίστα, όσο κοντά κι αν είναι. Τα αγαπημένα εμφανίζονται πάντα.",
+  dtFav:"Διπλό πάτημα για αγαπημένο",
   favAdded:"★ Προστέθηκε στα αγαπημένα", favRemoved:"Αφαιρέθηκε από τα αγαπημένα",
-  favFull:"Έφτασες το όριο αγαπημένων", favHint:"Κράτα πατημένο το όνομα για αγαπημένο",
-  favHintOn:"Κράτα πατημένο το όνομα για αφαίρεση",
+  favFull:"Έφτασες το όριο αγαπημένων", favHint:"Διπλό πάτημα στο όνομα για αγαπημένο",
+  favHintOn:"Διπλό πάτημα στο όνομα για αφαίρεση",
   secLines:"Γραμμές", secStops:"Στάσεις",
   lineH:"Αναζήτηση",
   lineP:"Γράψε γραμμή (π.χ. 022) για τη διαδρομή της, ή όνομα στάσης/περιοχής για τις αφίξεις της.",
@@ -761,17 +800,14 @@ const T={
     λεωφορεία, ασανσέρ εκτός λειτουργίας στο μετρό.<br>
     <b style="color:var(--blue)">■ Λειτουργικά</b> — έλεγχος εισιτηρίων, παρουσία ασφάλειας,
     προσωπικό εξυπηρέτησης.</p>
-    <p>Κάθε σήμανση γράφει από πάνω της τι είναι. Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή
-    σταθμό μετρό σε 600 μ. Οι σημάνσεις σβήνουν μόνες τους — από 15′ ως 2 ώρες ανάλογα με το
-    είδος — και μόνο όποιος έκανε μια αναφορά μπορεί να τη σβήσει νωρίτερα. Καταγράφουμε
-    <i>καταστάσεις, όχι ανθρώπους</i>: δεν υπάρχει πουθενά ελεύθερο κείμενο, φωτογραφία ή
-    οτιδήποτε ταυτοποιεί πρόσωπο.</p>
+    <p>Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι σημάνσεις σβήνουν
+    μόνες τους, από 15′ ως 2 ώρες. Καταγράφονται καταστάσεις, όχι πρόσωπα — χωρίς ελεύθερο
+    κείμενο ή φωτογραφίες.</p>
     <p><b>Πόσοι το είπαν.</b> Κάθε αναφορά μετράει το ίδιο. Όταν περισσότεροι αναφέρουν το ίδιο
     πράγμα για το ίδιο όχημα ή σταθμό, μπαίνουν σε μία σήμανση με τον αριθμό τους — «3 αναφορές»
     διαβάζεται πιο βαριά από «1», χωρίς να χρειάζεται κανείς να ψηφίσει.</p>
-    <p><b>Ιδιωτικότητα.</b> Χωρίς λογαριασμό και χωρίς παρακολούθηση. Η τοποθεσία σου μένει στη
-    συσκευή — στέλνεται μόνο η θέση αυτού που αναφέρεις. Οι αναφορές συνδέονται με ένα ανώνυμο
-    τυχαίο αναγνωριστικό που φυλάσσεται τοπικά.</p>
+    <p><b>Ιδιωτικότητα.</b> Χωρίς λογαριασμό, διαφημίσεις ή στατιστικά. Η τοποθεσία σου δεν
+    αποθηκεύεται ποτέ.</p>
     <p><b>Τα δεδομένα.</b> Ανεπίσημα, από τον ΟΑΣΑ. Οι χρόνοι είναι δικές τους εκτιμήσεις και
     πέφτουν έξω. Χάρτες © OpenStreetMap, © CARTO.</p>`,
   aboutTip:"Μικρά κόλπα", aboutTips:`<p>Κράτα πατημένη μια γραμμή στη λίστα για προεπισκόπηση
@@ -786,8 +822,8 @@ const T={
   needLoc:"Χρειάζεται τοποθεσία.", repOff:"Οι αναφορές δεν έχουν ρυθμιστεί.",
   linesHere:"Γραμμές από εδώ", arrivingSoon:"Επόμενες αφίξεις", noLines:"Καμία γραμμή",
   wake:"Σε παύση — πάτα για ανανέωση", stopFallback:"Στάση",radius:"Ακτίνα",stopsN:"στάσεις",
-  lpList:"Κρατά πατημένη μια γραμμή για προεπισκόπηση διαδρομής",
-  lpMap:"Κρατά πατημένη μια στάση για να δεις πού πάνε τα λεωφορεία",
+  lpList:"Διπλό πάτημα σε στάση για αγαπημένο · κράτα πατημένη μια γραμμή για τη διαδρομή",
+  lpMap:"Διπλό πάτημα σε στάση για αγαπημένο · κράτα πατημένη για τις γραμμές της",
   ppHint:"Κρατά πατημένο για διαδρομές",
   nextStops:"Επόμενες στάσεις",noRoute:"Δεν βρέθηκε διαδρομή",
   alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο στη στάση σου.",
@@ -834,9 +870,14 @@ const T={
   openTerms:"Terms of use", openPrivacy:"Privacy policy",
   back:"← Back",
   mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
+  mSettings:"Settings", setH:"Settings",
+  setEmpty:"Hide stops with no arrivals",
+  setEmptyH:"When on, stops with nothing due in the next 15 min are left out of the list, "+
+    "however close they are. Favourites always show.",
+  dtFav:"Double-tap to pin",
   favAdded:"★ Pinned to favourites", favRemoved:"Removed from favourites",
-  favFull:"Favourites are full", favHint:"Long-press the name to pin it",
-  favHintOn:"Long-press the name to unpin",
+  favFull:"Favourites are full", favHint:"Double-tap the name to pin it",
+  favHintOn:"Double-tap the name to unpin",
   secLines:"Lines", secStops:"Stops",
   lineH:"Search",
   lineP:"Type a line (e.g. 022) for its route, or a stop/place name for its arrivals.",
@@ -854,16 +895,14 @@ const T={
     broken lift at a station.<br>
     <b style="color:var(--blue)">■ Operational</b> — fare inspection, security presence,
     customer service staff.</p>
-    <p>Every flag says what it is, right on the map. You flag the bus you are riding, or a metro
-    station within 600 m. Flags expire on their own — 15 min to 2 hours depending on the type —
-    and only the person who filed one can clear it early. We record <i>situations, not
-    people</i>: there is no free text, no photo, and nothing anywhere that identifies an
-    individual.</p>
+    <p>You flag the bus you are riding, or a metro station within 600 m. Flags expire on their
+    own, 15 min to 2 hours. Reports describe situations, not people — no free text, no
+    photos.</p>
     <p><b>How many said it.</b> Every report counts the same. When several people report the
     same thing about the same vehicle or station they collapse into one flag carrying the
     number — "3 reports" reads heavier than "1", with nobody having to vote.</p>
-    <p><b>Privacy.</b> No account, no tracking. Your location stays on the device — only the
-    position of what you report is sent. Reports are tied to an anonymous random id kept locally.</p>
+    <p><b>Privacy.</b> No account, no advertising, no analytics. Your location is never
+    stored.</p>
     <p><b>The data.</b> Unofficial, from OASA. The times are their own estimates and they are
     often wrong. Maps © OpenStreetMap, © CARTO.</p>`,
   aboutTip:"Hidden bits", aboutTips:`<p>Long-press a line in the list to preview its route.
@@ -878,8 +917,8 @@ const T={
   needLoc:"Location needed.", repOff:"Reports aren't configured.",
   linesHere:"Lines from here", arrivingSoon:"Arriving soon", noLines:"No lines listed",
   wake:"Paused — tap to refresh", stopFallback:"Stop",radius:"Radius",stopsN:"stops",
-  lpList:"Long-press a line to preview its route",
-  lpMap:"Long-press a stop to see where its buses go",
+  lpList:"Double-tap a stop to pin it · long-press a line for its route",
+  lpMap:"Double-tap a stop to pin it · long-press for its lines",
   ppHint:"Long-press for routes",
   nextStops:"Next stops",noRoute:"No route data",
   alertsH:"Alerts",alertsP:"Get notified before your bus reaches your stop.",
@@ -976,14 +1015,46 @@ function onLongPress(el,fn,ms=430){
   el.addEventListener("contextmenu",e=>e.preventDefault());
 }
 
+/* Double-tap — how you pin a favourite, in the list, on the map and on
+   the stop card. Rolled by hand rather than using dblclick: mobile
+   Safari doesn't fire dblclick reliably on arbitrary elements, and this
+   also lets us reject a "double tap" whose two taps landed in different
+   places (a scroll flick followed by a tap). Long-press keeps its old
+   job — route and line previews — so the two gestures never collide. */
+const DTAP={ms:320,slop:24};
+function onDoubleTap(el,fn){
+  let last=0,lx=0,ly=0;
+  const hit=(x,y,e)=>{
+    const now=Date.now();
+    if(now-last<DTAP.ms&&Math.abs(x-lx)<DTAP.slop&&Math.abs(y-ly)<DTAP.slop){
+      last=0;
+      if(e&&e.preventDefault) e.preventDefault();
+      if(navigator.vibrate) try{ navigator.vibrate(18); }catch(_){}
+      fn(e);
+      return;
+    }
+    last=now; lx=x; ly=y;
+  };
+  el.addEventListener("touchend",e=>{
+    if(e.changedTouches&&e.changedTouches.length===1){
+      const p=e.changedTouches[0]; hit(p.clientX,p.clientY,e);
+    }
+  });
+  // desktop: a real dblclick is simpler and doesn't double-count the taps
+  el.addEventListener("dblclick",e=>{
+    if(e.preventDefault) e.preventDefault();
+    fn(e);
+  });
+}
+
 /* --------------------------- static UI ----------------------------- */
 function applyStatics(){
   document.documentElement.lang=LANG;
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
   $("#m-line-t").textContent=t("mLine"); $("#m-live-t").textContent=t("mLive");
-  $("#m-lang-t").textContent=t("mLang"); $("#m-about-t").textContent=t("mAbout");
+  $("#m-settings-t").textContent=t("mSettings"); $("#m-about-t").textContent=t("mAbout");
   $("#m-legal-t").textContent=t("mLegal");
-  $("#m-lang-v").textContent=LANG==="el"?"ΕΛ → EN":"EN → ΕΛ";
+  renderSettings();
   $("#live-title").textContent=t("liveH");
   $("#s-h").textContent=t("sheetH"); $("#s-p").textContent=t("sheetP");
   $("#s-gps").textContent=t("gps"); $("#s-pick").textContent=t("pick");
@@ -1123,7 +1194,7 @@ function renderList(){
     card.innerHTML=`<div class="stop-hd"><div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}</div>
       <div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}<span class="num">${isFinite(s.dist)?fmtDist(s.dist):""}</span></div></div>`;
     // long-press the stop header to pin / unpin it
-    onLongPress(card.querySelector(".stop-hd"),()=>toggleFav(s));
+    onDoubleTap(card.querySelector(".stop-hd"),()=>toggleFav(s));
     const rows=document.createElement("div"); rows.className="rows";
     if(!s.arrLoaded){ rows.innerHTML='<div class="skel"></div><div class="skel"></div>'; }
     else if(!s.arrivals.length){ rows.innerHTML=`<div class="empty">${t("nobus")}</div>`; }
@@ -1149,6 +1220,20 @@ const TILE_ATTR='&copy; OpenStreetMap &copy; CARTO';
 let map=null,layerStops=null,mapMarkers={},tileLayer=null;
 function tileUrl(){ return state.dark?TILE_DARK:TILE_LIGHT; }
 function meIcon(){ return L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[16,16],iconAnchor:[8,8]}); }
+/* A map pin answers to both gestures: double-tap pins it (the whole
+   marker, so the name label counts as well as the dot), long-press still
+   opens the line preview. Bound once per element — Leaflet recreates the
+   element on setIcon, hence the guard and the re-bind on redraw. */
+function bindMarkerGestures(m,s){
+  const el=m.getElement(); if(!el||el._g) return;
+  el._g=1;
+  onLongPress(el,()=>startCycle(s));
+  onDoubleTap(el,e=>{
+    // keep the gesture off the map, or Leaflet's double-tap zoom fires too
+    if(e&&e.stopPropagation) e.stopPropagation();
+    m.closePopup(); toggleFav(s);
+  });
+}
 function stopIcon(s){
   // Pins carry the stop's own name; lines are revealed by opening the popup.
   // A pinned stop trades the toner dot for a highlighter star, so you can
@@ -1236,8 +1321,8 @@ function renderMap(){
           if(m.isPopupOpen()) m.setPopupContent(popupHtml(s));
         });
       });
-      m.on("add",()=>{ const el=m.getElement(); if(el&&!el._lp){ el._lp=1; onLongPress(el,()=>startCycle(s)); } });
-      const el=m.getElement(); if(el&&!el._lp){ el._lp=1; onLongPress(el,()=>startCycle(s)); }
+      m.on("add",()=>bindMarkerGestures(m,s));
+      bindMarkerGestures(m,s);
       s._drawn=s.lines.length; mapMarkers[s.code]=m; b.push([s.lat,s.lng]);
     });
     if(!state.mapFitted&&!cyc.on&&b.length>1){ map.fitBounds(b,{padding:[50,50],maxZoom:16}); state.mapFitted=true; }
@@ -1249,7 +1334,7 @@ function renderMap(){
       const fav=isFav(s.code)?1:0;
       if((s._drawn||0)!==s.lines.length||s._fav!==fav){
         m.setIcon(stopIcon(s)); s._drawn=s.lines.length; s._fav=fav;
-        const el=m.getElement(); if(el&&!el._lp){ el._lp=1; onLongPress(el,()=>startCycle(s)); } }
+        bindMarkerGestures(m,s); }
       if(m.isPopupOpen&&m.isPopupOpen()) m.setPopupContent(popupHtml(s));
     });
   }
@@ -1324,8 +1409,18 @@ function listStops(){
     const live=byCode[String(f.code)]||state.favLive[String(f.code)];
     if(live) pinned.push(live);
   });
-  const rest=(state.stops||[]).filter(s=>!isFav(s.code))
+  /* With "hide stops with no arrivals" on, a dead stop is dropped rather
+     than demoted — however close it is. Favourites are exempt: pinning
+     one is an explicit "always show me this".
+     The filter demands a KNOWN arrival, not merely the absence of a known
+     gap. Letting un-loaded stops through would pull in ones beyond the
+     detailed pool, only to drop them again a moment later once their
+     arrivals landed — a list that reshuffles itself after every refresh. */
+  const ranked=(state.stops||[]).filter(s=>!isFav(s.code))
     .sort((a,b)=>listRank(a)-listRank(b)||a.dist-b.dist);
+  let rest=hideEmpty?ranked.filter(hasImminent):ranked;
+  // never blank the screen: if the filter leaves nothing, show the normal list
+  if(hideEmpty&&!rest.length&&!pinned.length) rest=ranked;
   // never drop a favourite the user explicitly pinned, even past the cap
   const cap=Math.max(CONFIG.listStops,pinned.length);
   return pinned.concat(rest).slice(0,cap);
@@ -2885,6 +2980,29 @@ async function loadLive(){
   liveBusy=false;
 }
 
+/* ---------------------------- settings ----------------------------- *
+ * Language lives here now rather than in the menu, alongside the one
+ * display preference worth persisting. Both are plain localStorage. */
+const HIDE_EMPTY_KEY="hideEmpty";
+let hideEmpty=false;
+try{ hideEmpty=localStorage.getItem(HIDE_EMPTY_KEY)==="1"; }catch(_){}
+function openSettings(){ toggleMenu(false); renderSettings(); $("#setbg").classList.add("on"); }
+function closeSettings(){ $("#setbg").classList.remove("on"); }
+function renderSettings(){
+  const h=$("#set-h"); if(!h) return;                  // called before DOM on first paint
+  h.textContent=t("setH");
+  $("#set-lang-t").textContent=t("mLang");
+  $("#set-lang-v").textContent=LANG==="el"?"ΕΛ → EN":"EN → ΕΛ";
+  $("#set-empty-t").textContent=t("setEmpty");
+  $("#set-empty-sw").classList.toggle("on",hideEmpty);
+  $("#set-empty-h").textContent=t("setEmptyH");
+}
+function toggleHideEmpty(){
+  hideEmpty=!hideEmpty;
+  try{ localStorage.setItem(HIDE_EMPTY_KEY,hideEmpty?"1":"0"); }catch(_){}
+  renderSettings(); renderView();
+}
+
 /* ----------------------------- about ------------------------------- */
 function openAbout(){
   toggleMenu(false);
@@ -2898,7 +3016,7 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v32</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v33</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -3099,16 +3217,10 @@ function renderAlerts(){
   });
   const add=document.createElement("button"); add.className="primary"; add.textContent=t("newAlert");
   add.onclick=()=>renderForm(); form.appendChild(add);
-  const test=document.createElement("button"); test.className="ghost"; test.textContent=t("test");
-  test.onclick=async()=>{
-    try{ const id=await ensurePush();
-      const r=await fetch(base()+"/push/test",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({sub:id})});
-      test.textContent=r.ok?"✓":t("err"); setTimeout(()=>test.textContent=t("test"),2500);
-    }catch(e){ test.textContent=e.message==="denied"?t("pushDenied"):t("pushOff");
-      setTimeout(()=>test.textContent=t("test"),3000); }
-  };
-  form.appendChild(test);
+  /* The "send a test notification" button lived here. Removed from the
+     UI — the first real alert is the test. POST /push/test is still on
+     the Worker for debugging by hand:
+       curl -X POST <url>/push/test -d '{"sub":"<your sub id>"}' */
 }
 function renderForm(){
   const form=$("#ruleform"); form.innerHTML="";
@@ -3174,7 +3286,10 @@ function switchLang(){
 $("#menubtn").onclick=()=>toggleMenu();
 $("#m-line").onclick=openLineSearch;
 $("#m-live").onclick=openLiveMap;
-$("#m-lang").onclick=()=>{ switchLang(); toggleMenu(false); };
+$("#m-settings").onclick=openSettings;
+$("#set-lang").onclick=()=>{ switchLang(); renderSettings(); };
+$("#set-empty").onclick=toggleHideEmpty;
+$("#setbg").onclick=e=>{ if(e.target.id==="setbg") closeSettings(); };
 $("#m-about").onclick=openAbout;
 $("#lngo").onclick=doLineSearch;
 $("#lnq").addEventListener("keydown",e=>{ if(e.key==="Enter") doLineSearch(); });
@@ -3183,7 +3298,7 @@ $("#aboutbg").onclick=e=>{ if(e.target.id==="aboutbg") closeAbout(); };
 $("#live-x").onclick=closeLiveMap;
 $("#sc-x").onclick=closeStopCard;
 $("#stopcard").onclick=e=>{ if(e.target.id==="stopcard") closeStopCard(); };
-onLongPress($("#sc-hd"),()=>{ if(cardStop) toggleFav(cardStop); });
+onDoubleTap($("#sc-hd"),()=>{ if(cardStop) toggleFav(cardStop); });
 $("#live-r").onclick=loadLive;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;

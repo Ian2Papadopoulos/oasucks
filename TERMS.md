@@ -2,137 +2,56 @@
 
 **Last updated: 4 August 2026**
 
-> ⚠️ **Before you publish:** replace `CONTACT@EXAMPLE.COM` throughout this file
-> (and in `public/legal.html`) with a real address you monitor. It is your contact
-> point and notice-and-action channel under Art. 11–12 and 16 of the DSA
-> (Regulation 2022/2065).
+> ⚠️ **Before you publish:** replace `CONTACT@EXAMPLE.COM` here and in
+> `public/legal.html` with an address you monitor. It is your contact point and
+> notice-and-action channel under the DSA (Regulation 2022/2065).
 >
-> Not legal advice, and not reviewed by a lawyer.
+> Not legal advice. This mirrors the in-app text at `public/legal.html` — change
+> both together.
 
-By using OASUCKS you agree to what follows. If you don't, don't use it.
+By using OASUCKS you agree to the following.
 
----
+**Unofficial.** OASUCKS is a free, non-commercial app. It is not affiliated with,
+endorsed by or connected to OASA, OSY, STASY or any authority. Trade marks belong
+to their owners.
 
-## 1. What this is — and what it isn't
+**The data is third-party and often wrong.** Arrival times, positions and routes
+come from OASA's telematics service. We do not produce or verify them. Vehicle
+positions are typically 30–60 seconds stale and estimates are regularly out by
+minutes. **Do not rely on this app for anything that matters.**
 
-OASUCKS is a **free, unofficial, non-commercial** app that shows live bus and
-trolley arrivals for Athens, plus flags submitted by other riders.
+**Reports are unverified.** They are submitted by other passengers and describe
+situations on a line or at a station. We do not check them. A report count means
+several people said the same thing, not that it is true. The absence of a report
+means nothing.
 
-**It is not affiliated with, endorsed by, sponsored by or connected to OASA,
-OSY, STASY, or any other transport operator or public authority.** The name is a
-joke made by a passenger; nobody at OASA had anything to do with it. Any trade
-marks mentioned belong to their owners and are used only to say which service the
-data describes.
+**Not a fare-evasion tool. Always carry a valid ticket.**
 
-## 2. The data is third-party, best-effort, and often wrong
+**You must not** file reports you know to be untrue; automate reporting or use
+multiple identities; use the service to identify, follow or target any individual;
+or overload this service or OASA's. We may remove any report and block any device
+without notice.
 
-Arrival times, vehicle positions, stop locations and route information come from
-OASA's telematics service. We pass them through; we do not produce them, verify
-them or control them.
+**No warranty.** The service is provided "as is" and "as available", without
+warranty of any kind, including fitness for a particular purpose, availability or
+accuracy.
 
-**Do not rely on this app for anything that matters.** Arrival estimates are
-OASA's own predictions and they are regularly wrong by minutes. Buses are missing
-from the feed. Vehicle positions are typically 30–60 seconds stale. Stops
-sometimes disappear. If you have a flight, an exam or a job interview, leave
-early and check the operator's own information.
+**Liability.** To the fullest extent permitted by law, the operator is not liable
+for any loss arising from use of the service, including missed journeys, fares,
+fines or appointments. Nothing here excludes liability that cannot lawfully be
+excluded, and your mandatory consumer rights are unaffected.
 
-## 3. Rider reports
+**Reporting a problem.** To report an abusive or false report, or anything else,
+contact **CONTACT@EXAMPLE.COM**. This is our contact point and notice-and-action
+mechanism under Regulation 2022/2065 (DSA). Only the person who filed a report can
+remove it in the app.
 
-Riders file **live reports** — a shared picture of what is happening on the
-network right now — in two categories:
+**Licence.** The source code is published under the MIT licence (see `LICENSE`).
+That covers the code only; it does not license OASA's data. By filing a report you
+allow us to display it while active and to keep an anonymous, coordinate-free
+record for up to 90 days.
 
-- **Issues** (red): breakdown, overcrowding or no air conditioning on a bus; an
-  elevator out of service at a metro station.
-- **Operational** (blue): fare inspection, security presence, customer service
-  staff.
-
-Operational reports are **statements about a situation, not about a person**.
-They record that an activity is taking place on a line or at a station — the same
-kind of service information as "this bus has no air conditioning". The app
-provides no way to describe, photograph, name, or otherwise identify any
-individual, and it never will.
-
-- **Reports are unverified.** They are one person's claim, filed in a hurry, from
-  a phone, about a moving vehicle. A flag being absent means nothing at all.
-- **A count of several reports means several people said the same thing.** It is
-  not verification by us, and it does not make the claim true.
-- **Reports expire on their own** — between 15 minutes and 2 hours depending on
-  type — and are then deleted.
-- **You are responsible for what you file.** Filing flags you know to be false,
-  or filing repeatedly to make the map useless, is a breach of these terms.
-
-### What you must not do
-
-- File reports you know to be untrue.
-- Automate reporting, or use more than one device or identity to make a report
-  look corroborated when it isn't.
-- Use the service to identify, follow, harass or target any individual. The app
-  deliberately has no free-text field, no photos and no way to name a person —
-  do not try to work around that.
-- **Use the service to avoid paying fares. Always carry a valid ticket.** Reports
-  exist so riders know the state of the service they are paying for.
-- Scrape, overload or attempt to break the service, or use it to place load on
-  OASA's systems.
-
-We may remove any report and block any device that breaks these rules, without
-notice and without explanation.
-
-## 4. Reporting a problem (notice and action)
-
-If a report is abusive, false, or targets a person, tell us at
-**CONTACT@EXAMPLE.COM** with enough detail to find it (line/station, issue type,
-roughly when you saw it). We act on notices as quickly as we reasonably can — in
-practice most reports expire within minutes anyway.
-
-This is our contact point and our notice-and-action mechanism under the Digital
-Services Act (Regulation 2022/2065). We are a micro-scale hosting service and
-rely on the liability exemption in Art. 6 of that Regulation.
-
-Only the person who filed a report can withdraw it inside the app; other riders
-cannot remove someone else's flag, so genuinely abusive ones come to us at the
-address above.
-
-## 5. No warranty
-
-The service is provided **"as is" and "as available"**, without warranty of any
-kind, express or implied, including fitness for a particular purpose,
-availability, accuracy or uninterrupted operation. It may be wrong, slow, or gone
-tomorrow. It is run by one person for free.
-
-## 6. Liability
-
-To the fullest extent permitted by law, the operator is not liable for any loss
-arising from use of the service — including missed journeys, fares, fines,
-appointments, or decisions taken on the strength of an arrival time or a rider
-report.
-
-**Nothing in these terms excludes or limits liability that cannot lawfully be
-excluded**, including liability for death or personal injury caused by
-negligence, for fraud, or for gross negligence or wilful misconduct. Where you
-use the service as a consumer, your mandatory statutory rights are unaffected.
-
-## 7. Your licence, and ours
-
-The app's source code is published under the MIT licence — see `LICENSE`. That
-licence covers the code only; it does not license OASA's data and it does not
-transfer any obligation of the operator to you.
-
-By filing a report you allow us to display it to other users of the service and
-to keep an anonymous, coordinate-free record of it for up to 90 days for
-aggregate statistics. You keep whatever rights you have in it; we claim none.
-
-## 8. Changes and termination
-
-These terms may change; the date at the top says when. The service may be
-modified, restricted or shut down at any time, for any reason, including because
-OASA asks us to stop.
-
-## 9. Governing law
-
-These terms are governed by Greek law, and the courts of Athens have
-jurisdiction, without prejudice to any mandatory consumer protection rules of the
-country where you live.
-
-## 10. Contact
-
-**CONTACT@EXAMPLE.COM**
+**Changes and law.** These terms may change and the service may be modified or
+withdrawn at any time, including because OASA asks us to stop. Greek law applies;
+the courts of Athens have jurisdiction, without prejudice to mandatory consumer
+rules where you live.

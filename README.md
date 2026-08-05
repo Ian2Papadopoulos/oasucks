@@ -3,13 +3,13 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v32.**
+version: v33.**
 
-**The top bar** is three buttons — live reports ◉, alerts 🔔, and a ☰ menu holding
-everything else: [look up a line](#find-a-line) and preview its route, a
-[live map](#live-buses) of the buses running around you, the EL/EN switch, and About.
+**The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
+holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
+to hide stops with nothing coming), About, and Terms & privacy.
 
-**Live reports.** The old line-stats button is now the ◉. Tap it and a live map of
+**Live reports.** The old line-stats button is now the red live dot. Tap it and a live map of
 Athens opens — only the buses and metro stations that currently carry a flag, each
 labelled with what it is. Reports come in two categories: **issues** (red — breakdown,
 overcrowding, no A/C, broken lift) and **operational** (blue — fare inspection,
@@ -17,7 +17,7 @@ security presence, customer service staff). Under the map, **New report** lets y
 flag the bus you are actually riding (the app works out which one) or a metro station
 within 600 m. Every report is trusted; when several people flag the same thing it
 becomes one marker carrying the head count.
-See [Live reports](#live-reports-) for the exact rules.
+See [Live reports](#live-reports) for the exact rules.
 
 > The service-stats screen (line reliability, bunching, missing trips) still exists in
 > the code and the tracking backend still collects data — the UI was retired in v18 to
@@ -102,12 +102,14 @@ in four minutes — and if the 10-row cap is full it drops off the list entirely
 stays on the map). The server details 14 stops so there are live candidates to promote;
 see [PARAMETERS.md](PARAMETERS.md).
 
-**Favourites:** long-press a stop's header in the list to pin it — it gets a ★ and
-sorts to the top, and stays there across refreshes. A pinned stop that's out of range
-is still shown (its arrivals are fetched separately), which is the point: your home
-stop while you're at work. On the **map** a pinned stop swaps its black dot for a
-yellow ★ — including favourites outside the current radius, so they're findable there
-too. Long-press again to unpin; up to 6, kept in `localStorage`.
+**Favourites:** **double-tap** a stop to pin it — its header in the list, its name on
+the stop card, or its pin on the map (the label counts too). It gets a ★, sorts to the
+top and stays there across refreshes. A pinned stop that's out of range is still shown
+(its arrivals are fetched separately), which is the point: your home stop while you're
+at work, and it survives the hide-empty filter. On the **map** a pinned stop swaps its
+black dot for a yellow ★. Double-tap again to unpin; up to 6, kept in `localStorage`.
+**Long-press** is now only for previews — a line's route in the list, a stop's lines on
+the map.
 
 **Switching views:** the Λίστα / Χάρτης tabs, or **swipe left for the map, right for the
 list**. On the map the swipe has to start at the left edge, since Leaflet owns dragging
@@ -146,7 +148,21 @@ all. Picking one opens a **card in the centre of the screen** with its live arri
 the same style as the list — long-press the stop's name there to pin it, and long-press
 an arrival row for the route preview.
 
-### Live buses
+### Settings
+
+Language (ΕΛ / EN) and one display preference:
+
+**Hide stops with no arrivals** — off by default. On, a stop with nothing due in the
+next `imminentMin` (15 min) is left out of the list entirely rather than demoted to the
+bottom, however close it is. Favourites are exempt — pinning one is an explicit "always
+show me this". The filter demands a *known* arrival, so stops the server hasn't detailed
+never sneak in only to drop out a moment later. Kept in `localStorage` under `hideEmpty`.
+
+### Live buses — retired from the menu
+
+**Hidden since v33** (`#m-live` carries `hidden`), but the code, the `#livebg` panel and
+the Worker's `/live` endpoint are all intact — remove the attribute to bring it back.
+What it does:
 
 A map of the buses actually moving, each pin labelled with its line. "Every bus in
 Athens at once" would be one API call per route — hundreds, far past a Worker's
@@ -155,9 +171,9 @@ the map centre (≤10 stop lookups, ≤28 routes) and returns every vehicle on t
 cached 15 s. Pan the map and tap **↻** to load another area. Tune the ceilings in
 `LIVE` in `worker.js`.
 
-## Live reports (◉)
+## Live reports
 
-The ◉ button in the header opens the live-reports view. The map shows *only* what is
+The live-dot button in the header opens the live-reports view. The map shows *only* what is
 currently flagged — the flagged buses (following their live
 positions, so a reported bus keeps moving on the map) and the flagged metro stations.
 Each pin carries a label above it saying what it is — *Fare inspection*, *No A/C*,

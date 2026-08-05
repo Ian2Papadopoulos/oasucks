@@ -63,18 +63,25 @@ The output should now mention the KV binding and the cron trigger.
 ## 5. Use it on your phone
 
 1. Open the app, tap the **🔔** button in the header.
-2. Tap **Send test notification** → allow notifications when Chrome asks.
-   A test notification should arrive within a second or two. If it does, the
-   whole chain works.
-3. Tap **＋ New alert** and set up your rule:
+2. Tap **＋ New alert** → allow notifications when Chrome asks, and set up your
+   rule:
    - **Stop** — one of your current nearby stops
    - **Line / direction** — e.g. `036 · ΠΛ. ΚΥΨΕΛΗΣ - ΠΑΝΟΡΜΟΥ`
    - **Days** — Mo–Fr are pre-selected
    - **From / To** — e.g. 08:30 to 08:50
    - **Notify before** — 10′ and 5′ are pre-selected; 15′ and 3′ available
-4. Save. You'll get a notification when a bus on that line is 10 minutes and
+3. Save. You'll get a notification when a bus on that line is 10 minutes and
    again when it's 5 minutes from that stop, but only for buses predicted to
    arrive inside your window, and only on the days you chose.
+
+> **Checking the chain without waiting for a bus.** The in-app "send test
+> notification" button was removed in v33 — the first real alert is the test. The
+> endpoint is still there for a manual check:
+> ```bash
+> curl -X POST "https://<your-url>/push/test" \
+>   -H "Content-Type: application/json" -d '{"sub":"<your subscription id>"}'
+> ```
+> Your subscription id is the `subId` value in the app's `localStorage`.
 
 Alerts are deduplicated per vehicle **per lead time**, so one bus gives you one
 notification per lead — not one every minute — and a 15/10/5 set arrives as three

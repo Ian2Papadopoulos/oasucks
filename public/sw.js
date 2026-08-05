@@ -7,7 +7,7 @@
  * anything with a query string, anything cross-origin) goes to the network
  * every time. New endpoints are safe by default.
  */
-const SHELL = "stop-shell-v21";
+const SHELL = "stop-shell-v22";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest",
   "./vendor/leaflet-1.9.4.min.css", "./vendor/leaflet-1.9.4.min.js"];
 // self-hosted, version-pinned vendor .js is now cacheable too (the app's
@@ -68,8 +68,8 @@ self.addEventListener("fetch", e => {
 self.addEventListener("push", e => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; }
-  catch { d = { title: "Στάση", body: e.data ? e.data.text() : "" }; }
-  e.waitUntil(self.registration.showNotification(d.title || "Στάση", {
+  catch { d = { title: "OASUCKS", body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "OASUCKS", {
     body: d.body || "",
     icon: "./icon-192.png",
     badge: "./icon-192.png",

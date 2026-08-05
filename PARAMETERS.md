@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v32 defaults** — if you edit the
+breaks if you change it. Values here are the **v33 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -127,7 +127,11 @@ couple of hours until it expires.
 | `sleepAfter` | **900 000 ms** (15 min) | No interaction → stop refreshing entirely. |  |
 | `walkSpeed` | **80 m/min** | Used for the "🚶 ~4′" walking estimate. |  |
 | `detour` | **1.35** | Straight-line distance × this ≈ real walking distance. |  |
-| `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`). | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
+| `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`), pinned by double-tap. | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
+
+**Hide stops with no arrivals** (☰ → Settings, `localStorage.hideEmpty`, off by
+default): drops stops with nothing due within `imminentMin` from the list rather
+than demoting them. Favourites are exempt.
 
 **Row order:** favourites first, then stops with an arrival within `imminentMin`
 by distance, then the rest by distance. A near shelter with nothing coming for
@@ -227,6 +231,13 @@ your privacy policy becomes false.
 | `dead` | **8 px** | Dead zone before any axis decision. |
 | `slope` | **0.8** | Max `dy/dx` for a swipe to still count. |
 | `maxMs` | **900 ms** | Slower than this isn't a swipe. |
+
+`public/index.html` → `DTAP` (double-tap = pin a favourite)
+
+| Parameter | Default | What it means |
+|---|---|---|
+| `ms` | **320 ms** | Longest gap between the two taps. |
+| `slop` | **24 px** | How far apart the two taps may land and still count. |
 | `edge` | **34 px** | On the map, only a swipe starting this close to the left edge counts (the rest pans the map). |
 | `.slide-l/.slide-r` | **0.3 s** | Tab transition duration (CSS). |
 
