@@ -97,8 +97,9 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **Language:** ☰ menu → Γλώσσα / Language.
 - **☰ menu:** find a line and preview its route, live bus map, language, about, and
   **Terms & privacy** (`/legal.html`).
-- **Reports:** tap the red **!** — the map shows only what's currently flagged (buses
-  and metro stations), and **Report an issue** underneath lets you file one. Test it
+- **Live reports:** tap the **◉** — the map shows only what's currently flagged (buses
+  and metro stations), red for issues and blue for operational, and **New report**
+  underneath lets you file one. Test it
   from a bus: pick *On a bus*, give it ~15 s (it watches your GPS, then samples vehicle
   positions three times), then confirm your vehicle from the ranked list. One marked
   **✓ moving with you** is a confirmed report; picking a dashed one files an
@@ -111,7 +112,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v20"` to `v21` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v21"` to `v22` in `public/sw.js` and redeploy to force an update.
 
 ---
 

@@ -34,6 +34,8 @@ of this instance, reachable at **CONTACT@EXAMPLE.COM**.
 - **No account, no name, no email, no phone number.**
 - **No free-text field anywhere in a report.** You choose from a fixed menu. There
   is no way to type a comment, upload a photo, or name a person — by design.
+  Reports describe **situations** (a line, a station, an activity), never people;
+  no report contains or can contain personal data about anyone observed.
 - **No analytics, no advertising, no third-party tracking scripts.** Map code
   (Leaflet) is served from this app's own domain, not a CDN.
 - **No cookies.** The app uses `localStorage` purely to remember your language,
@@ -64,7 +66,7 @@ We do not sell, rent or share your data with anyone else.
 |---|---|
 | Your location | Not stored at all |
 | IP address | ≤ 60 seconds, in memory only |
-| An active report (including its coordinates and the reporter's anonymous id) | Until it expires: **15 minutes** (bus inspector), **1 hour** (other bus issues), **2 hours** (metro inspector, broken lift). Then it is deleted outright. |
+| An active report (including its coordinates and the reporter's anonymous id) | Until it expires: **15–30 minutes** (operational reports on a bus), **1 hour** (bus issues), **2 hours** (anything at a metro station). Then it is deleted outright. |
 | Report history log (time, line, station, issue type — **no coordinates, no reporter id**) | **90 days**, then deleted automatically |
 | Push subscription | Until you turn alerts off |
 | Anything in `localStorage` | Until you clear your browser data or uninstall |

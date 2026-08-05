@@ -3,19 +3,21 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v31.**
+version: v32.**
 
-**The top bar** is three buttons — reports ❗, alerts 🔔, and a ☰ menu holding
+**The top bar** is three buttons — live reports ◉, alerts 🔔, and a ☰ menu holding
 everything else: [look up a line](#find-a-line) and preview its route, a
 [live map](#live-buses) of the buses running around you, the EL/EN switch, and About.
 
-**Community reports.** The old line-stats button is now the red exclamation mark. Tap
-it and a problem map of Athens opens — only the buses and metro stations that currently
-carry a flag, every one of them red and labelled with what is wrong. Under it,
-**Report an issue** lets you flag the bus you are actually riding (the app works out
-which one) or a metro station within 600 m. Every report is trusted; when several
-people flag the same thing it becomes one marker carrying the head count.
-See [Reports](#reports-red-exclamation-mark) for the exact rules.
+**Live reports.** The old line-stats button is now the ◉. Tap it and a live map of
+Athens opens — only the buses and metro stations that currently carry a flag, each
+labelled with what it is. Reports come in two categories: **issues** (red — breakdown,
+overcrowding, no A/C, broken lift) and **operational** (blue — fare inspection,
+security presence, customer service staff). Under the map, **New report** lets you
+flag the bus you are actually riding (the app works out which one) or a metro station
+within 600 m. Every report is trusted; when several people flag the same thing it
+becomes one marker carrying the head count.
+See [Live reports](#live-reports-) for the exact rules.
 
 > The service-stats screen (line reliability, bunching, missing trips) still exists in
 > the code and the tracking backend still collects data — the UI was retired in v18 to
@@ -153,28 +155,34 @@ the map centre (≤10 stop lookups, ≤28 routes) and returns every vehicle on t
 cached 15 s. Pan the map and tap **↻** to load another area. Tune the ceilings in
 `LIVE` in `worker.js`.
 
-## Reports (red exclamation mark)
+## Live reports (◉)
 
-The ❗ button in the header opens the reports view. The map is a **problem map**: it
-shows *only* what is currently flagged — the flagged buses (following their live
+The ◉ button in the header opens the live-reports view. The map shows *only* what is
+currently flagged — the flagged buses (following their live
 positions, so a reported bus keeps moving on the map) and the flagged metro stations.
-Every flag is **red**, and each pin carries a label above it saying what it is —
-*Ticket inspectors*, *No A/C*, *Elevator not working* — so the map answers "what and
-where" without a tap. Below zoom 15 the labels hide (a dozen of them overlap into
+Each pin carries a label above it saying what it is — *Fare inspection*, *No A/C*,
+*Security presence* — so the map answers "what and where" without a tap. Colour
+carries the **category**: red for issues, blue for operational. Below zoom 15 the labels hide (a dozen of them overlap into
 noise at city scale) and the pin's count badge carries the weight; tap a pin and the
 popup says the same thing. Nothing that is fine is drawn. The full list of active
 reports sits underneath, busiest first, above a **Report an issue** button.
 
-You can only report what you are actually next to — two categories, no free text:
+You can only report what you are actually next to — no free text, ever:
 
-| Category | Who can report it | What can be reported |
-|---|---|---|
-| **On a bus** | only the vehicle you're riding (see below) | breakdown · overcrowded · no A/C · ticket inspectors |
-| **At a metro station** | stations within **600 m** of you | ticket inspectors · elevator not working |
+| Where you are | Who can report it | Issues (red) | Operational (blue) |
+|---|---|---|---|
+| **On a bus** | only the vehicle you're riding (see below) | breakdown · overcrowded · no A/C | fare inspection · security presence · customer service staff |
+| **At a metro station** | stations within **600 m** of you | elevator not working | fare inspection · security presence · customer service staff |
 
-The issue menu changes with the category — a bus never offers *elevator not working*,
-and the Worker enforces the same two menus server-side, so a hand-made request can't
-file a type the UI doesn't show.
+The menu changes with where you are — a bus never offers *elevator not working* — and
+the Worker enforces the same menus server-side, so a hand-made request can't file a
+type the UI doesn't show.
+
+**On the operational category.** These entries are factual, staff-agnostic statements
+about a *situation*: "fare inspection is happening on this line" is service information
+of the same kind as "this bus has no air conditioning". The app has no free-text field,
+no photo upload, and no way to describe or identify a person — by design, and it is the
+single most important thing to keep that way. See [Legal](#legal).
 
 ### Which bus am I on?
 
@@ -240,16 +248,16 @@ longer a way for other riders to vote one down.
 At most **2 active reports per person** at a time.
 
 Flags then show up on the reports map and inline in the list view: a flagged bus gets
-red **"Ticket inspectors · 3 reports · 4′ ago"** under its direction, matched to that
-exact vehicle, so the other bus on the same line stays clean.
+**"Fare inspection · 3 reports · 4′ ago"** under its direction — in the category's
+colour — matched to that exact vehicle, so the other bus on the same line stays clean.
 
 The rules:
 
 | Flag | Expires after |
 |---|---|
-| Ticket inspectors on a bus | **15 min** — they ride a few stops and hop off |
-| Ticket inspectors at a metro station | **2 h** — they work a station, not a trip |
-| Elevator not working (metro) | **2 h** — a facility fault, not a passing event |
+| Fare inspection on a bus | **15 min** — staff ride a few stops and get off |
+| Security presence / customer service staff on a bus | **30 min** |
+| Anything at a metro station | **2 h** — a station is worked for hours, and a broken lift outlasts a trip |
 | Breakdown / overcrowded / no A/C (bus) | **60 min** |
 
 All of these live in one table, `TTL` in `worker.js` — see
@@ -263,7 +271,7 @@ Re-reporting the same thing renews your own record's timer without inflating the
 **History for statistics:** active flags live in KV and vanish when they expire, but
 every filed report is *also* appended to D1's `report_log` table (timestamp, kind,
 type, target, line — **no coordinates and no reporter id**).
-`GET /reports/toplist?days=30&type=inspector` returns the most-reported
+`GET /reports/toplist?days=30&type=fare` returns the most-reported
 buses/lines/stations, ready for a future public stats page. Rows are deleted after
 **90 days** by the same cron that prunes tracking events.
 
@@ -295,10 +303,10 @@ feeds `/reports/toplist` — test flags left there would skew any future statist
 To wipe both at once (needs `ADMIN_TOKEN`, see [Security model](#security-model)):
 
 ```powershell
-# every inspector report, live + history
+# every fare-inspection report, live + history
 curl -X POST "https://<your-url>/admin/reports/purge" ^
   -H "X-Admin-Token: YOUR_TOKEN" -H "Content-Type: application/json" ^
-  -d "{\"type\":\"inspector\",\"log\":true}"
+  -d "{\"type\":\"fare\",\"log\":true}"
 
 # just one vehicle/station
 … -d "{\"targetId\":\"70142\",\"log\":true}"
@@ -321,7 +329,7 @@ npx wrangler kv key put --binding=ALERTS "reports:index" "[]" --remote   # wipe 
 
 # history rows
 npx wrangler d1 execute oasa-stats --remote ^
-  --command "DELETE FROM report_log WHERE type='inspector' AND ts > unixepoch()-21600"
+  --command "DELETE FROM report_log WHERE type='fare' AND ts > unixepoch()-21600"
 ```
 </details>
 

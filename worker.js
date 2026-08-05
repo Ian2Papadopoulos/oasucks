@@ -28,7 +28,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v31";
+const APP_VERSION = "v32";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1082,22 +1082,35 @@ async function handleNearby(url, env, ctx) {
  * ------------------------------------------------------------------ */
 const REPORTS_KEY = "reports:index";
 /* What may be flagged, and with what. A rider reports from inside a bus
- * or standing at a metro station — those are the only two categories —
- * and each one has its own short menu. Every flag is drawn red; the menus
- * differ, the colour does not. */
+ * or standing at a metro station — those are the two TARGET kinds — and
+ * within each, a report falls into one of two CATEGORIES:
+ *
+ *   issue (red)   — something is wrong with the vehicle or the station
+ *   ops   (blue)  — who is present and what is happening operationally
+ *
+ * The ops category is deliberately neutral, factual and staff-agnostic:
+ * "fare inspection is happening on this line" is service information of
+ * the same kind as "this bus has no air conditioning". The app reports
+ * situations, not people — there is no free text, no photo, no
+ * description, and nothing that identifies an individual. */
 const REPORT_TYPES = {
-  bus: new Set(["breakdown", "crowded", "noac", "inspector"]),
-  metro: new Set(["inspector", "lift"]),
+  bus:   new Set(["breakdown", "crowded", "noac", "fare", "security", "staff"]),
+  metro: new Set(["lift", "fare", "security", "staff"]),
+};
+const CATEGORY = {
+  breakdown: "issue", crowded: "issue", noac: "issue", lift: "issue",
+  fare: "ops", security: "ops", staff: "ops",
 };
 
-/* How long a flag lives, in seconds, by category and type. The split is
- * about how fast the thing stops being true: inspectors ride a few stops
- * and hop off a bus, but work a metro station for hours; a broken air-con
- * or lift lasts the whole trip or the whole day. Documented in
+/* How long a flag lives, in seconds, by target kind and type. The split
+ * is about how fast the thing stops being true: staff of any sort ride a
+ * few stops on a bus but work a station for hours; a broken air-con or
+ * lift lasts the whole trip or the whole day. Documented in
  * PARAMETERS.md. */
 const TTL = {
-  bus:   { inspector: 900, breakdown: 3600, crowded: 3600, noac: 3600 },
-  metro: { inspector: 7200, lift: 7200 },
+  bus:   { breakdown: 3600, crowded: 3600, noac: 3600,
+           fare: 900, security: 1800, staff: 1800 },
+  metro: { lift: 7200, fare: 7200, security: 7200, staff: 7200 },
 };
 const DEFAULT_TTL = 3600;
 const MAX_ACTIVE_PER_REPORTER = 2;

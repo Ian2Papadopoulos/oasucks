@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v31 defaults** — if you edit the
+breaks if you change it. Values here are the **v32 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -56,12 +56,16 @@ Two files hold almost everything: **`public/index.html`** (the app) and
 
 | Parameter | Default | What it means |
 |---|---|---|
-| `TTL.bus.inspector` | **900 s** (15 min) | Inspectors ride a few stops and get off. |
 | `TTL.bus.breakdown` | **3 600 s** (1 h) | |
 | `TTL.bus.crowded` | **3 600 s** (1 h) | |
 | `TTL.bus.noac` | **3 600 s** (1 h) | Lasts the trip. |
-| `TTL.metro.inspector` | **7 200 s** (2 h) | Inspectors work a station for hours, unlike a bus. |
+| `TTL.bus.fare` | **900 s** (15 min) | Staff ride a few stops and get off. |
+| `TTL.bus.security` | **1 800 s** (30 min) | |
+| `TTL.bus.staff` | **1 800 s** (30 min) | |
 | `TTL.metro.lift` | **7 200 s** (2 h) | A broken lift is a facility fault, not a passing event. |
+| `TTL.metro.fare` | **7 200 s** (2 h) | A station is worked for hours, unlike a bus. |
+| `TTL.metro.security` | **7 200 s** (2 h) | |
+| `TTL.metro.staff` | **7 200 s** (2 h) | |
 | `DEFAULT_TTL` | **3 600 s** | Fallback for a type not in the table. |
 | `MAX_ACTIVE_PER_REPORTER` | **2** | Live reports one anonymous device may hold at once. |
 
@@ -82,13 +86,27 @@ be cleared by its author (✕) or by the admin purge — see the README.
 `worker.js` → `REPORT_TYPES` (enforced) and `public/index.html` → `TYPES_BY_KIND` (shown).
 **Keep these two in sync** — the server rejects anything the client offers that it doesn't know.
 
-| Category | Types |
-|---|---|
-| `bus` | `breakdown`, `crowded`, `noac`, `inspector` |
-| `metro` | `inspector`, `lift` |
+Two **target kinds** (where you are) crossed with two **categories** (what kind of
+report it is). `CATEGORY` in both files maps type → category.
 
-Labels live in the `ti_*` i18n keys (`ti_noac`, `ti_lift`, …) in both languages.
-Every flag renders **red**; the type decides the label and the lifetime, never the colour.
+| Target kind | Issue types (red) | Operational types (blue) |
+|---|---|---|
+| `bus` | `breakdown`, `crowded`, `noac` | `fare`, `security`, `staff` |
+| `metro` | `lift` | `fare`, `security`, `staff` |
+
+Labels live in the `ti_*` i18n keys (`ti_fare`, `ti_lift`, …) in both languages.
+**Colour encodes the category and nothing else** — red for "something is wrong",
+blue for "who is present / what is operationally happening". Severity is not
+encoded anywhere.
+
+Operational types are deliberately factual and staff-agnostic: they record that an
+activity is happening on a line or at a station, never anything about a person. If
+you add a type, keep it in that register — and add it to `REPORT_TYPES`,
+`TYPES_BY_KIND`, `CATEGORY` (both files), `TTL`, and the `ti_*` labels.
+
+The retired `inspector` type is rejected by the server; the client still maps it to
+the *Fare inspection* label so any record filed before v32 renders sensibly for the
+couple of hours until it expires.
 
 ---
 
@@ -216,7 +234,7 @@ your privacy policy becomes false.
 
 | Parameter | Default | What it means |
 |---|---|---|
-| `labelZoom` | **15** | Below this zoom the permanent issue labels on the report map are hidden — a dozen of them overlap into noise at city scale. The pin and its count badge stay; tap a pin for the popup. |
+| `labelZoom` | **15** | Below this zoom the permanent labels on the live-reports map are hidden — a dozen of them overlap into noise at city scale. The pin and its count badge stay; tap a pin for the popup. |
 
 Long-press to pin a favourite: **430 ms** (`onLongPress` default).
 

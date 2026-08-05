@@ -38,9 +38,19 @@ early and check the operator's own information.
 
 ## 3. Rider reports
 
-Riders can flag four things on a bus (breakdown, overcrowding, no air conditioning,
-ticket inspectors) and two at a metro station (ticket inspectors, elevator out of
-service).
+Riders file **live reports** — a shared picture of what is happening on the
+network right now — in two categories:
+
+- **Issues** (red): breakdown, overcrowding or no air conditioning on a bus; an
+  elevator out of service at a metro station.
+- **Operational** (blue): fare inspection, security presence, customer service
+  staff.
+
+Operational reports are **statements about a situation, not about a person**.
+They record that an activity is taking place on a line or at a station — the same
+kind of service information as "this bus has no air conditioning". The app
+provides no way to describe, photograph, name, or otherwise identify any
+individual, and it never will.
 
 - **Reports are unverified.** They are one person's claim, filed in a hurry, from
   a phone, about a moving vehicle. A flag being absent means nothing at all.
