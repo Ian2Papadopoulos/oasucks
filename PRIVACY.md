@@ -2,15 +2,11 @@
 
 **Last updated: 4 August 2026**
 
-> ⚠️ **Before you publish:** replace `CONTACT@EXAMPLE.COM` here and in
-> `public/legal.html` with an address you monitor — Art. 13(1)(b) GDPR requires a
-> working contact.
->
 > Not legal advice. This mirrors the in-app text at `public/legal.html` — change
 > both together.
 
 No account, no advertising, no analytics, no cookies, no third-party scripts. The
-controller is the operator of this instance: **CONTACT@EXAMPLE.COM**.
+controller is the operator of this instance: **oasax@proton.me**.
 
 ## What is processed
 
@@ -46,7 +42,7 @@ Nothing is sold or shared otherwise.
 Access, rectification, erasure, restriction, portability and objection. You may
 withdraw consent at any time by revoking location or notification permission.
 Delete a report in the app with ✕; clear everything else by clearing site data.
-Written requests: **CONTACT@EXAMPLE.COM**. You may complain to the Hellenic Data
+Written requests: **oasax@proton.me**. You may complain to the Hellenic Data
 Protection Authority (<https://www.dpa.gr>).
 
 ## Security

@@ -293,6 +293,17 @@
     color:var(--toner);padding:9px 11px;font-size:11.5px;cursor:pointer;line-height:1.4;border-radius:2px}
   .results .res:active{border-color:var(--toner)}
   .results .res-msg{color:var(--ink3);font-size:11.5px;padding:5px 2px}
+  /* the stop search living inside the alert form */
+  #f-find{margin-top:7px}
+  #f-find input{width:100%;background:var(--card);border:1px solid var(--toner);color:var(--toner);
+    padding:10px 11px;font-size:12.5px;outline:none;font-family:var(--mono);border-radius:2px}
+  #f-qres{display:flex;flex-direction:column;gap:5px;margin-top:6px;max-height:34vh;overflow:auto}
+  #f-qres .res-item{text-align:left;background:var(--card);border:1px solid var(--rule);
+    color:var(--toner);padding:9px 11px;font-size:11.5px;cursor:pointer;line-height:1.4;
+    border-radius:2px;font-family:var(--mono)}
+  #f-qres .res-item:active{border-color:var(--toner)}
+  #f-qres .res-d{color:var(--ink3);font-size:10.5px;float:right}
+  #f-qres .res-msg{color:var(--ink3);font-size:11.5px;padding:5px 2px}
   .pickmap{width:100%;margin-top:9px;background:var(--card);border:1px solid var(--toner);
     color:var(--toner);padding:11px;font-weight:700;font-size:11px;cursor:pointer;
     font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;border-radius:2px}
@@ -556,7 +567,7 @@
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v33</span></div>
+  <div class="foot"><span class="ver">v34</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -826,11 +837,14 @@ const T={
   lpMap:"Διπλό πάτημα σε στάση για αγαπημένο · κράτα πατημένη για τις γραμμές της",
   ppHint:"Κρατά πατημένο για διαδρομές",
   nextStops:"Επόμενες στάσεις",noRoute:"Δεν βρέθηκε διαδρομή",
-  alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο στη στάση σου.",
+  alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση — όχι μόνο τις κοντινές.",
   newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
   test:"Δοκιμαστική ειδοποίηση",noRules:"Καμία ειδοποίηση ακόμη.",
   needStops:"Φόρτωσε πρώτα στάσεις κοντά σου.",
+  findStop:"⌕ Αναζήτηση άλλης στάσης…", noStopHit:"Καμία στάση με αυτό το όνομα.",
+  alertHint:"Η στάση μπορεί να είναι οπουδήποτε — διάλεξε από τις κοντινές ή τα αγαπημένα σου, "+
+    "ή ψάξε οποιαδήποτε στάση της Αθήνας.",
   pushOff:"Οι ειδοποιήσεις δεν έχουν ρυθμιστεί στον server.",
   pushDenied:"Οι ειδοποιήσεις είναι μπλοκαρισμένες στον browser.",
   dayNames:["Κυ","Δε","Τρ","Τε","Πε","Πα","Σα"]},
@@ -921,11 +935,14 @@ const T={
   lpMap:"Double-tap a stop to pin it · long-press for its lines",
   ppHint:"Long-press for routes",
   nextStops:"Next stops",noRoute:"No route data",
-  alertsH:"Alerts",alertsP:"Get notified before your bus reaches your stop.",
+  alertsH:"Alerts",alertsP:"Get notified before your bus reaches any stop — not just the ones near you.",
   newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
   test:"Send test notification",noRules:"No alerts yet.",
   needStops:"Load nearby stops first.",
+  findStop:"⌕ Search another stop…", noStopHit:"No stop by that name.",
+  alertHint:"The stop can be anywhere — pick a nearby one or a favourite, or search any "+
+    "stop in Athens.",
   pushOff:"Push isn't configured on the server yet.",
   pushDenied:"Notifications are blocked in your browser.",
   dayNames:["Su","Mo","Tu","We","Th","Fr","Sa"]}
@@ -3016,7 +3033,7 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v33</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v34</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -3224,12 +3241,28 @@ function renderAlerts(){
 }
 function renderForm(){
   const form=$("#ruleform"); form.innerHTML="";
-  const stops=state.stops.slice(0,CONFIG.listStops);
-  if(!stops.length){ form.innerHTML=`<div class="note">${t("needStops")}</div>`; return; }
+  /* The stop list here used to be "whatever is near you right now", which
+     meant setting an alarm for your evening stop required dragging the
+     location pin across town first. Now the picker offers favourites and
+     nearby stops, and — the part that removes the chore — a search that
+     reaches any stop in Athens through /stops/search. */
+  const stops=[];
+  const seen={};
+  const push=s=>{ const k=String(s.code); if(!k||seen[k]) return; seen[k]=1; stops.push(s); };
+  favs.forEach(f=>{ const live=(state.stops||[]).find(s=>String(s.code)===String(f.code))
+    ||state.favLive[String(f.code)]; if(live) push(live); });
+  (state.stops||[]).slice(0,CONFIG.listStops).forEach(push);
+  const empty=!stops.length;      // no nearby stops yet: open straight into search
   const wrap=document.createElement("div");
   wrap.innerHTML=`
     <div class="field"><label>${t("stop")}</label><select id="f-stop">
-      ${stops.map((s,i)=>`<option value="${i}">${esc(stopName(s))}</option>`).join("")}</select></div>
+      ${stops.map((s,i)=>`<option value="${i}">${isFav(s.code)?"★ ":""}${esc(stopName(s))}</option>`).join("")}
+      <option value="find"${empty?" selected":""}>${esc(t("findStop"))}</option></select>
+      <div id="f-find"${empty?"":" hidden"}>
+        <input id="f-q" type="search" placeholder="${esc(t("linePh"))}" autocomplete="off" />
+        <div class="res" id="f-qres"></div>
+      </div>
+      <div class="shint">${esc(t("alertHint"))}</div></div>
     <div class="field"><label>${t("line")}</label><select id="f-route"></select></div>
     <div class="field"><label>${t("days")}</label><div class="chips" id="f-days"></div></div>
     <div class="field two"><div><label>${t("from")}</label><input type="time" id="f-from" value="08:30"></div>
@@ -3245,17 +3278,88 @@ function renderForm(){
     c.className="chip"+(leads.has(L)?" on":""); c.textContent=L+"′";
     c.onclick=()=>{ leads.has(L)?leads.delete(L):leads.add(L); c.classList.toggle("on"); }; lb.appendChild(c); });
   const rs=wrap.querySelector("#f-route");
-  function fill(){ const s=stops[+wrap.querySelector("#f-stop").value];
+  const stopSel=wrap.querySelector("#f-stop");
+  const findBox=wrap.querySelector("#f-find");
+  const qIn=wrap.querySelector("#f-q");
+  const qRes=wrap.querySelector("#f-qres");
+
+  /* A stop reached by search has no routes yet — it never went through a
+     nearby sweep — so fetch them before the line dropdown can mean
+     anything. */
+  async function fill(){
+    const s=stops[+stopSel.value];
+    if(!s){ rs.innerHTML=`<option value="">—</option>`; return; }
+    if(!s.routesLoaded){
+      rs.innerHTML=`<option value="">${esc(t("searching"))}</option>`;
+      try{ await loadRoutes(s); }catch(_){}
+      if(stops[+stopSel.value]!==s) return;          // user moved on
+    }
     rs.innerHTML=(s.routes||[]).map(r=>{ const d=LANG==="en"?(r.en||r.el):(r.el||r.en);
-      return `<option value="${esc(r.code)}">${esc(r.id)} · ${esc(d||"")}</option>`; }).join("")||`<option value="">—</option>`; }
-  wrap.querySelector("#f-stop").onchange=fill; fill();
+      return `<option value="${esc(r.code)}">${esc(r.id)} · ${esc(d||"")}</option>`; }).join("")
+      ||`<option value="">—</option>`;
+  }
+
+  function addStop(s){
+    const i=stops.findIndex(x=>String(x.code)===String(s.code));
+    let idx=i;
+    if(i<0){
+      idx=stops.push(s)-1;
+      const o=document.createElement("option");
+      o.value=String(idx); o.textContent=stopName(s);
+      stopSel.insertBefore(o,stopSel.lastElementChild);
+    }
+    stopSel.value=String(idx);
+    findBox.hidden=true; qRes.innerHTML=""; qIn.value="";
+    fill();
+  }
+
+  let qTimer=null;
+  async function runFind(){
+    const q=qIn.value.trim();
+    if(q.length<2){ qRes.innerHTML=""; return; }
+    qRes.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
+    let hits=localStopMatches(q);
+    if(hasBackend()){
+      try{
+        const r=await fetch(`${base()}/stops/search?q=${encodeURIComponent(q)}`,{cache:"no-store"});
+        if(r.ok){
+          const j=await r.json();
+          const have={}; hits.forEach(x=>{ have[String(x.code)]=1; });
+          hits=hits.concat((Array.isArray(j.stops)?j.stops:[]).filter(x=>!have[String(x.code)]));
+        }
+      }catch(_){}
+    }
+    hits=hits.slice(0,8);
+    if(!hits.length){ qRes.innerHTML=`<div class="res-msg">${t("noStopHit")}</div>`; return; }
+    qRes.innerHTML="";
+    hits.forEach(raw=>{
+      const b=document.createElement("button");
+      b.className="res-item";
+      const d=isFinite(raw.dist)?fmtDist(raw.dist):"";
+      b.innerHTML=`<b>${esc(stopName(raw))}</b>${d?` <span class="res-d">${esc(d)}</span>`:""}`;
+      b.onclick=()=>addStop(adoptStop(raw));
+      qRes.appendChild(b);
+    });
+  }
+
+  stopSel.onchange=()=>{
+    if(stopSel.value==="find"){
+      findBox.hidden=false; qRes.innerHTML=""; setTimeout(()=>qIn.focus(),60);
+      return;
+    }
+    findBox.hidden=true; fill();
+  };
+  qIn.oninput=()=>{ clearTimeout(qTimer); qTimer=setTimeout(runFind,320); };
+  qIn.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(qTimer); runFind(); } };
+  fill();
   const save=document.createElement("button"); save.className="primary"; save.textContent=t("save");
   save.onclick=async()=>{
     save.disabled=true;
     try{
       const id=await ensurePush();
-      const s=stops[+wrap.querySelector("#f-stop").value];
-      const rc=wrap.querySelector("#f-route").value;
+      const s=stops[+stopSel.value];
+      const rc=rs.value;
+      if(!s||!rc) throw new Error("pick");
       const route=(s.routes||[]).find(r=>r.code===rc)||{};
       const rule={sub:id,stopCode:s.code,stopName:stopName(s),lineId:route.id||"",routeCodes:[rc],
         routeName:(LANG==="en"?(route.en||route.el):(route.el||route.en))||"",

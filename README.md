@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v33.**
+version: v34.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -147,6 +147,18 @@ that's merely nearby; stops already loaded around you match instantly with no re
 all. Picking one opens a **card in the centre of the screen** with its live arrivals in
 the same style as the list — long-press the stop's name there to pin it, and long-press
 an arrival row for the route preview.
+
+### Alerts (🔔) — any stop, not just nearby ones
+
+The stop picker in a new alert lists your **favourites** first, then nearby stops, then
+**⌕ Search another stop…** — which reaches any stop in Athens through `/stops/search`
+(the same geocode-then-rank path as the menu search). Pick one and its routes are
+fetched on demand, so the line/direction dropdown fills in for a stop you have never
+been near.
+
+That means setting a 08:35 alarm for your office stop no longer requires dragging the
+location pin across town first. With no nearby stops loaded at all, the form opens
+straight into search rather than dead-ending.
 
 ### Settings
 
@@ -398,12 +410,11 @@ doesn't discharge. What ships in this repo:
 | `TERMS.md` | No-warranty, liability limits, acceptable use, the fare rule, DSA notice-and-action |
 | `public/legal.html` | The in-app rendering of both, linked from ☰ → *Terms & privacy* and from About |
 
-**Before you publish, you must:**
+**Before you publish:**
 
-1. **Replace `CONTACT@EXAMPLE.COM`** in `PRIVACY.md`, `TERMS.md` and
-   `public/legal.html` with an address you actually monitor. It is your GDPR contact
-   and your DSA notice-and-action channel; a policy pointing at nothing is worse than
-   no policy.
+1. The contact address is **oasax@proton.me** (in `PRIVACY.md`, `TERMS.md` and
+   `public/legal.html`) — it is the GDPR contact and the DSA notice-and-action
+   channel, so the inbox needs to be monitored.
 2. Keep the **"unofficial · not affiliated with OASA / ΟΣΥ / ΣΤΑΣΥ"** banner visible —
    it is the first thing on the About screen, and it should be in your launch post too.
 3. **Don't add a free-text field, comments or photo upload to reports.** The fixed menu

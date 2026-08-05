@@ -2,10 +2,6 @@
 
 **Last updated: 4 August 2026**
 
-> ⚠️ **Before you publish:** replace `CONTACT@EXAMPLE.COM` here and in
-> `public/legal.html` with an address you monitor. It is your contact point and
-> notice-and-action channel under the DSA (Regulation 2022/2065).
->
 > Not legal advice. This mirrors the in-app text at `public/legal.html` — change
 > both together.
 
@@ -42,7 +38,7 @@ fines or appointments. Nothing here excludes liability that cannot lawfully be
 excluded, and your mandatory consumer rights are unaffected.
 
 **Reporting a problem.** To report an abusive or false report, or anything else,
-contact **CONTACT@EXAMPLE.COM**. This is our contact point and notice-and-action
+contact **oasax@proton.me**. This is our contact point and notice-and-action
 mechanism under Regulation 2022/2065 (DSA). Only the person who filed a report can
 remove it in the app.
 

@@ -65,7 +65,8 @@ The output should now mention the KV binding and the cron trigger.
 1. Open the app, tap the **🔔** button in the header.
 2. Tap **＋ New alert** → allow notifications when Chrome asks, and set up your
    rule:
-   - **Stop** — one of your current nearby stops
+   - **Stop** — a favourite, a nearby stop, or **⌕ Search another stop…**
+     for anywhere in Athens (no need to move your location pin)
    - **Line / direction** — e.g. `036 · ΠΛ. ΚΥΨΕΛΗΣ - ΠΑΝΟΡΜΟΥ`
    - **Days** — Mo–Fr are pre-selected
    - **From / To** — e.g. 08:30 to 08:50

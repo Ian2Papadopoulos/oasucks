@@ -112,7 +112,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v22"` to `v23` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v23"` to `v24` in `public/sw.js` and redeploy to force an update.
 
 ---
 
@@ -126,9 +126,9 @@ The same URL updates. On the phone, pull to refresh (or reopen) to pick up chang
 
 ## Before you publish it publicly
 
-1. **Set your contact address.** Replace `CONTACT@EXAMPLE.COM` in `PRIVACY.md`,
-   `TERMS.md` and `public/legal.html` — it is the GDPR contact and the DSA
-   notice-and-action channel, and it is linked from the app's ☰ menu.
+1. **Contact address:** `oasax@proton.me`, in `PRIVACY.md`, `TERMS.md` and
+   `public/legal.html`. It is the GDPR contact and the DSA notice-and-action
+   channel — make sure the inbox is actually monitored.
 2. **Pick your URL first, not later.** Push subscriptions and PWA installs are bound to
    the origin: change the URL after people install and their alerts go dead and their
    home-screen icon points at the old address. Renaming the worker in `wrangler.toml`
