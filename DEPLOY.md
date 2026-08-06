@@ -116,6 +116,22 @@ https://oasa-stop.<your-subdomain>.workers.dev
 
 ---
 
+## Branches
+
+`main` is what gets deployed. **`backup`** holds the previous release, and is
+force-updated to the outgoing version each time a new one lands on `main`, so
+there is always exactly one branch to fall back to:
+
+```bash
+git push -f origin <previous-release-sha>:refs/heads/backup
+```
+
+Reviving it is `git checkout backup && npx wrangler deploy` — bump `SHELL` in
+`public/sw.js` first, or phones will keep serving the shell they cached from the
+version you are rolling back from.
+
+---
+
 ## Updating later
 
 Change any file, then just:
