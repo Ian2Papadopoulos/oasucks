@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v35.**
+version: v36.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -31,7 +31,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `worker.js` | Cloudflare Worker — serves the app, proxies the OASA API, stores reports. |
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon-*.png` | PWA install + offline shell. |
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). |
-| `LICENSE`, `PRIVACY.md`, `TERMS.md` | MIT licence and the documents the hosted service runs under — see [Legal](#legal). |
+| `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
 
 ## The one thing you must understand
@@ -109,8 +109,29 @@ top and stays there across refreshes. A pinned stop that's out of range is still
 (its arrivals are fetched separately), which is the point: your home stop while you're
 at work, and it survives the hide-empty filter. On the **map** a pinned stop swaps its
 black dot for a yellow ★. Double-tap again to unpin; up to 6, kept in `localStorage`.
-**Long-press** is now only for previews — a line's route in the list, a stop's lines on
-the map.
+**Long-press** is only for previews, and only in the list: hold an arrival row and the
+line's route opens over a map. On the map itself nothing is bound to a hold.
+
+**Seeing a line on the map.** Tap a stop's pin and its popup lists every route calling
+there, as buttons: the lines it serves, and the arrivals due. Pick one and that route is
+drawn over the city, fitted to the whole line, with its destination labelled at the far
+end and a marker on the stop you picked it from. A bar along the bottom names what is
+drawn; tap the same line again, or ✕, to clear it and return the map to where it was.
+A line running both directions through the stop appears twice, each chip spelling out
+where it goes, so you pick a direction rather than being given one.
+
+This replaced a carousel: holding a pin used to parade every line serving it past on a
+3.2s timer. It answered a question nobody asks — you want the line you are waiting for,
+not all of them in turn — and it fetched every route's geometry to do it. Now nothing
+is fetched until a line is picked, and the picked route is cached for the rest of the
+session.
+
+**The route preview** (long-press an arrival row) opens a map of that line with your
+boarding stop as the origin. The stretch behind you stays flat grey; everything from
+your stop to the **terminus** carries the same live snake the map draws, and the view
+fits that whole stretch. It used to stop nine stops ahead, which made a bus to the far
+side of Athens look like a short hop. The next nine stops are still the ones numbered
+and listed underneath, since that is the part you actually count down.
 
 **Switching views:** the Λίστα / Χάρτης tabs, or **swipe left for the map, right for the
 list**. On the map the swipe has to start at the left edge, since Leaflet owns dragging
@@ -421,10 +442,29 @@ doesn't discharge. What ships in this repo:
 
 | File | What it is |
 |---|---|
-| `LICENSE` | MIT, for **the code only** — it does not license OASA's data, and it does not protect you as the *operator* of a running service |
+| `LICENSE` | AGPL-3.0, for **the code only** — it does not license OASA's data, and it does not protect you as the *operator* of a running service |
 | `PRIVACY.md` | GDPR Art. 13 notice: what's processed, legal basis, retention, recipients, rights |
 | `TERMS.md` | No-warranty, liability limits, acceptable use, the fare rule, DSA notice-and-action |
 | `public/legal.html` | The in-app rendering of both, linked from ☰ → *Terms & privacy* and from About |
+
+**The AGPL, and what it means for a hosted app.** The code is under
+[AGPL-3.0-or-later](LICENSE). The clause that matters here is **§13**: with a normal
+GPL, an obligation to hand over source is triggered by *distributing* the program, and
+nobody distributes a web app — users only talk to it over the network. §13 closes that
+gap. Anyone who runs a **modified** copy of this and lets other people use it over a
+network has to offer those users the source of *their* version. Running it unmodified,
+or hacking on a private copy nobody else uses, triggers nothing.
+
+In practice that means the app has to carry a route to its own source, so
+☰ → About links to the repository, and so does the footer of `legal.html`. If you fork
+this and deploy it, **repoint those two links at your fork** — a link to someone else's
+repository does not discharge §13 for your build. Everything else the licence asks for
+is already in place: `LICENSE` verbatim, SPDX headers on `worker.js`, `public/index.html`
+and `public/sw.js`, and `license` in `package.json`.
+
+The choice is deliberate. The permissive licence this started under would have let
+anyone take the work, close it, and ship it as their own; a transit app built by the
+people who ride the network should stay open to them.
 
 **Before you publish:**
 

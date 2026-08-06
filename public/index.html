@@ -1,4 +1,7 @@
 <!DOCTYPE html>
+<!-- OASUCKS · Copyright (C) 2026 OASUCKS contributors
+     SPDX-License-Identifier: AGPL-3.0-or-later
+     Source: https://github.com/Ian2Papadopoulos/oasucks -->
 <html lang="el">
 <head>
 <meta charset="utf-8" />
@@ -208,8 +211,12 @@
   .origin{width:15px;height:15px;border-radius:50%;background:var(--marker);border:2.5px solid var(--toner)}
   .board{width:17px;height:17px;border-radius:50%;background:var(--marker);border:2.5px solid var(--toner)}
   .nstop{width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid var(--toner)}
+  /* Its Leaflet icon is sized 0×0 so the anchor lands exactly on the last
+     point of the line; without an explicit width the label's background
+     collapses to nothing and the text spills out unpainted. */
   .endm{background:var(--toner);color:var(--paper);padding:2px 5px;font-size:10px;font-weight:700;
-    white-space:nowrap;letter-spacing:.06em;border-radius:2px}
+    white-space:nowrap;letter-spacing:.06em;border-radius:2px;width:max-content;max-width:160px;
+    overflow:hidden;text-overflow:ellipsis}
   .busm{width:19px;height:19px;background:var(--card);border:1.5px solid var(--toner);
     display:grid;place-items:center;font-size:10px;border-radius:2px}
   .flashline{animation:flash 1.15s ease-in-out infinite}
@@ -225,7 +232,10 @@
   .pp-name{font-weight:700;font-size:12.5px;line-height:1.3;letter-spacing:.02em}
   .pp-walk{color:var(--ink3);font-size:10.5px;margin:3px 0 7px;
     border-bottom:1px dashed var(--rule);padding-bottom:6px}
-  .pp-row{display:flex;align-items:center;gap:7px;padding:3px 0}
+  .pp-row{display:flex;align-items:center;gap:7px;padding:4px 3px;width:100%;
+    background:none;border:1px solid transparent;font-family:inherit;text-align:left;
+    cursor:pointer;border-radius:2px}
+  .pp-row.on,.pp-chip.on{border-color:var(--toner);background:var(--marker)}
   .pp-tile{min-width:36px;height:20px;padding:0 5px;background:var(--toner);color:var(--paper);
     font-weight:700;font-size:10.5px;display:grid;place-items:center;border-radius:2px}
   .pp-dest{flex:1;min-width:0;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;
@@ -238,7 +248,9 @@
     margin:9px 0 5px;padding-bottom:4px;border-bottom:1px dashed var(--rule)}
   .pp-lines{display:flex;flex-wrap:wrap;gap:3px}
   .pp-chip{border:1px solid var(--toner);color:var(--toner);font-size:10.5px;font-weight:700;
-    padding:1px 5px;border-radius:2px;line-height:1.6;letter-spacing:.03em}
+    padding:2px 6px;border-radius:2px;line-height:1.6;letter-spacing:.03em;
+    background:var(--card);font-family:inherit;cursor:pointer}
+  .pp-chip i{font-style:normal;font-weight:400;color:var(--ink3)}
 
   /* ----------------------------- stops --------------------------------- */
   .stop{background:var(--card);border:1px solid var(--rule);margin-top:10px;overflow:hidden;border-radius:2px}
@@ -477,20 +489,21 @@
   .rep-cta{width:100%;background:#C42B1C;color:#fff;border:none;padding:12px;font-weight:700;
     font-size:11.5px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;
     letter-spacing:.12em;border-radius:2px;margin-bottom:10px}
-  /* --------------------------- route cycling ---------------------------- */
-  .cyc{position:fixed;left:0;right:0;bottom:0;z-index:2800;display:none;
+  /* ------------------------ the drawn route bar -------------------------
+     One line at a time, chosen from a stop's popup. The bar exists to name
+     what is on the map and to get it off again. */
+  .rl{position:fixed;left:0;right:0;bottom:0;z-index:2800;display:none;
     padding:12px 14px calc(13px + env(safe-area-inset-bottom));
     background:var(--paper);border-top:2px solid var(--toner)}
-  .cyc.on{display:block}
-  .cycbox{max-width:520px;margin:0 auto;display:flex;align-items:center;gap:9px}
-  .cyc-tile{min-width:44px;height:32px;padding:0 7px;background:var(--toner);color:var(--paper);
+  .rl.on{display:block}
+  .rlbox{max-width:520px;margin:0 auto;display:flex;align-items:center;gap:9px}
+  .rl-tile{min-width:44px;height:32px;padding:0 7px;background:var(--toner);color:var(--paper);
     font-weight:700;font-size:12.5px;display:grid;place-items:center;flex:none;border-radius:2px}
-  .cyc-txt{flex:1;min-width:0}
-  .cyc-dest{font-size:11.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .cyc-dots{display:flex;gap:3px;margin-top:5px}
-  .cd{width:5px;height:5px;background:var(--rule)}
-  .cd.on{background:var(--toner)}
-  .cyc button{background:var(--card);border:1px solid var(--toner);color:var(--toner);
+  .rl-txt{flex:1;min-width:0}
+  .rl-dest{font-size:11.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rl-from{font-size:10px;color:var(--ink3);margin-top:3px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .rl button{background:var(--card);border:1px solid var(--toner);color:var(--toner);
     width:34px;height:34px;font-size:13px;cursor:pointer;flex:none;border-radius:2px}
 
   /* ------------------------ alerts / tracking --------------------------- */
@@ -598,7 +611,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v35</span></div>
+  <div class="foot"><span class="ver">v36</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -711,10 +724,10 @@
   <button class="setrow" id="set-tour"><span class="setlab" id="set-tour-t"></span></button>
 </div></div>
 
-<div class="cyc" id="cyc"><div class="cycbox">
-  <div class="cyc-tile" id="cyc-tile">—</div>
-  <div class="cyc-txt"><div class="cyc-dest" id="cyc-dest"></div><div class="cyc-dots" id="cyc-dots"></div></div>
-  <button id="cyc-prev">‹</button><button id="cyc-next">›</button><button id="cyc-x">✕</button>
+<div class="rl" id="rl"><div class="rlbox">
+  <div class="rl-tile" id="rl-tile">—</div>
+  <div class="rl-txt"><div class="rl-dest" id="rl-dest"></div><div class="rl-from" id="rl-from"></div></div>
+  <button id="rl-x">✕</button>
 </div></div>
 
 <script>
@@ -726,7 +739,7 @@ const CONFIG={proxyBase:"",refreshMs:30000,idleMs:45000,idleAfter:240000,sleepAf
   // fillVisibleArrivals). Arrivals are the expensive call, so listPool is the
   // number that governs cost per refresh.
   listStops:10,listPool:14,imminentMin:15,maxMarkers:120,maxRows:6,
-  walkSpeed:80,detour:1.35,onward:9,cycleMs:3200};
+  walkSpeed:80,detour:1.35,onward:9};
 const API="https://telematics.oasa.gr/api/";
 const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   u=>`https://corsproxy.io/?url=${encodeURIComponent(u)}`];
@@ -840,8 +853,8 @@ const T={
   tour2p:"Διπλό πάτημα σε μια στάση, στη λίστα ή στον χάρτη, για να την καρφιτσώσεις. Μένει πάντα "+
     "στην κορυφή, ακόμη κι αν είσαι αλλού. Διπλό πάτημα ξανά για αφαίρεση.",
   tour3h:"Λίστα και χάρτης",
-  tour3p:"Σύρε αριστερά για τον χάρτη, δεξιά για τη λίστα. Κράτα πατημένη μια γραμμή για να δεις "+
-    "τη διαδρομή της, ή μια στάση στον χάρτη για τις γραμμές που περνούν.",
+  tour3p:"Σύρε αριστερά για τον χάρτη, δεξιά για τη λίστα. Κράτα πατημένη μια γραμμή στη λίστα "+
+    "για να δεις τη διαδρομή της. Στον χάρτη, πάτα μια στάση και διάλεξε γραμμή για να σχεδιαστεί.",
   tour4h:"Ειδοποιήσεις",
   tour4p:"Βάλε ειδοποίηση για οποιαδήποτε στάση, όχι μόνο τις κοντινές: το καμπανάκι έχει "+
     "αναζήτηση για κάθε στάση της Αθήνας.",
@@ -860,7 +873,7 @@ const T={
   liveH:"Ζωντανά λεωφορεία", liveLoading:"Φόρτωση ζωντανών θέσεων…",
   liveCount:n=>`${n} λεωφορεία σε κίνηση`, liveNone:"Κανένα λεωφορείο σε κίνηση εδώ.",
   liveHint:"Δείχνει τα λεωφορεία των γραμμών γύρω από το κέντρο του χάρτη. Μετακίνησε τον χάρτη και πάτα ↻.",
-  aboutH:"Σχετικά",
+  aboutH:"Σχετικά", srcLink:"Πηγαίος κώδικας (AGPL v3)",
   aboutBody:`<p><b>OASUCKS</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
     γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
     <p><b>Ζωντανές αναφορές.</b> Μια κοινή εικόνα του τι συμβαίνει τώρα στο δίκτυο, από τους
@@ -892,7 +905,7 @@ const T={
   linesHere:"Γραμμές από εδώ", arrivingSoon:"Επόμενες αφίξεις", noLines:"Καμία γραμμή",
   wake:"Σε παύση. Πάτα για ανανέωση", stopFallback:"Στάση",radius:"Ακτίνα",stopsN:"στάσεις",
   freshNow:"μόλις τώρα", freshAgo:a=>`πριν ${a}`, secShort:"δ",
-  ppHint:"Κρατά πατημένο για διαδρομές",
+  ppHint:"Πάτα μια γραμμή για τη διαδρομή της", fromStop:n=>`από ${n}`,
   nextStops:"Επόμενες στάσεις",noRoute:"Δεν βρέθηκε διαδρομή",
   alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση, όχι μόνο τις κοντινές.",
   newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
@@ -950,8 +963,8 @@ const T={
   tour2p:"Double-tap a stop, in the list or on the map, to pin it. It stays at the top even when "+
     "you are somewhere else. Double-tap again to unpin.",
   tour3h:"List and map",
-  tour3p:"Swipe left for the map, right for the list. Long-press a line to preview its route, or "+
-    "a stop on the map to see which lines call there.",
+  tour3p:"Swipe left for the map, right for the list. Long-press a line in the list to preview "+
+    "its route. On the map, tap a stop and pick a line to draw it.",
   tour4h:"Alerts",
   tour4p:"Set an alert for any stop, not just nearby ones: the bell has a search for every stop "+
     "in Athens.",
@@ -970,7 +983,7 @@ const T={
   liveH:"Live buses", liveLoading:"Loading live positions…",
   liveCount:n=>`${n} buses running`, liveNone:"No buses running here.",
   liveHint:"Shows buses on the lines around the centre of the map. Pan the map and tap ↻.",
-  aboutH:"About",
+  aboutH:"About", srcLink:"Source code (AGPL v3)",
   aboutBody:`<p><b>OASUCKS</b> shows live bus and trolley arrivals for the stops around you,
     using the unofficial OASA telematics API.</p>
     <p><b>Live reports.</b> A shared picture of what's happening on the network right now, from
@@ -1002,7 +1015,7 @@ const T={
   linesHere:"Lines from here", arrivingSoon:"Arriving soon", noLines:"No lines listed",
   wake:"Paused. Tap to refresh", stopFallback:"Stop",radius:"Radius",stopsN:"stops",
   freshNow:"just now", freshAgo:a=>`${a} ago`, secShort:"s",
-  ppHint:"Long-press for routes",
+  ppHint:"Tap a line to draw its route", fromStop:n=>`from ${n}`,
   nextStops:"Next stops",noRoute:"No route data",
   alertsH:"Alerts",alertsP:"Get notified before your bus reaches any stop, not just the ones near you.",
   newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
@@ -1227,7 +1240,7 @@ function initSwipes(){
   window.addEventListener("touchstart",e=>{
     stop();
     if(e.touches.length!==1) return;
-    if(document.querySelector(".sheet-bg.on,.picker.on,.rp.on,.cyc.on")) return;
+    if(document.querySelector(".sheet-bg.on,.picker.on,.rp.on,.rl.on")) return;
     const t=e.touches[0];
     if(e.target.closest(NO_SWIPE)) return;                            // the control owns it
     if(e.target.closest("#mapwrap") && t.clientX>SWIPE.edge) return;  // let the map pan
@@ -1407,14 +1420,14 @@ const TILE_ATTR='&copy; OpenStreetMap &copy; CARTO';
 let map=null,layerStops=null,mapMarkers={},tileLayer=null;
 function tileUrl(){ return state.dark?TILE_DARK:TILE_LIGHT; }
 function meIcon(){ return L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[16,16],iconAnchor:[8,8]}); }
-/* A map pin answers to both gestures: double-tap pins it (the whole
-   marker, so the name label counts as well as the dot), long-press still
-   opens the line preview. Bound once per element — Leaflet recreates the
-   element on setIcon, hence the guard and the re-bind on redraw. */
+/* Double-tap a pin to favourite it — the whole marker, so the name label
+   counts as well as the dot. Nothing is bound to long-press here any more:
+   a single tap opens the popup, and the popup is where routes are chosen.
+   Bound once per element — Leaflet recreates the element on setIcon, hence
+   the guard and the re-bind on redraw. */
 function bindMarkerGestures(m,s){
   const el=m.getElement(); if(!el||el._g) return;
   el._g=1;
-  onLongPress(el,()=>startCycle(s));
   onDoubleTap(el,e=>{
     // keep the gesture off the map, or Leaflet's double-tap zoom fires too
     if(e&&e.stopPropagation) e.stopPropagation();
@@ -1440,12 +1453,28 @@ function ensureMap(){
   tileLayer=L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true,attribution:TILE_ATTR}).addTo(map);
   layerStops=L.layerGroup().addTo(map);
 }
+/* Every line in a popup is a button carrying its route code, because the
+   route code is what draws a line and the line number is what a rider
+   knows it by. A line running both directions through the same stop shows
+   up twice, so its destination is spelled out on the chip; otherwise the
+   number alone is enough. */
+function routeChips(s){
+  const rs=(s.routes||[]);
+  if(!rs.length) return "";
+  const n={}; rs.forEach(r=>{ n[r.id]=(n[r.id]||0)+1; });
+  const seen=new Set();
+  return rs.map(r=>{
+    if(seen.has(r.code)) return ""; seen.add(r.code);
+    const d=n[r.id]>1?destOf(LANG==="en"?(r.en||r.el):(r.el||r.en)):"";
+    return `<button type="button" class="pp-chip num${String(rline.code)===String(r.code)?" on":""}"
+      data-rc="${esc(String(r.code))}">${esc(String(r.id))}${d?` <i>▸ ${esc(d)}</i>`:""}</button>`;
+  }).join("");
+}
 function popupHtml(s){
   const w=walkMin(s.dist);
+  const chips=s.routesLoaded?routeChips(s):"";
   const lines = s.routesLoaded
-    ? (s.lines.length
-        ? `<div class="pp-lines">${s.lines.map(l=>`<span class="pp-chip num">${esc(l.id)}</span>`).join("")}</div>`
-        : `<div class="pp-empty">${t("noLines")}</div>`)
+    ? (chips ? `<div class="pp-lines">${chips}</div>` : `<div class="pp-empty">${t("noLines")}</div>`)
     : `<div class="pp-empty">${t("searching")}</div>`;
   // Only show an arrival once we know which line it belongs to, otherwise the
   // raw route code leaks into the UI as a meaningless 4-digit number.
@@ -1453,15 +1482,33 @@ function popupHtml(s){
     ? `<div class="pp-empty">${t("searching")}</div>`
     : (s.arrivals.length && s.routesLoaded
         ? s.arrivals.slice(0,5).map(a=>{ const now=a.min<=1;
-            return `<div class="pp-row"><span class="pp-tile num">${esc(String(arrLine(s,a.code)))}</span>
+            return `<button type="button" class="pp-row${String(rline.code)===String(a.code)?" on":""}"
+              data-rc="${esc(String(a.code))}"><span class="pp-tile num">${esc(String(arrLine(s,a.code)))}</span>
               <span class="pp-dest">${esc(arrDest(s,a.code))}</span>
-              <span class="pp-min">${now?t("now"):a.min+"′"}</span></div>`; }).join("")
+              <span class="pp-min">${now?t("now"):a.min+"′"}</span></button>`; }).join("")
         : `<div class="pp-empty">${t("nobus")}</div>`);
   return `<div class="pp-name">${esc(stopName(s))}</div>
     <div class="pp-walk">🚶 ${w?`~${w}′ ${t("walk")} · `:""}${fmtDist(s.dist)}</div>
     <div class="pp-sec">${t("linesHere")}</div>${lines}
     <div class="pp-sec">${t("arrivingSoon")}</div>${rows}
     <div class="pp-hint">${t("ppHint")}</div>`;
+}
+/* One delegated listener per popup rather than one per chip: Leaflet
+   rebuilds the popup's DOM whenever its content is set, and the content is
+   set on every refresh sweep. */
+function bindPopupPicks(m,s){
+  const el=m.getPopup&&m.getPopup(); const node=el&&el.getElement();
+  const box=node&&node.querySelector(".leaflet-popup-content");
+  if(!box||box._picks) return;
+  box._picks=1;
+  L.DomEvent.disableClickPropagation(box);
+  box.addEventListener("click",e=>{
+    const b=e.target.closest("[data-rc]"); if(!b) return;
+    const code=b.dataset.rc;
+    m.closePopup();
+    if(String(rline.code)===String(code)) return clearRoute(true);
+    drawRoute(s,code,(s.routeMap&&s.routeMap[code])||{});
+  });
 }
 /* What the map draws: the stops around you plus any pinned stop that the
    nearby sweep didn't return — a favourite should be findable on the map
@@ -1490,6 +1537,7 @@ function renderMap(){
       const m=L.marker([s.lat,s.lng],{icon:stopIcon(s)}).addTo(layerStops);
       m.bindPopup(()=>popupHtml(s));
       m.on("popupopen",()=>{
+        bindPopupPicks(m,s);
         const jobs=[];
         if(!s.routesLoaded) jobs.push(loadRoutes(s));
         if(!s.arrLoaded)    jobs.push(loadArrivals(s));
@@ -1505,14 +1553,14 @@ function renderMap(){
             state._mapCodes=null;   // force a rebuild with the pin gone
             updateRadiusLabel(); renderView(); return;
           }
-          if(m.isPopupOpen()) m.setPopupContent(popupHtml(s));
+          if(m.isPopupOpen()){ m.setPopupContent(popupHtml(s)); bindPopupPicks(m,s); }
         });
       });
       m.on("add",()=>bindMarkerGestures(m,s));
       bindMarkerGestures(m,s);
       s._drawn=s.lines.length; mapMarkers[s.code]=m; b.push([s.lat,s.lng]);
     });
-    if(!state.mapFitted&&!cyc.on&&b.length>1){ map.fitBounds(b,{padding:[50,50],maxZoom:16}); state.mapFitted=true; }
+    if(!state.mapFitted&&!rline.code&&b.length>1){ map.fitBounds(b,{padding:[50,50],maxZoom:16}); state.mapFitted=true; }
     state._mapCodes=codes;
   } else {
     drawn.forEach(s=>{
@@ -1522,7 +1570,7 @@ function renderMap(){
       if((s._drawn||0)!==s.lines.length||s._fav!==fav){
         m.setIcon(stopIcon(s)); s._drawn=s.lines.length; s._fav=fav;
         bindMarkerGestures(m,s); }
-      if(m.isPopupOpen&&m.isPopupOpen()) m.setPopupContent(popupHtml(s));
+      if(m.isPopupOpen&&m.isPopupOpen()){ m.setPopupContent(popupHtml(s)); bindPopupPicks(m,s); }
     });
   }
 }
@@ -1987,23 +2035,32 @@ async function openRoutePreview(stop,routeCode,minutes,meta){
     if(idx<0&&list.length) idx=nearestIdx(list.map(x=>[x.lat,x.lng]),[stop.lat,stop.lng]);
   }
   const onward = idx>=0 ? list.slice(idx,idx+CONFIG.onward+1) : [];
+  let ahead=[];                                  // the highlighted stretch, for the fit below
 
   // with a boarding stop: full route faint, the journey ahead bright.
   // without one: the whole line is the subject, so draw it all bright.
   if(pl.length){
     if(!stop){
       L.polyline(pl,{color:"#FFFFFF",weight:9,opacity:.95}).addTo(rlayer);
-      L.polyline(pl,{color:"#17171A",weight:4.5,opacity:1}).addTo(rlayer);
+      L.polyline(pl,{color:"#17171A",weight:4.5,className:"flashline"}).addTo(rlayer);
+      L.polyline(pl,{color:"#FFE24A",weight:2.5,opacity:1,className:"marchline"}).addTo(rlayer);
     } else {
-    L.polyline(pl,{color:"#B4B4AE",weight:3,opacity:.9}).addTo(rlayer);
-    if(onward.length>1){
-      const i0=nearestIdx(pl,[onward[0].lat,onward[0].lng]);
-      const i1=nearestIdx(pl,[onward[onward.length-1].lat,onward[onward.length-1].lng]);
-      if(i1>i0){
-        L.polyline(pl.slice(i0,i1+1),{color:"#FFFFFF",weight:9,opacity:.95}).addTo(rlayer);
-        L.polyline(pl.slice(i0,i1+1),{color:"#17171A",weight:4.5,opacity:1}).addTo(rlayer);
+      // The stretch behind you is context, so it stays flat grey. Everything
+      // from this stop to the terminus is the journey you are about to make,
+      // and gets the same live snake the map draws: white casing, pulsing
+      // dark core, dashes marching the way the bus goes.
+      L.polyline(pl,{color:"#B4B4AE",weight:3,opacity:.9}).addTo(rlayer);
+      const from=idx>=0?list[idx]:(isFinite(stop.lat)?stop:null);
+      const i0=from?nearestIdx(pl,[from.lat,from.lng]):-1;
+      ahead=i0>=0?pl.slice(i0):[];
+      if(ahead.length>1){
+        L.polyline(ahead,{color:"#FFFFFF",weight:9,opacity:.95}).addTo(rlayer);
+        L.polyline(ahead,{color:"#17171A",weight:4.5,className:"flashline"}).addTo(rlayer);
+        L.polyline(ahead,{color:"#FFE24A",weight:2.5,opacity:1,className:"marchline"}).addTo(rlayer);
+        L.marker(ahead[ahead.length-1],{icon:L.divIcon({className:"",
+          html:`<div class="endm">${esc(destOf(LANG==="en"?(info.en||info.el):(info.el||info.en))||"▸")}</div>`,
+          iconSize:[0,0],iconAnchor:[0,10]}),zIndexOffset:800}).addTo(rlayer);
       }
-    }
     }
   }
   // every stop on the route as a dot, so the plain stretches aren't blank
@@ -2036,7 +2093,10 @@ async function openRoutePreview(stop,routeCode,minutes,meta){
   // zoom: to the part of the journey that matters, or to the whole line
   const b=L.latLngBounds([]);
   if(stop){
-    onward.forEach(x=>b.extend([x.lat,x.lng]));
+    // fit the highlighted stretch, not just the next few stops: the snake now
+    // runs to the terminus, and a highlight that leaves the screen is worse
+    // than a slightly wider view.
+    (ahead.length?ahead:onward.map(x=>[x.lat,x.lng])).forEach(p=>b.extend(p));
     b.extend([here.lat,here.lng]);
     if(isFinite(stop.lat)) b.extend([stop.lat,stop.lng]);
     if(b.isValid()) rmap.fitBounds(b,{padding:[45,45],maxZoom:15});
@@ -2055,49 +2115,54 @@ async function openRoutePreview(stop,routeCode,minutes,meta){
 }
 function closeRP(){ $("#rp").classList.remove("on"); }
 
-/* ============= route cycling (long-press stop on map) ============== */
-const cyc={on:false,i:0,items:[],timer:null,layer:null,stop:null,saved:null};
-function cycIcons(){}
-async function startCycle(stop){
-  if(!stop.routesLoaded){ try{ await loadRoutes(stop); }catch(_){} }
-  const codes=[];
-  (stop.arrivals||[]).forEach(a=>{ if(a.code&&!codes.includes(a.code)) codes.push(a.code); });
-  (stop.routes||[]).forEach(r=>{ if(!codes.includes(r.code)) codes.push(r.code); });
-  if(!codes.length) return;
-  stopCycle(true);
-  cyc.items=codes.slice(0,8).map(c=>({code:c,info:stop.routeMap[c]||{}}));
-  cyc.stop=stop; cyc.i=0; cyc.on=true;
-  cyc.saved={c:map.getCenter(),z:map.getZoom()};
-  if(!cyc.layer) cyc.layer=L.layerGroup().addTo(map);
-  $("#cyc").classList.add("on");
-  showCycle();
-  cyc.timer=setInterval(()=>{ cyc.i=(cyc.i+1)%cyc.items.length; showCycle(); },CONFIG.cycleMs);
+/* ================ one route, drawn on the main map =================
+ * This used to be a carousel: long-press a stop and every line serving it
+ * paraded past on a timer. It looked busy and answered a question nobody
+ * had asked — you want ONE line, the one you are waiting for. So the
+ * choice moved into the stop's popup, where the lines are already listed,
+ * and nothing is drawn until you pick one.
+ *
+ * The drawing itself is unchanged: the same layered snake (white casing,
+ * pulsing dark core, marching yellow dashes), the same destination label
+ * at the far end, the same origin dot at the stop, the same fit to the
+ * whole line. Only the trigger is different.
+ *
+ * `seq` guards against a slow route arriving after you picked another. */
+const rline={code:null,seq:0,layer:null,saved:null,stop:null,cache:{}};
+async function drawRoute(stop,code,info){
+  if(!map||!code) return;
+  const me=++rline.seq;
+  if(!rline.saved) rline.saved={c:map.getCenter(),z:map.getZoom()};
+  if(!rline.layer) rline.layer=L.layerGroup().addTo(map);
+  rline.code=String(code); rline.stop=stop;
+
+  const label=destOf(LANG==="en"?(info.en||info.el):(info.el||info.en))||"";
+  $("#rl-tile").textContent=info.line||code;
+  $("#rl-dest").textContent=label;
+  $("#rl-from").textContent=stop?t("fromStop")(stopName(stop)):"";
+  $("#rl").classList.add("on");
+
+  let pl=rline.cache[code];
+  if(!pl){ pl=polyOf(await oasa("webRouteDetails",code).catch(()=>null)); rline.cache[code]=pl; }
+  if(rline.seq!==me) return;                 // a newer pick won the race
+
+  rline.layer.clearLayers();
+  if(!pl.length){ $("#rl-dest").textContent=t("noRoute"); return; }
+  L.polyline(pl,{color:"#FFFFFF",weight:9,opacity:.95}).addTo(rline.layer);
+  L.polyline(pl,{color:"#17171A",weight:4.5,className:"flashline"}).addTo(rline.layer);
+  L.polyline(pl,{color:"#FFE24A",weight:2.5,opacity:1,className:"marchline"}).addTo(rline.layer);
+  L.marker(pl[pl.length-1],{icon:L.divIcon({className:"",html:`<div class="endm">${esc(label||"▸")}</div>`,
+    iconSize:[0,0],iconAnchor:[0,10]}),zIndexOffset:800}).addTo(rline.layer);
+  if(stop&&isFinite(stop.lat)) L.marker([stop.lat,stop.lng],{icon:L.divIcon({className:"",
+    html:'<div class="origin"></div>',iconSize:[18,18],iconAnchor:[9,9]}),zIndexOffset:900}).addTo(rline.layer);
+  map.fitBounds(L.latLngBounds(pl),{padding:[42,42]});
 }
-async function showCycle(){
-  const it=cyc.items[cyc.i]; if(!it||!cyc.on) return;
-  $("#cyc-tile").textContent=it.info.line||it.code;
-  $("#cyc-dest").textContent=destOf(LANG==="en"?(it.info.en||it.info.el):(it.info.el||it.info.en))||"";
-  $("#cyc-dots").innerHTML=cyc.items.map((_,i)=>`<span class="cd${i===cyc.i?" on":""}"></span>`).join("");
-  if(!it.pl){ it.pl=polyOf(await oasa("webRouteDetails",it.code).catch(()=>null)); }
-  if(!cyc.on||cyc.items[cyc.i]!==it) return;
-  cyc.layer.clearLayers();
-  if(!it.pl.length) return;
-  L.polyline(it.pl,{color:"#FFFFFF",weight:9,opacity:.95}).addTo(cyc.layer);
-  L.polyline(it.pl,{color:"#17171A",weight:4.5,className:"flashline"}).addTo(cyc.layer);
-  L.polyline(it.pl,{color:"#FFE24A",weight:2.5,opacity:1,className:"marchline"}).addTo(cyc.layer);
-  const end=it.pl[it.pl.length-1];
-  const label=destOf(LANG==="en"?(it.info.en||it.info.el):(it.info.el||it.info.en))||"";
-  L.marker(end,{icon:L.divIcon({className:"",html:`<div class="endm">${esc(label||"▸")}</div>`,
-    iconSize:[0,0],iconAnchor:[0,10]}),zIndexOffset:800}).addTo(cyc.layer);
-  if(isFinite(cyc.stop.lat)) L.marker([cyc.stop.lat,cyc.stop.lng],{icon:L.divIcon({className:"",
-    html:'<div class="origin"></div>',iconSize:[18,18],iconAnchor:[9,9]}),zIndexOffset:900}).addTo(cyc.layer);
-  map.fitBounds(L.latLngBounds(it.pl),{padding:[42,42]});
-}
-function stopCycle(quiet){
-  cyc.on=false; clearInterval(cyc.timer); cyc.timer=null;
-  if(cyc.layer) cyc.layer.clearLayers();
-  $("#cyc").classList.remove("on");
-  if(!quiet&&cyc.saved&&map){ map.setView(cyc.saved.c,cyc.saved.z); }
+function clearRoute(restore){
+  rline.seq++; rline.code=null; rline.stop=null;
+  if(rline.layer) rline.layer.clearLayers();
+  $("#rl").classList.remove("on");
+  if(restore&&rline.saved&&map) map.setView(rline.saved.c,rline.saved.z);
+  rline.saved=null;
 }
 
 
@@ -3258,7 +3323,8 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v35</p></div>`;
+    <p><a href="https://github.com/Ian2Papadopoulos/oasucks" target="_blank" rel="noopener">${esc(t("srcLink"))}</a></p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v36</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -3651,13 +3717,7 @@ $("#rep-x").onclick=closeReports;
 $("#wake").onclick=wake;
 $("#statbg").onclick=e=>{ if(e.target.id==="statbg") closeStats(); };
 $("#rp-x").onclick=closeRP;
-$("#cyc-x").onclick=()=>stopCycle(false);
-$("#cyc-prev").onclick=()=>{ cyc.i=(cyc.i-1+cyc.items.length)%cyc.items.length;
-  clearInterval(cyc.timer); cyc.timer=setInterval(()=>{ cyc.i=(cyc.i+1)%cyc.items.length; showCycle(); },CONFIG.cycleMs);
-  showCycle(); };
-$("#cyc-next").onclick=()=>{ cyc.i=(cyc.i+1)%cyc.items.length;
-  clearInterval(cyc.timer); cyc.timer=setInterval(()=>{ cyc.i=(cyc.i+1)%cyc.items.length; showCycle(); },CONFIG.cycleMs);
-  showCycle(); };
+$("#rl-x").onclick=()=>clearRoute(true);
 $$("#seg button").forEach(b=>b.onclick=()=>setView(b.dataset.v));
 
 $("#basemap").onclick=()=>{

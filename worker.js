@@ -1,5 +1,13 @@
 /**
  * OASUCKS — Cloudflare Worker backend
+ * Copyright (C) 2026 OASUCKS contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version. It is distributed WITHOUT ANY WARRANTY;
+ * see the LICENSE file, or <https://www.gnu.org/licenses/>.
  * ------------------------------------------------------------------
  *  GET  /api?act=...            → OASA telematics proxy (CORS, 8s timeout, retry)
  *  GET  /geocode?q=...          → address search; accepts greeklish ("filotimou")
@@ -29,7 +37,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v35";
+const APP_VERSION = "v36";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";

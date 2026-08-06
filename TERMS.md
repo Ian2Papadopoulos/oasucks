@@ -42,7 +42,9 @@ contact **oasax@proton.me**. This is our contact point and notice-and-action
 mechanism under Regulation 2022/2065 (DSA). Only the person who filed a report can
 remove it in the app.
 
-**Licence.** The source code is published under the MIT licence (see `LICENSE`).
+**Licence.** The source code is published under the GNU Affero General Public License v3
+(see `LICENSE`). Because the AGPL covers use over a network, anyone running a modified
+copy as a service must offer its users that copy's source; ours is at https://github.com/Ian2Papadopoulos/oasucks.
 That covers the code only; it does not license OASA's data. By filing a report you
 allow us to display it while active and to keep an anonymous, coordinate-free
 record for up to 90 days.

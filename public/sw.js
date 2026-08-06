@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 /* Service worker (v6)
  *
  * Caching rule is an ALLOWLIST, not a blacklist. Previously any path that
@@ -7,7 +8,7 @@
  * anything with a query string, anything cross-origin) goes to the network
  * every time. New endpoints are safe by default.
  */
-const SHELL = "stop-shell-v24";
+const SHELL = "stop-shell-v25";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest",
   "./vendor/leaflet-1.9.4.min.css", "./vendor/leaflet-1.9.4.min.js"];
 // self-hosted, version-pinned vendor .js is now cacheable too (the app's

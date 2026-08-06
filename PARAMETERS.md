@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v35 defaults** — if you edit the
+breaks if you change it. Values here are the **v36 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -239,6 +239,16 @@ your privacy policy becomes false.
 |---|---|---|
 | `ms` | **320 ms** | Longest gap between the two taps. |
 | `slop` | **24 px** | How far apart the two taps may land and still count. |
+
+### The route preview and the drawn route
+
+| Parameter | Default | Where | What it means |
+|---|---|---|---|
+| `CONFIG.onward` | **9** | route preview | How many stops ahead of your boarding stop get numbered markers and a row in the strip underneath. It no longer limits the **highlight**, which always runs to the terminus; raise it and the map gets busier, not longer. |
+
+Only one route is ever drawn on the main map. Its geometry is cached per route
+code for the session (`rline.cache`), so re-picking a line you have already looked
+at costs nothing.
 
 ### Timings not in a constant
 

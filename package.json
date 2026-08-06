@@ -2,6 +2,7 @@
   "name": "oasa-stop",
   "version": "1.0.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "description": "Live OASA arrivals — Cloudflare Worker serving the app + API proxy.",
   "scripts": {
     "dev": "wrangler dev",
