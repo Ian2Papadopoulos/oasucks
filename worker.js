@@ -37,7 +37,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v36";
+const APP_VERSION = "v37";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1072,13 +1072,12 @@ async function handleNearby(url, env, ctx) {
 }
 
 /* ====================== user reports (KV) ========================= *
- * Community flags: "ticket inspector" (red) or a service issue
- * (yellow) attached to a specific bus, stop, or metro station.
+ * Community flags attached to a specific bus or metro station. The types
+ * and their categories are defined just below; how long each one lives is
+ * the TTL table further down, since a broken lift outlasts a member of
+ * staff who has moved on.
  *
- * Rules, straight from the spec:
- *   - inspector (red) on a bus or stop      → expires after 15 min
- *   - inspector (red) on a metro station    → expires after 2 h
- *   - anything else (yellow), any target    → expires after 60 min
+ * Rules:
  *   - re-reporting the same target+type renews the flag
  *   - a report can be withdrawn ONLY by the reporter who filed it
  *     (or it simply expires). Reporter ids ("by") are random

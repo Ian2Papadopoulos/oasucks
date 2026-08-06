@@ -21,7 +21,7 @@ situations on a line or at a station. We do not check them. A report count means
 several people said the same thing, not that it is true. The absence of a report
 means nothing.
 
-**Not a fare-evasion tool. Always carry a valid ticket.**
+**Always carry a valid ticket.**
 
 **You must not** file reports you know to be untrue; automate reporting or use
 multiple identities; use the service to identify, follow or target any individual;
@@ -42,9 +42,9 @@ contact **oasax@proton.me**. This is our contact point and notice-and-action
 mechanism under Regulation 2022/2065 (DSA). Only the person who filed a report can
 remove it in the app.
 
-**Licence.** The source code is published under the GNU Affero General Public License v3
-(see `LICENSE`). Because the AGPL covers use over a network, anyone running a modified
-copy as a service must offer its users that copy's source; ours is at https://github.com/Ian2Papadopoulos/oasucks.
+**Licence.** The source code is licensed under the GNU Affero General Public License v3
+(see `LICENSE`). The complete corresponding source of the version running here is free
+on request: oasax@proton.me.
 That covers the code only; it does not license OASA's data. By filing a report you
 allow us to display it while active and to keep an anonymous, coordinate-free
 record for up to 90 days.

@@ -29,7 +29,7 @@ You should see something like `v20.x` or `v22.x`.
 Clone the repo (needs Git — https://git-scm.com — or use GitHub Desktop / "Download ZIP"
 from the repo page):
 ```powershell
-git clone https://github.com/Ian2Papadopoulos/oasucks.git
+git clone <your-repo-url> oasucks
 cd oasucks
 ```
 
@@ -112,7 +112,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v25"` to `v26` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v26"` to `v27` in `public/sw.js` and redeploy to force an update.
 
 ---
 

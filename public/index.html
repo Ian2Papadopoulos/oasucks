@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <!-- OASUCKS · Copyright (C) 2026 OASUCKS contributors
      SPDX-License-Identifier: AGPL-3.0-or-later
-     Source: https://github.com/Ian2Papadopoulos/oasucks -->
+     Complete source available on request: oasax@proton.me -->
 <html lang="el">
 <head>
 <meta charset="utf-8" />
@@ -169,6 +169,11 @@
   .hint{color:var(--ink3);font-size:10.5px;margin-top:9px;text-align:center;line-height:1.5}
   /* swipe transitions between list and map — unhurried enough to read as
      a page turn rather than a flicker */
+  /* laid out so Leaflet can measure and position itself, but off the screen
+     and out of the list's flow — see warmMap() */
+  .prewarm{position:absolute!important;top:0;left:0;width:100%;visibility:hidden;
+    pointer-events:none;z-index:-1}
+  .slide-l,.slide-r{will-change:transform,opacity;backface-visibility:hidden}
   .slide-l{animation:slideL .3s cubic-bezier(.22,.61,.36,1)}
   .slide-r{animation:slideR .3s cubic-bezier(.22,.61,.36,1)}
   @keyframes slideL{from{transform:translateX(26px);opacity:.25}to{transform:none;opacity:1}}
@@ -611,7 +616,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v36</span></div>
+  <div class="foot"><span class="ver">v37</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -808,7 +813,7 @@ async function withLimit(tasks,n){
 let LANG="el";
 try{ const v=localStorage.getItem("lang"); if(v==="el"||v==="en") LANG=v; }catch(_){}
 const T={
- el:{title:"Στάση",sub:"ΖΩΝΤΑΝΕΣ ΑΦΙΞΕΙΣ · OASA",change:"Αλλαγή",nobus:"Καμία άφιξη τα επόμενα λεπτά",
+ el:{change:"Αλλαγή",nobus:"Καμία άφιξη τα επόμενα λεπτά",
   now:"τώρα",min:"λεπτά",to:"προς",err:"Δεν φορτώθηκαν δεδομένα.",retry:"Δοκίμασε ξανά",
   locating:"Εντοπισμός τοποθεσίας…",denied:"Δεν δόθηκε πρόσβαση στην τοποθεσία.",sheetH:"Τοποθεσία",
   sheetP:"Ψάξε διεύθυνση, διάλεξε στον χάρτη, ή χρησιμοποίησε το GPS σου.",gps:"Χρήση της τοποθεσίας μου",
@@ -836,8 +841,7 @@ const T={
   nReports:n=>n===1?"1 αναφορά":`${n} αναφορές`,
   /* first-report notice + legal */
   firstH:"Πριν στείλεις την πρώτη σου αναφορά",
-  firstP:"Οι αναφορές είναι δημόσιες αλλα τελειως ανώνυμες. Η εφαρμογή δεν είναι εργαλείο "+
-    "αποφυγής κομίστρου, έχετε πάντα έγκυρο εισιτήριο.",
+  firstP:"Οι αναφορές είναι δημόσιες αλλά τελείως ανώνυμες.",
   agree:"Κατάλαβα",
   unofficial:"Ανεπίσημη εφαρμογή· δεν σχετίζεται με ΟΑΣΑ / ΟΣΥ / ΣΤΑΣΥ.",
   mLegal:"Όροι & απόρρητο", legalH:"Όροι & απόρρητο",
@@ -873,7 +877,7 @@ const T={
   liveH:"Ζωντανά λεωφορεία", liveLoading:"Φόρτωση ζωντανών θέσεων…",
   liveCount:n=>`${n} λεωφορεία σε κίνηση`, liveNone:"Κανένα λεωφορείο σε κίνηση εδώ.",
   liveHint:"Δείχνει τα λεωφορεία των γραμμών γύρω από το κέντρο του χάρτη. Μετακίνησε τον χάρτη και πάτα ↻.",
-  aboutH:"Σχετικά", srcLink:"Πηγαίος κώδικας (AGPL v3)",
+  aboutH:"Σχετικά", srcLink:"Πηγαίος κώδικας (AGPL v3): διατίθεται κατόπιν αιτήματος",
   aboutBody:`<p><b>OASUCKS</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
     γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
     <p><b>Ζωντανές αναφορές.</b> Μια κοινή εικόνα του τι συμβαίνει τώρα στο δίκτυο, από τους
@@ -918,7 +922,7 @@ const T={
   pushOff:"Οι ειδοποιήσεις δεν έχουν ρυθμιστεί στον server.",
   pushDenied:"Οι ειδοποιήσεις είναι μπλοκαρισμένες στον browser.",
   dayNames:["Κυ","Δε","Τρ","Τε","Πε","Πα","Σα"]},
- en:{title:"Stop",sub:"LIVE ARRIVALS · OASA",change:"Change",nobus:"No arrivals in the next few minutes",
+ en:{change:"Change",nobus:"No arrivals in the next few minutes",
   now:"now",min:"min",to:"to",err:"Couldn't load data.",retry:"Try again",
   locating:"Getting your location…",denied:"Location access was blocked.",sheetH:"Location",
   sheetP:"Search an address, pick on the map, or use your GPS.",gps:"Use my location",
@@ -946,8 +950,7 @@ const T={
   nReports:n=>n===1?"1 report":`${n} reports`,
   /* first-report notice + legal */
   firstH:"Before your first report",
-  firstP:"Reports are public but completely anonymous. This app is not a fare-evasion tool, "+
-    "always carry a valid ticket.",
+  firstP:"Reports are public but completely anonymous.",
   agree:"Got it",
   unofficial:"Unofficial app; not affiliated with OASA / OSY / STASY.",
   mLegal:"Terms & privacy", legalH:"Terms & privacy",
@@ -983,7 +986,7 @@ const T={
   liveH:"Live buses", liveLoading:"Loading live positions…",
   liveCount:n=>`${n} buses running`, liveNone:"No buses running here.",
   liveHint:"Shows buses on the lines around the centre of the map. Pan the map and tap ↻.",
-  aboutH:"About", srcLink:"Source code (AGPL v3)",
+  aboutH:"About", srcLink:"Source code (AGPL v3): free on request",
   aboutBody:`<p><b>OASUCKS</b> shows live bus and trolley arrivals for the stops around you,
     using the unofficial OASA telematics API.</p>
     <p><b>Live reports.</b> A shared picture of what's happening on the network right now, from
@@ -1177,7 +1180,43 @@ function updateRadiusLabel(){
   $("#rcount").textContent = `${state.stops.length} ${t("stopsN")}`;
 }
 
-/* ----------------------------- views ------------------------------- */
+/* ----------------------------- views -------------------------------
+ * The slide used to start only after the incoming view had been rendered.
+ * Going to the list that costs nothing, but the first trip to the map
+ * built the whole Leaflet instance first: on a mid-range phone that is
+ * ~150 ms of blocked main thread between lifting your thumb and anything
+ * moving, which reads as the animation lagging in one direction only.
+ *
+ * So `warmMap` builds it in idle time while the list is still on screen,
+ * and the switch itself takes whichever order suits what it finds:
+ *
+ *   warm  - start the slide immediately, render on the next frame, so the
+ *           tab moves on the same frame as the gesture
+ *   cold  - build first, then slide. Starting a beat late is better than
+ *           stalling halfway through the motion, which is what deferring
+ *           150 ms of work into the animation actually looks like.
+ *
+ * In practice the cold branch is only reachable if you swipe within a
+ * second of the app opening. */
+let warmed=false;
+function warmMap(){
+  if(warmed||map) return; warmed=true;
+  const go=()=>{
+    if(map) return;                 // a switch got there first
+    /* Build it while it is laid out but invisible. A display:none container
+       has no size, so Leaflet would defer every tile and marker position to
+       the moment you first swipe to it — which is the reveal that costs
+       ~60 ms. Absolute + visibility:hidden keeps the list's own layout
+       untouched and nothing appears on screen. */
+    const w=$("#mapwrap"), hidden=w.style.display;
+    try{
+      w.style.display=""; w.classList.add("prewarm");
+      ensureMap(); renderMap();
+    }catch(_){ warmed=false; }
+    finally{ w.classList.remove("prewarm"); w.style.display=hidden; }
+  };
+  if(window.requestIdleCallback) requestIdleCallback(go,{timeout:600}); else setTimeout(go,300);
+}
 function setView(v,dir){
   if(state.view===v) return;
   state.view=v;
@@ -1190,13 +1229,20 @@ function setView(v,dir){
   // the top on every switch — the map has nothing to scroll anyway, and a
   // fresh list read always starts from its first stop.
   window.scrollTo(0,0);
-  renderView();
+  const el=v==="map"?$("#mapwrap"):$("#list");
+  const cold=v==="map"&&!map;
+  if(cold) renderView();         // settle the layout, then animate it
   if(dir){                       // slide the incoming view in, swipe-style
-    const el=v==="map"?$("#mapwrap"):$("#list");
     el.classList.remove("slide-l","slide-r");
+    // Forces the pending layout to flush now rather than during the slide.
+    // Cancelling the running animations instead avoids this reflow, but then
+    // the layout lands mid-animation and stalls it far worse: measured 158 ms
+    // on a frame, against 47 ms of settling before the motion starts.
     void el.offsetWidth;         // restart the animation
     el.classList.add(dir<0?"slide-l":"slide-r");
-  }
+    el.addEventListener("animationend",()=>el.classList.remove("slide-l","slide-r"),{once:true});
+    if(!cold) requestAnimationFrame(renderView);
+  } else if(!cold) renderView();
 }
 
 /* ---------------------------- swipes -------------------------------
@@ -1522,9 +1568,20 @@ function mapStops(){
   });
   return out;
 }
+/* Leaflet caches the container size, and the map is display:none whenever
+   the list is up, so it has to be re-measured on the way back. Only when it
+   actually changed, though: renderMap runs on every refresh sweep, and an
+   unconditional resize means a forced reflow and a tile repass thirty
+   seconds apart for no reason — and, worse, in the middle of a slide. */
+function sizeMap(){
+  const el=document.getElementById("map"); if(!el) return;
+  const w=el.clientWidth,h=el.clientHeight;
+  if(!w||!h||(map._oaW===w&&map._oaH===h)) return;
+  map._oaW=w; map._oaH=h; map.invalidateSize({animate:false});
+}
 function renderMap(){
   ensureMap();
-  setTimeout(()=>map.invalidateSize(),0);
+  sizeMap();
   const drawn=mapStops();
   // the key includes which stops are pinned, so pinning rebuilds the pins
   const codes=drawn.map(s=>s.code).join(",")+"|"+favs.map(f=>f.code).join(",");
@@ -1770,6 +1827,7 @@ async function loadStopsBatch(){
   state._mapCodes=null;
   markLoaded();
   updateRadiusLabel(); renderView();
+  warmMap();
   loadFarFavs();
   fillVisibleArrivals();
 }
@@ -1821,6 +1879,7 @@ async function loadStopsLegacy(){
     state.stops=stops; state._mapCodes=null;
     markLoaded();
     updateRadiusLabel(); renderView();
+    warmMap();
 
     await withLimit(state.stops.filter(s=>!s.routesLoaded).map(s=>()=>loadRoutes(s)),6);
     renderView();
@@ -3323,8 +3382,8 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p><a href="https://github.com/Ian2Papadopoulos/oasucks" target="_blank" rel="noopener">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v36</p></div>`;
+    <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v37</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

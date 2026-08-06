@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v36.**
+version: v37.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -134,7 +134,13 @@ side of Athens look like a short hop. The next nine stops are still the ones num
 and listed underneath, since that is the part you actually count down.
 
 **Switching views:** the Λίστα / Χάρτης tabs, or **swipe left for the map, right for the
-list**. On the map the swipe has to start at the left edge, since Leaflet owns dragging
+list**. The slide starts on the same frame as the gesture and the incoming tab renders on
+the next one, so the motion is never waiting on work. The first trip to the map is the
+expensive one, since Leaflet has to be built, so `warmMap` builds it in idle time while
+the list is still on screen, laid out but invisible. On a phone-class CPU that took the
+blocked time before anything moved from **145 ms down to 36 ms**, and the periodic forced
+resize (once per refresh sweep, thirty seconds apart, for a size that had not changed) is
+gone. On the map the swipe has to start at the left edge, since Leaflet owns dragging
 everywhere else; swipes are ignored while a sheet or full-screen panel is open.
 
 **Stops with no lines** (decommissioned, seasonal) are dropped when discovered: the app
@@ -455,12 +461,18 @@ gap. Anyone who runs a **modified** copy of this and lets other people use it ov
 network has to offer those users the source of *their* version. Running it unmodified,
 or hacking on a private copy nobody else uses, triggers nothing.
 
-In practice that means the app has to carry a route to its own source, so
-☰ → About links to the repository, and so does the footer of `legal.html`. If you fork
-this and deploy it, **repoint those two links at your fork** — a link to someone else's
-repository does not discharge §13 for your build. Everything else the licence asks for
-is already in place: `LICENSE` verbatim, SPDX headers on `worker.js`, `public/index.html`
-and `public/sw.js`, and `license` in `package.json`.
+In practice that means the app has to carry a route to its own source. It does that by
+**written offer**: ☰ → About and the footer of `legal.html` both say the source is free
+on request and give the contact address. That is an offer, not a link, so it only holds
+up if it is honoured — **send the source to anyone who asks, promptly and at no charge**.
+If you would rather not field those mails, publish the repository and turn both lines
+into links to it; that discharges §13 without anyone having to write to you. Either way,
+if you fork and deploy, point them at *your* build: someone else's source does not
+discharge §13 for yours.
+
+The rest of what the licence asks for is already in place: `LICENSE` verbatim, SPDX
+headers on `worker.js`, `public/index.html` and `public/sw.js`, and `license` in
+`package.json`.
 
 The choice is deliberate. The permissive licence this started under would have let
 anyone take the work, close it, and ship it as their own; a transit app built by the

@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v36 defaults** — if you edit the
+breaks if you change it. Values here are the **v37 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -254,7 +254,7 @@ at costs nothing.
 
 | Parameter | Default | What it means |
 |---|---|---|
-| `.slide-l/.slide-r` | **0.3 s** | Tab transition duration (CSS). |
+| `.slide-l/.slide-r` | **0.3 s** | Tab transition duration (CSS). Changing it changes only how long the motion takes; how *smooth* it is depends on whether the incoming tab still has work to do, which is what `warmMap` exists to prevent. |
 | `onLongPress` | **430 ms** | Hold before a preview opens. Previews only; pinning is double-tap. |
 
 `public/index.html` → `REPMAP`
