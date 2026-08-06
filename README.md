@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v34.**
+version: v35.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -92,8 +92,9 @@ JSON to host at `/.well-known/assetlinks.json`.
    out to `getClosestStops`, `webRoutesForStop` and `getStopArrivals` at the edge and
    returns stops + line names + live arrivals in a single response, so a row reads
    **608 · to Voula · 4 min** instead of a raw route code.
-2. Auto-refreshes every 30s (the thin progress bar up top is the countdown), pulling
-   fresh arrivals *and* the current report flags together.
+2. Auto-refreshes every 30s, pulling fresh arrivals *and* the current report flags
+   together. There is no countdown bar; the location line carries a quiet **"just now"
+   / "40s ago"** stamp instead, which turns red once the data is over 150s old.
 
 **Row order:** favourites first, then stops that actually have a bus coming (within
 15 minutes) by distance, then the rest by distance. The nearest shelter is useless if
@@ -145,8 +146,8 @@ geocodes the query (Nominatim — the path the address search already uses) and 
 the stops around that place, ranked so a stop actually *named* like the query beats one
 that's merely nearby; stops already loaded around you match instantly with no request at
 all. Picking one opens a **card in the centre of the screen** with its live arrivals in
-the same style as the list — long-press the stop's name there to pin it, and long-press
-an arrival row for the route preview.
+the same style as the list. Double-tap the stop's name there to pin it; long-press an
+arrival row for the route preview.
 
 ### Alerts (🔔) — any stop, not just nearby ones
 
@@ -162,13 +163,28 @@ straight into search rather than dead-ending.
 
 ### Settings
 
-Language (ΕΛ / EN) and one display preference:
+Language (ΕΛ / EN), a replay of the guide, and one display preference:
+
+**How it works** reopens the four-card onboarding described below.
 
 **Hide stops with no arrivals** — off by default. On, a stop with nothing due in the
 next `imminentMin` (15 min) is left out of the list entirely rather than demoted to the
 bottom, however close it is. Favourites are exempt — pinning one is an explicit "always
 show me this". The filter demands a *known* arrival, so stops the server hasn't detailed
 never sneak in only to drop out a moment later. Kept in `localStorage` under `hideEmpty`.
+
+## First run — the guide
+
+The gestures that matter here are not discoverable, so on a fresh install four floating
+cards appear once the stops behind them have painted (700ms after load, so the app is
+never explained against an empty screen). They cover live reports, double-tap to
+favourite, swiping between list and map, and setting an alert for a stop you are
+nowhere near. **Skip** or **Next → Start**; either way it is remembered in
+`localStorage.tourSeen` and never shows again on its own. Settings → **How it works**
+replays it from card one.
+
+This replaced the permanent hint line under the list, which said one thing forever and
+was the first sentence people stopped reading.
 
 ### Live buses — retired from the menu
 

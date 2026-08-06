@@ -37,17 +37,22 @@
   body{font:400 14.5px/1.45 var(--mono);
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     -webkit-font-smoothing:antialiased;overscroll-behavior-y:contain}
-  /* toner grain — the photocopy tell */
+  /* Toner grain, the photocopy tell. Rendered as one 90px tile and
+     repeated: the old version ran feTurbulence across the whole viewport,
+     which is a large filter rasterisation on load and again on every
+     rotate or resize. A small tile is cheap and looks identical.
+     contain:strict keeps this full-screen layer out of everything else's
+     layout and paint work. */
   body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.05;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+    contain:strict;
+    background-repeat:repeat;background-size:90px 90px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='90' height='90'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='90' height='90' filter='url(%23n)'/%3E%3C/svg%3E")}
+  @media (prefers-reduced-motion:reduce){ body::after{display:none} }
   .prose,.note,.hint,.shint,.res,.msg{font-family:var(--sans)}
   .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
   .wrap{max-width:520px;margin:0 auto;padding:0 16px 90px}
   a{color:inherit}
   :focus-visible{outline:2px solid var(--toner);outline-offset:2px}
-
-  #prog{position:fixed;top:0;left:0;height:2px;background:var(--toner);width:0;z-index:900;
-    transition:width .25s linear}
 
   /* ------------------------------ header ------------------------------ */
   header{position:sticky;top:0;z-index:800;background:var(--paper);
@@ -145,6 +150,9 @@
   .locbar .dot{width:6px;height:6px;border-radius:50%;background:var(--toner);flex:none}
   .locbar .where{color:var(--toner);font-weight:700;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis;letter-spacing:.02em}
+  /* how fresh the numbers are, stated once rather than animated */
+  .locbar .fresh{color:var(--ink3);font-size:10px;letter-spacing:.04em;white-space:nowrap;flex:none}
+  .locbar .fresh.stale{color:var(--red)}
   .locbar button{margin-left:auto;background:var(--card);border:1px solid var(--rule);
     color:var(--toner);padding:5px 9px;font-size:10px;font-weight:700;cursor:pointer;flex:none;
     text-transform:uppercase;letter-spacing:.1em;border-radius:2px;font-family:var(--mono)}
@@ -399,6 +407,30 @@
   .repitem .rn{display:inline-block;margin-left:6px;background:var(--red);color:#fff;
     padding:0 5px;border-radius:2px;font-size:9.5px;letter-spacing:.04em;vertical-align:1px}
   .repitem .rn.ops{background:var(--blue)}
+  /* ------------------------------ onboarding ---------------------------- */
+  .tour{position:fixed;inset:0;z-index:4000;background:rgba(23,23,26,.55);
+    display:grid;place-items:center;padding:20px}
+  .tour[hidden]{display:none}
+  .tourcard{width:100%;max-width:380px;background:var(--card);border:2px solid var(--toner);
+    border-radius:2px;box-shadow:6px 6px 0 rgba(23,23,26,.2);padding:18px 18px 14px;
+    animation:pop .18s ease-out}
+  .tourart{height:74px;display:grid;place-items:center;margin-bottom:12px;
+    background:var(--paper);border:1px dashed var(--rule);border-radius:2px;
+    font-size:30px;line-height:1}
+  .tourcard h3{margin:0 0 6px;font-family:var(--mono);font-size:14px;letter-spacing:.04em}
+  .tourcard p{margin:0;color:var(--ink2);font-size:13px;line-height:1.55;font-family:var(--sans);
+    min-height:60px}
+  .tourfoot{display:flex;align-items:center;gap:9px;margin-top:14px}
+  .tourdots{display:flex;gap:5px;flex:1}
+  .tourdots i{width:6px;height:6px;border-radius:50%;background:var(--rule)}
+  .tourdots i.on{background:var(--toner)}
+  .tourskip{background:none;border:none;color:var(--ink3);font-family:var(--mono);
+    font-size:11px;font-weight:700;cursor:pointer;padding:8px 4px;letter-spacing:.04em}
+  .tournext{background:var(--toner);color:var(--paper);border:none;padding:10px 16px;
+    font-family:var(--mono);font-size:11.5px;font-weight:700;cursor:pointer;
+    border-radius:2px;letter-spacing:.08em;text-transform:uppercase}
+  .tournext:active{opacity:.85}
+
   /* ------------------------------ settings ------------------------------ */
   .setrow{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);
     border:1px solid var(--rule);color:var(--toner);font-family:var(--mono);font-size:12px;
@@ -523,7 +555,6 @@
 </style>
 </head>
 <body>
-<div id="prog"></div>
 <div class="wrap">
   <header>
     <div class="brand">
@@ -546,6 +577,7 @@
     </nav>
     <div class="locbar">
       <span class="dot"></span><span id="locwhere" class="where">…</span>
+      <span class="fresh" id="fresh"></span>
       <button id="change">Αλλαγή</button>
     </div>
     <div class="seg" id="seg">
@@ -565,9 +597,8 @@
   </div>
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
-  <div class="hint" id="lphint"></div>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v34</span></div>
+  <div class="foot"><span class="ver">v35</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -657,6 +688,19 @@
   <div id="ab-body"></div>
 </div></div>
 
+<div class="tour" id="tour" hidden>
+  <div class="tourcard">
+    <div class="tourart" id="tour-art"></div>
+    <h3 id="tour-h"></h3>
+    <p id="tour-p"></p>
+    <div class="tourfoot">
+      <div class="tourdots" id="tour-dots"></div>
+      <button class="tourskip" id="tour-skip"></button>
+      <button class="tournext" id="tour-next"></button>
+    </div>
+  </div>
+</div>
+
 <div class="sheet-bg" id="setbg"><div class="sheet">
   <h3 id="set-h">Ρυθμίσεις</h3>
   <button class="setrow" id="set-lang">
@@ -664,6 +708,7 @@
   <button class="setrow" id="set-empty">
     <span class="setlab" id="set-empty-t"></span><span class="sw" id="set-empty-sw"></span></button>
   <div class="shint" id="set-empty-h"></div>
+  <button class="setrow" id="set-tour"><span class="setlab" id="set-tour-t"></span></button>
 </div></div>
 
 <div class="cyc" id="cyc"><div class="cycbox">
@@ -786,7 +831,20 @@ const T={
   openTerms:"Όροι χρήσης", openPrivacy:"Πολιτική απορρήτου",
   back:"← Πίσω",
   mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
-  mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις",
+  mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις", setTour:"Οδηγός χρήσης",
+  tourNext:"Επόμενο", tourGo:"Ξεκίνα", tourSkip:"Παράλειψη",
+  tour1h:"Ζωντανές αναφορές",
+  tour1p:"Το κόκκινο κουμπί δείχνει τι συμβαίνει τώρα στο δίκτυο: βλάβες και υπερπλήρη οχήματα "+
+    "με κόκκινο, έλεγχο εισιτηρίων και προσωπικό με μπλε. Από εκεί κάνεις και τη δική σου αναφορά.",
+  tour2h:"Αγαπημένες στάσεις",
+  tour2p:"Διπλό πάτημα σε μια στάση, στη λίστα ή στον χάρτη, για να την καρφιτσώσεις. Μένει πάντα "+
+    "στην κορυφή, ακόμη κι αν είσαι αλλού. Διπλό πάτημα ξανά για αφαίρεση.",
+  tour3h:"Λίστα και χάρτης",
+  tour3p:"Σύρε αριστερά για τον χάρτη, δεξιά για τη λίστα. Κράτα πατημένη μια γραμμή για να δεις "+
+    "τη διαδρομή της, ή μια στάση στον χάρτη για τις γραμμές που περνούν.",
+  tour4h:"Ειδοποιήσεις",
+  tour4p:"Βάλε ειδοποίηση για οποιαδήποτε στάση, όχι μόνο τις κοντινές: το καμπανάκι έχει "+
+    "αναζήτηση για κάθε στάση της Αθήνας.",
   setEmpty:"Απόκρυψη στάσεων χωρίς αφίξεις",
   setEmptyH:"Όταν είναι ενεργό, οι στάσεις που δεν έχουν άφιξη τα επόμενα 15′ δεν εμφανίζονται "+
     "στη λίστα, όσο κοντά κι αν είναι. Τα αγαπημένα εμφανίζονται πάντα.",
@@ -807,16 +865,16 @@ const T={
     γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
     <p><b>Ζωντανές αναφορές.</b> Μια κοινή εικόνα του τι συμβαίνει τώρα στο δίκτυο, από τους
     ίδιους τους επιβάτες. Δύο κατηγορίες:</p>
-    <p><b style="color:var(--red)">■ Προβλήματα</b> — βλάβη, υπερπλήρες ή χωρίς A/C στα
+    <p><b style="color:var(--red)">■ Προβλήματα</b>: βλάβη, υπερπλήρες ή χωρίς A/C στα
     λεωφορεία, ασανσέρ εκτός λειτουργίας στο μετρό.<br>
-    <b style="color:var(--blue)">■ Λειτουργικά</b> — έλεγχος εισιτηρίων, παρουσία ασφάλειας,
+    <b style="color:var(--blue)">■ Λειτουργικά</b>: έλεγχος εισιτηρίων, παρουσία ασφάλειας,
     προσωπικό εξυπηρέτησης.</p>
     <p>Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι σημάνσεις σβήνουν
-    μόνες τους, από 15′ ως 2 ώρες. Καταγράφονται καταστάσεις, όχι πρόσωπα — χωρίς ελεύθερο
-    κείμενο ή φωτογραφίες.</p>
+    μόνες τους, από 15′ ως 2 ώρες. Καταγράφονται καταστάσεις, όχι πρόσωπα. Δεν υπάρχει ελεύθερο
+    κείμενο ούτε φωτογραφίες.</p>
     <p><b>Πόσοι το είπαν.</b> Κάθε αναφορά μετράει το ίδιο. Όταν περισσότεροι αναφέρουν το ίδιο
-    πράγμα για το ίδιο όχημα ή σταθμό, μπαίνουν σε μία σήμανση με τον αριθμό τους — «3 αναφορές»
-    διαβάζεται πιο βαριά από «1», χωρίς να χρειάζεται κανείς να ψηφίσει.</p>
+    πράγμα για το ίδιο όχημα ή σταθμό, μπαίνουν σε μία σήμανση με τον αριθμό τους. Οι «3 αναφορές»
+    βαραίνουν περισσότερο από τη μία.</p>
     <p><b>Ιδιωτικότητα.</b> Χωρίς λογαριασμό, διαφημίσεις ή στατιστικά. Η τοποθεσία σου δεν
     αποθηκεύεται ποτέ.</p>
     <p><b>Τα δεδομένα.</b> Ανεπίσημα, από τον ΟΑΣΑ. Οι χρόνοι είναι δικές τους εκτιμήσεις και
@@ -832,18 +890,17 @@ const T={
   ti_detour:"Παράκαμψη", ti_other:"Άλλο", reportSent:"Καταχωρήθηκε ✓",
   needLoc:"Χρειάζεται τοποθεσία.", repOff:"Οι αναφορές δεν έχουν ρυθμιστεί.",
   linesHere:"Γραμμές από εδώ", arrivingSoon:"Επόμενες αφίξεις", noLines:"Καμία γραμμή",
-  wake:"Σε παύση — πάτα για ανανέωση", stopFallback:"Στάση",radius:"Ακτίνα",stopsN:"στάσεις",
-  lpList:"Διπλό πάτημα σε στάση για αγαπημένο · κράτα πατημένη μια γραμμή για τη διαδρομή",
-  lpMap:"Διπλό πάτημα σε στάση για αγαπημένο · κράτα πατημένη για τις γραμμές της",
+  wake:"Σε παύση. Πάτα για ανανέωση", stopFallback:"Στάση",radius:"Ακτίνα",stopsN:"στάσεις",
+  freshNow:"μόλις τώρα", freshAgo:a=>`πριν ${a}`, secShort:"δ",
   ppHint:"Κρατά πατημένο για διαδρομές",
   nextStops:"Επόμενες στάσεις",noRoute:"Δεν βρέθηκε διαδρομή",
-  alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση — όχι μόνο τις κοντινές.",
+  alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση, όχι μόνο τις κοντινές.",
   newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
   test:"Δοκιμαστική ειδοποίηση",noRules:"Καμία ειδοποίηση ακόμη.",
   needStops:"Φόρτωσε πρώτα στάσεις κοντά σου.",
   findStop:"⌕ Αναζήτηση άλλης στάσης…", noStopHit:"Καμία στάση με αυτό το όνομα.",
-  alertHint:"Η στάση μπορεί να είναι οπουδήποτε — διάλεξε από τις κοντινές ή τα αγαπημένα σου, "+
+  alertHint:"Η στάση μπορεί να είναι οπουδήποτε: διάλεξε από τις κοντινές ή τα αγαπημένα σου, "+
     "ή ψάξε οποιαδήποτε στάση της Αθήνας.",
   pushOff:"Οι ειδοποιήσεις δεν έχουν ρυθμιστεί στον server.",
   pushDenied:"Οι ειδοποιήσεις είναι μπλοκαρισμένες στον browser.",
@@ -884,7 +941,20 @@ const T={
   openTerms:"Terms of use", openPrivacy:"Privacy policy",
   back:"← Back",
   mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
-  mSettings:"Settings", setH:"Settings",
+  mSettings:"Settings", setH:"Settings", setTour:"How it works",
+  tourNext:"Next", tourGo:"Start", tourSkip:"Skip",
+  tour1h:"Live reports",
+  tour1p:"The red button shows what is happening on the network right now: breakdowns and "+
+    "crowding in red, fare inspection and staff in blue. File your own from the same screen.",
+  tour2h:"Favourite stops",
+  tour2p:"Double-tap a stop, in the list or on the map, to pin it. It stays at the top even when "+
+    "you are somewhere else. Double-tap again to unpin.",
+  tour3h:"List and map",
+  tour3p:"Swipe left for the map, right for the list. Long-press a line to preview its route, or "+
+    "a stop on the map to see which lines call there.",
+  tour4h:"Alerts",
+  tour4p:"Set an alert for any stop, not just nearby ones: the bell has a search for every stop "+
+    "in Athens.",
   setEmpty:"Hide stops with no arrivals",
   setEmptyH:"When on, stops with nothing due in the next 15 min are left out of the list, "+
     "however close they are. Favourites always show.",
@@ -905,16 +975,16 @@ const T={
     using the unofficial OASA telematics API.</p>
     <p><b>Live reports.</b> A shared picture of what's happening on the network right now, from
     the people on it. Two categories:</p>
-    <p><b style="color:var(--red)">■ Issues</b> — breakdown, overcrowding or no A/C on a bus, a
+    <p><b style="color:var(--red)">■ Issues</b>: breakdown, overcrowding or no A/C on a bus, a
     broken lift at a station.<br>
-    <b style="color:var(--blue)">■ Operational</b> — fare inspection, security presence,
+    <b style="color:var(--blue)">■ Operational</b>: fare inspection, security presence,
     customer service staff.</p>
     <p>You flag the bus you are riding, or a metro station within 600 m. Flags expire on their
-    own, 15 min to 2 hours. Reports describe situations, not people — no free text, no
-    photos.</p>
+    own, 15 min to 2 hours. Reports describe situations, not people. There is no free text and
+    no photos.</p>
     <p><b>How many said it.</b> Every report counts the same. When several people report the
     same thing about the same vehicle or station they collapse into one flag carrying the
-    number — "3 reports" reads heavier than "1", with nobody having to vote.</p>
+    number, so "3 reports" reads heavier than one.</p>
     <p><b>Privacy.</b> No account, no advertising, no analytics. Your location is never
     stored.</p>
     <p><b>The data.</b> Unofficial, from OASA. The times are their own estimates and they are
@@ -930,19 +1000,18 @@ const T={
   ti_detour:"Detour", ti_other:"Other", reportSent:"Reported ✓",
   needLoc:"Location needed.", repOff:"Reports aren't configured.",
   linesHere:"Lines from here", arrivingSoon:"Arriving soon", noLines:"No lines listed",
-  wake:"Paused — tap to refresh", stopFallback:"Stop",radius:"Radius",stopsN:"stops",
-  lpList:"Double-tap a stop to pin it · long-press a line for its route",
-  lpMap:"Double-tap a stop to pin it · long-press for its lines",
+  wake:"Paused. Tap to refresh", stopFallback:"Stop",radius:"Radius",stopsN:"stops",
+  freshNow:"just now", freshAgo:a=>`${a} ago`, secShort:"s",
   ppHint:"Long-press for routes",
   nextStops:"Next stops",noRoute:"No route data",
-  alertsH:"Alerts",alertsP:"Get notified before your bus reaches any stop — not just the ones near you.",
+  alertsH:"Alerts",alertsP:"Get notified before your bus reaches any stop, not just the ones near you.",
   newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
   test:"Send test notification",noRules:"No alerts yet.",
   needStops:"Load nearby stops first.",
   findStop:"⌕ Search another stop…", noStopHit:"No stop by that name.",
-  alertHint:"The stop can be anywhere — pick a nearby one or a favourite, or search any "+
-    "stop in Athens.",
+  alertHint:"The stop can be anywhere. Pick a nearby one or a favourite, or search any stop "+
+    "in Athens.",
   pushOff:"Push isn't configured on the server yet.",
   pushDenied:"Notifications are blocked in your browser.",
   dayNames:["Su","Mo","Tu","We","Th","Fr","Sa"]}
@@ -988,7 +1057,7 @@ const PRESETS=[
 let here={lat:37.9755,lng:23.7348,label:null,gps:false};
 const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:600,
   dark:false,mapFitted:false,_mapCodes:null,rules:[],subId:null};
-let timer=null,progTimer=null,loading=false;
+let timer=null,freshTimer=null,loading=false;
 
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
 function pick(o,...k){ for(const x of k){ if(o&&o[x]!=null&&o[x]!=="") return o[x]; } return null; }
@@ -1080,7 +1149,6 @@ function applyStatics(){
   $("#t-vlist").textContent=t("vlist"); $("#t-vmap").textContent=t("vmap");
   $("#a-h").textContent=t("alertsH"); $("#a-p").textContent=t("alertsP");
   $("#t-rad").textContent=t("radius");
-  $("#lphint").textContent = state.view==="map"?t("lpMap"):t("lpList");
   $("#locwhere").textContent=here.label||(here.gps?t("you"):"…");
   buildPresets();
 }
@@ -1104,7 +1172,6 @@ function setView(v,dir){
   $("#radwrap").style.display=v==="map"?"":"none";
   $("#list").style.display=v==="list"?"":"none";
   $$("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
-  $("#lphint").textContent = v==="map"?t("lpMap"):t("lpList");
   // The two tabs are different heights, so a leftover scroll offset from
   // one makes the other land mid-page with the scrollbar flashing. Pin to
   // the top on every switch — the map has nothing to scroll anyway, and a
@@ -1199,35 +1266,138 @@ function initSwipes(){
 }
 function renderView(){ state.view==="map"?renderMap():renderList(); }
 
+/* The list refreshes every 30 s, and it used to throw away every card and
+   rebuild it — ~70 elements and as many event listeners, each time. That
+   costs a full layout, drops the pressed state under your finger, and
+   loses scroll anchoring on a long list.
+   Now cards are kept and reconciled: a card is reused if its stop is still
+   shown, only the strings that actually changed are written, and gesture
+   handlers are bound once per element rather than once per refresh. */
+const cardCache=new Map();          // stop code -> {card, hd, rows, sig}
+
+/* A row is three cells and only one of them normally changes: the
+   countdown. Writing each cell separately, and only when its own content
+   differs, means a steady-state refresh touches the minutes and nothing
+   else. */
+function paintRow(row,s,a){
+  let tile=row.children[0],dest=row.children[1],eta=row.children[2];
+  if(!eta){
+    row.innerHTML='<div class="tile num"></div><div class="dest"></div><div class="eta"></div>';
+    tile=row.children[0]; dest=row.children[1]; eta=row.children[2];
+  }
+  const line=String(arrLine(s,a.code));
+  if(row._line!==line){ tile.textContent=line; row._line=line; }
+
+  const d=arrDest(s,a.code);
+  const dHtml=(d?`<span class="to">${t("to")}</span>${esc(d)}`:"")+flagLine(reportForArrival(a));
+  if(row._dest!==dHtml){ dest.innerHTML=dHtml; row._dest=dHtml; }
+
+  // the countdown changes on every single sweep, so it is written as text
+  // into spans that already exist rather than re-parsed as markup
+  const now=a.min<=1;
+  let v=eta.firstElementChild,u=v&&v.nextElementSibling;
+  if(!v||!u){ eta.innerHTML='<span class="v num"></span><span class="u"></span>';
+    v=eta.children[0]; u=eta.children[1]; }
+  const vs=now?t("now"):String(a.min), us=now?"":t("min");
+  if(v.textContent!==vs) v.textContent=vs;
+  if(u.textContent!==us) u.textContent=us;
+  v.className=now?"v":"v num";
+  eta.className="eta"+(now?" now":"");
+}
+function headHtml(s){
+  const w=walkMin(s.dist), fav=isFav(s.code);
+  return `<div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}</div>`+
+    `<div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}`+
+    `<span class="num">${isFinite(s.dist)?fmtDist(s.dist):""}</span></div>`;
+}
+
 function renderList(){
   const list=$("#list");
   const shown=listStops();
-  if(!shown.length){ list.innerHTML=`<div class="msg">${t("nobus")}</div>`; return; }
-  list.innerHTML="";
+  if(!shown.length){
+    cardCache.clear();
+    list.innerHTML=`<div class="msg">${t("nobus")}</div>`;
+    return;
+  }
+  if(list.firstElementChild&&list.firstElementChild.classList.contains("msg")) list.innerHTML="";
+
+  const live=new Set();
+  let prev=null;
   shown.forEach(s=>{
-    const w=walkMin(s.dist);
-    const fav=isFav(s.code);
-    const card=document.createElement("div"); card.className="stop"+(fav?" fav":"");
-    card.innerHTML=`<div class="stop-hd"><div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}</div>
-      <div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}<span class="num">${isFinite(s.dist)?fmtDist(s.dist):""}</span></div></div>`;
-    // long-press the stop header to pin / unpin it
-    onDoubleTap(card.querySelector(".stop-hd"),()=>toggleFav(s));
-    const rows=document.createElement("div"); rows.className="rows";
-    if(!s.arrLoaded){ rows.innerHTML='<div class="skel"></div><div class="skel"></div>'; }
-    else if(!s.arrivals.length){ rows.innerHTML=`<div class="empty">${t("nobus")}</div>`; }
-    else s.arrivals.slice(0,CONFIG.maxRows).forEach(a=>{
-      const now=a.min<=1,d=arrDest(s,a.code);
-      const row=document.createElement("div"); row.className="row";
-      const flag=reportForArrival(a);
-      row.innerHTML=`<div class="tile num">${esc(String(arrLine(s,a.code)))}</div>
-        <div class="dest">${d?`<span class="to">${t("to")}</span>${esc(d)}`:""}${flagLine(flag)}</div>
-        <div class="eta ${now?"now":""}">${now?`<span class="v">${t("now")}</span>`
-          :`<span class="v num">${a.min}</span><span class="u">${t("min")}</span>`}</div>`;
-      onLongPress(row,()=>openRoutePreview(s,String(a.code),a.min));
-      rows.appendChild(row);
-    });
-    card.appendChild(rows); list.appendChild(card);
+    const key=String(s.code);
+    live.add(key);
+    let c=cardCache.get(key);
+    if(!c){
+      const card=document.createElement("div"); card.className="stop";
+      const hd=document.createElement("div"); hd.className="stop-hd";
+      const rows=document.createElement("div"); rows.className="rows";
+      card.appendChild(hd); card.appendChild(rows);
+      onDoubleTap(hd,()=>{ const cur=byCode(key); if(cur) toggleFav(cur); });
+      c={card,hd,rows,sig:"",headSig:"",mode:""};
+      cardCache.set(key,c);
+    }
+    // header: name, distance, star
+    const headSig=headHtml(s);
+    if(c.headSig!==headSig){ c.hd.innerHTML=headSig; c.headSig=headSig; }
+    c.card.classList.toggle("fav",isFav(s.code));
+
+    // rows: only rewritten when the rendered content actually differs
+    let sig;
+    if(!s.arrLoaded) sig="skel";
+    else if(!s.arrivals.length) sig="empty";
+    else sig=s.arrivals.slice(0,CONFIG.maxRows)
+      .map(a=>`${a.code}|${a.veh}|${a.min}`).join(";")+"|"+
+      (activeReports().length?groupedReports().map(r=>r.veh||r.targetId).join(","):"");
+    if(c.sig!==sig){
+      c.sig=sig;
+      const mode=!s.arrLoaded?"skel":(!s.arrivals.length?"empty":"rows");
+      // Changing shape means the old children are the wrong kind entirely:
+      // clear, or index-based reuse below would interleave leftover
+      // skeletons with real rows.
+      if(c.mode!==mode){ c.rows.innerHTML=""; c.mode=mode; }
+      if(!s.arrLoaded) c.rows.innerHTML='<div class="skel"></div><div class="skel"></div>';
+      else if(!s.arrivals.length) c.rows.innerHTML=`<div class="empty">${t("nobus")}</div>`;
+      else{
+        const want=s.arrivals.slice(0,CONFIG.maxRows);
+        // reuse the row elements too; only their innards change
+        while(c.rows.children.length>want.length) c.rows.lastElementChild.remove();
+        want.forEach((a,i)=>{
+          let row=c.rows.children[i];
+          if(!row||!row.classList.contains("row")){
+            if(row) row.remove();
+            row=document.createElement("div"); row.className="row";
+            c.rows.appendChild(row);
+            onLongPress(row,()=>{
+              const cur=byCode(key), code=row.dataset.code;
+              if(cur&&code) openRoutePreview(cur,code,+row.dataset.min||0);
+            });
+          }
+          row.dataset.code=String(a.code); row.dataset.min=String(a.min);
+          paintRow(row,s,a);
+        });
+      }
+    }else if(s.arrLoaded&&s.arrivals.length){
+      // same content, but the row's stop/min data must stay current
+      s.arrivals.slice(0,CONFIG.maxRows).forEach((a,i)=>{
+        const row=c.rows.children[i];
+        if(row){ row.dataset.code=String(a.code); row.dataset.min=String(a.min); }
+      });
+    }
+
+    // place it in the right order without moving nodes that are already right
+    const want=prev?prev.nextElementSibling:list.firstElementChild;
+    if(want!==c.card) list.insertBefore(c.card,want);
+    prev=c.card;
   });
+
+  // drop cards for stops no longer shown
+  cardCache.forEach((c,key)=>{
+    if(live.has(key)){ return; }
+    c.card.remove(); cardCache.delete(key);
+  });
+}
+function byCode(code){
+  return (state.stops||[]).find(s=>String(s.code)===String(code))||state.favLive[String(code)]||null;
 }
 
 /* ------------------------------ map -------------------------------- */
@@ -1550,6 +1720,7 @@ async function loadStopsBatch(){
     };
   });
   state._mapCodes=null;
+  markLoaded();
   updateRadiusLabel(); renderView();
   loadFarFavs();
   fillVisibleArrivals();
@@ -1600,6 +1771,7 @@ async function loadStopsLegacy(){
       s.lines=p.lines; s.routes=p.routes; s.routeMap=p.routeMap; s.routesLoaded=p.routesLoaded;
       s.arrivals=p.arrivals; s.arrLoaded=p.arrLoaded; } });
     state.stops=stops; state._mapCodes=null;
+    markLoaded();
     updateRadiusLabel(); renderView();
 
     await withLimit(state.stops.filter(s=>!s.routesLoaded).map(s=>()=>loadRoutes(s)),6);
@@ -1624,9 +1796,26 @@ let paused=false, lastTouch=Date.now(), sleeping=false;
      asleep   — after 15 min, stop entirely and wait for a tap
      hidden   — stop immediately (tab backgrounded / phone locked) */
 function stopTimers(){
-  clearInterval(timer); clearInterval(progTimer);
-  timer=null; progTimer=null;
-  $("#prog").style.width="0%";
+  clearInterval(timer); timer=null;
+  clearInterval(freshTimer); freshTimer=null;
+}
+/* When the numbers were last refreshed. The old two-pixel bar animated a
+   width every 250 ms forever, which is a repaint per tick on every device
+   for information nobody reads mid-sweep. One line of text, updated every
+   20 s, says the same thing and costs nothing. */
+let lastLoad=0;
+function markLoaded(){ lastLoad=Date.now(); paintFresh(); }
+function paintFresh(){
+  const el=$("#fresh"); if(!el) return;
+  if(!lastLoad){ el.textContent=""; el.classList.remove("stale"); return; }
+  const secs=Math.round((Date.now()-lastLoad)/1000);
+  el.textContent=secs<15?t("freshNow"):t("freshAgo")(secs<90?`${secs}${t("secShort")}`
+    :`${Math.round(secs/60)}${t("minShort")}`);
+  el.classList.toggle("stale",secs>150);
+}
+function startFreshTicker(){
+  clearInterval(freshTimer);
+  freshTimer=setInterval(paintFresh,20000);
 }
 function currentInterval(){
   return (Date.now()-lastTouch > CONFIG.idleAfter) ? CONFIG.idleMs : CONFIG.refreshMs;
@@ -1644,14 +1833,13 @@ function startRefresh(){
   if(document.hidden){ paused=true; return; }
   paused=false; sleeping=false;
   const b=$("#wake"); if(b) b.classList.remove("on");
+  startFreshTicker();
   loadStops();
-  let e=0, iv=currentInterval();
-  progTimer=setInterval(()=>{ e+=250; $("#prog").style.width=Math.min(100,e/iv*100)+"%"; },250);
+  const iv=currentInterval();
   timer=setInterval(()=>{
     if(Date.now()-lastTouch > CONFIG.sleepAfter){ showSleep(); return; }
-    const want=currentInterval();
-    if(want!==iv){ startRefresh(); return; }   // re-tier
-    e=0; $("#prog").style.width="0%"; loadStops();
+    if(currentInterval()!==iv){ startRefresh(); return; }   // re-tier
+    loadStops();
   },CONFIG.refreshMs>iv?CONFIG.refreshMs:iv);
 }
 function touched(){
@@ -2997,6 +3185,42 @@ async function loadLive(){
   liveBusy=false;
 }
 
+/* --------------------------- onboarding ---------------------------- *
+ * Four cards on first run. Each one names a gesture that is otherwise
+ * invisible, which is why the permanent hint line under the list could go
+ * away. Skippable at any point, shown once, and reachable again from
+ * Settings if someone wants a reminder. */
+const TOUR_KEY="tourSeen";
+const TOUR=[
+  {art:"◉", h:"tour1h", p:"tour1p"},
+  {art:"★", h:"tour2h", p:"tour2p"},
+  {art:"↔", h:"tour3h", p:"tour3p"},
+  {art:"🔔", h:"tour4h", p:"tour4p"},
+];
+let tourAt=0;
+function tourDone(){
+  try{ localStorage.setItem(TOUR_KEY,"1"); }catch(_){}
+  $("#tour").hidden=true;
+}
+function paintTour(){
+  const c=TOUR[tourAt]; if(!c) return tourDone();
+  $("#tour-art").textContent=c.art;
+  $("#tour-h").textContent=t(c.h);
+  $("#tour-p").textContent=t(c.p);
+  $("#tour-dots").innerHTML=TOUR.map((_,i)=>`<i class="${i===tourAt?"on":""}"></i>`).join("");
+  $("#tour-skip").textContent=t("tourSkip");
+  $("#tour-next").textContent=tourAt===TOUR.length-1?t("tourGo"):t("tourNext");
+}
+function openTour(from){
+  tourAt=0; paintTour(); $("#tour").hidden=false;
+  if(from==="settings") closeSettings();
+}
+function maybeTour(){
+  let seen=true;
+  try{ seen=localStorage.getItem(TOUR_KEY)==="1"; }catch(_){}
+  if(!seen) setTimeout(()=>openTour(),700);   // let the first stops paint behind it
+}
+
 /* ---------------------------- settings ----------------------------- *
  * Language lives here now rather than in the menu, alongside the one
  * display preference worth persisting. Both are plain localStorage. */
@@ -3013,6 +3237,7 @@ function renderSettings(){
   $("#set-empty-t").textContent=t("setEmpty");
   $("#set-empty-sw").classList.toggle("on",hideEmpty);
   $("#set-empty-h").textContent=t("setEmptyH");
+  $("#set-tour-t").textContent=t("setTour");
 }
 function toggleHideEmpty(){
   hideEmpty=!hideEmpty;
@@ -3033,7 +3258,7 @@ function openAbout(){
     <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v34</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v35</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -3147,7 +3372,7 @@ async function showRouteStats(){
     const bars=Array.from({length:24},(_,h)=>{
       const f=(s.hourly||[]).find(x=>x.h===h);
       const v=f?f.n:0; const pct=Math.round(v/maxH*100);
-      return `<i class="${pct>66?"hi":""}" style="height:${Math.max(2,pct)}%" title="${h}:00 — ${v}"></i>`;
+      return `<i class="${pct>66?"hi":""}" style="height:${Math.max(2,pct)}%" title="${h}:00 · ${v}"></i>`;
     }).join("");
 
     body.innerHTML=`
@@ -3384,7 +3609,9 @@ function switchLang(){
   if(here.gps) here.label=t("you");
   else if(here.label){ const p=PRESETS.find(x=>x.el===here.label||x.en===here.label);
     if(p) here.label=LANG==="el"?p.el:p.en; }
-  applyStatics(); updateRadiusLabel(); renderView();
+  // every cached row string is in the old language, so start clean
+  cardCache.forEach(c=>c.card.remove()); cardCache.clear();
+  applyStatics(); updateRadiusLabel(); paintFresh(); renderView();
   if($("#rep").classList.contains("on")){ drawReportMap(); renderReportList(); }
 }
 $("#menubtn").onclick=()=>toggleMenu();
@@ -3394,6 +3621,10 @@ $("#m-settings").onclick=openSettings;
 $("#set-lang").onclick=()=>{ switchLang(); renderSettings(); };
 $("#set-empty").onclick=toggleHideEmpty;
 $("#setbg").onclick=e=>{ if(e.target.id==="setbg") closeSettings(); };
+$("#set-tour").onclick=()=>openTour("settings");
+$("#tour-next").onclick=()=>{ tourAt++; tourAt>=TOUR.length?tourDone():paintTour(); };
+$("#tour-skip").onclick=tourDone;
+$("#tour").onclick=e=>{ if(e.target.id==="tour") tourDone(); };
 $("#m-about").onclick=openAbout;
 $("#lngo").onclick=doLineSearch;
 $("#lnq").addEventListener("keydown",e=>{ if(e.key==="Enter") doLineSearch(); });
@@ -3456,6 +3687,7 @@ try{ const lp=JSON.parse(localStorage.getItem("lastPos")||"null");
 $("#locwhere").textContent=here.label;
 updateRadiusLabel();
 startRefresh();
+maybeTour();
 useGPS();
 initSwipes();
 state.subId=localStorage.getItem("subId");

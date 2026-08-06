@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v34 defaults** — if you edit the
+breaks if you change it. Values here are the **v35 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -231,6 +231,7 @@ your privacy policy becomes false.
 | `dead` | **8 px** | Dead zone before any axis decision. |
 | `slope` | **0.8** | Max `dy/dx` for a swipe to still count. |
 | `maxMs` | **900 ms** | Slower than this isn't a swipe. |
+| `edge` | **34 px** | On the map, only a swipe starting this close to the left edge counts; the rest pans the map. |
 
 `public/index.html` → `DTAP` (double-tap = pin a favourite)
 
@@ -238,8 +239,13 @@ your privacy policy becomes false.
 |---|---|---|
 | `ms` | **320 ms** | Longest gap between the two taps. |
 | `slop` | **24 px** | How far apart the two taps may land and still count. |
-| `edge` | **34 px** | On the map, only a swipe starting this close to the left edge counts (the rest pans the map). |
+
+### Timings not in a constant
+
+| Parameter | Default | What it means |
+|---|---|---|
 | `.slide-l/.slide-r` | **0.3 s** | Tab transition duration (CSS). |
+| `onLongPress` | **430 ms** | Hold before a preview opens. Previews only; pinning is double-tap. |
 
 `public/index.html` → `REPMAP`
 
@@ -247,7 +253,18 @@ your privacy policy becomes false.
 |---|---|---|
 | `labelZoom` | **15** | Below this zoom the permanent labels on the live-reports map are hidden — a dozen of them overlap into noise at city scale. The pin and its count badge stay; tap a pin for the popup. |
 
-Long-press to pin a favourite: **430 ms** (`onLongPress` default).
+### Freshness stamp and the guide
+
+| Parameter | Default | Where | What it means |
+|---|---|---|---|
+| freshness tick | **20 000 ms** | `startFreshTicker` | How often the "40s ago" text is repainted. It only rewrites a string, so this is cheap, but there is no point going below the resolution of the text itself. |
+| "just now" window | **15 s** | `paintFresh` | Under this, it reads "just now" instead of a number. |
+| seconds/minutes switch | **90 s** | `paintFresh` | Above this it counts in minutes. |
+| stale threshold | **150 s** | `paintFresh` | The stamp turns red past this: five missed refreshes, so the arrivals on screen are no longer trustworthy. |
+| tour delay | **700 ms** | `maybeTour` | Wait after load before the guide opens on a fresh install, so it appears over a painted list rather than an empty screen. |
+
+The guide's four cards live in the `TOUR` array in `public/index.html`; add or remove
+entries and the dots follow. Seen-state is `localStorage.tourSeen`.
 
 ---
 
