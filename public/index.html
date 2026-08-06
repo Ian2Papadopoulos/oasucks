@@ -196,6 +196,14 @@
   /* ------------------------------ map ---------------------------------- */
   #mapwrap{margin-top:10px;border:1px solid var(--toner);overflow:hidden;position:relative;z-index:0}
   #map{height:57vh;min-height:320px;background:#EDEDEA}
+  /* The map tab is a fixed frame, not a document: the map is sized to the
+     space that is actually left (see fitMapHeight), and the page itself is
+     pinned so a swipe cannot land you halfway down it. */
+  /* Both elements: which one actually scrolls is the browser's business,
+     and locking only <body> leaves <html> free to scroll on mobile. */
+  html.mapview,body.mapview{overflow:hidden;height:100%;overscroll-behavior:none}
+  body.mapview .wrap{padding-bottom:0}
+  body.mapview .foot{display:none}
   .leaflet-container{font:inherit}
   .maptoggle{position:absolute;top:9px;right:9px;z-index:600;width:32px;height:32px;
     background:var(--card);border:1px solid var(--toner);color:var(--toner);font-size:13px;
@@ -232,7 +240,8 @@
   .leaflet-popup-content-wrapper{background:var(--card);color:var(--toner);
     border:1px solid var(--toner);border-radius:2px;box-shadow:3px 3px 0 rgba(23,23,26,.14)}
   .leaflet-popup-tip{background:var(--card);border:1px solid var(--toner)}
-  .leaflet-popup-content{margin:10px 12px;min-width:184px;font-family:var(--mono)}
+  .leaflet-popup-content{margin:10px 12px;min-width:184px;font-family:var(--mono);
+    max-height:44vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .leaflet-popup-close-button{color:var(--ink3)!important}
   .pp-name{font-weight:700;font-size:12.5px;line-height:1.3;letter-spacing:.02em}
   .pp-walk{color:var(--ink3);font-size:10.5px;margin:3px 0 7px;
@@ -616,7 +625,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v37</span></div>
+  <div class="foot"><span class="ver">v38</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -873,6 +882,8 @@ const T={
   lineH:"Αναζήτηση",
   lineP:"Γράψε γραμμή (π.χ. 022) για τη διαδρομή της, ή όνομα στάσης/περιοχής για τις αφίξεις της.",
   linePh:"022, Α1, Σύνταγμα…", noLine:"Καμία γραμμή με αυτό το όνομα.",
+  offline:"Χωρίς σύνδεση στο διαδίκτυο.", netErr:"Ο διακομιστής δεν απαντά. Έλεγξε τη σύνδεσή σου.",
+  noFix:"Άγνωστη τοποθεσία. Πάτα «Αλλαγή» για να την ορίσεις.",
   pickDir:"Διάλεξε κατεύθυνση", wholeRoute:"Όλη η διαδρομή", allStops:"Στάσεις",
   liveH:"Ζωντανά λεωφορεία", liveLoading:"Φόρτωση ζωντανών θέσεων…",
   liveCount:n=>`${n} λεωφορεία σε κίνηση`, liveNone:"Κανένα λεωφορείο σε κίνηση εδώ.",
@@ -982,6 +993,8 @@ const T={
   lineH:"Search",
   lineP:"Type a line (e.g. 022) for its route, or a stop/place name for its arrivals.",
   linePh:"022, A1, Syntagma…", noLine:"No line by that name.",
+  offline:"No internet connection.", netErr:"Cannot reach the service. Check your connection.",
+  noFix:"Location unknown. Tap Change to set it.",
   pickDir:"Pick a direction", wholeRoute:"Whole route", allStops:"Stops",
   liveH:"Live buses", liveLoading:"Loading live positions…",
   liveCount:n=>`${n} buses running`, liveNone:"No buses running here.",
@@ -1073,7 +1086,7 @@ const PRESETS=[
 let here={lat:37.9755,lng:23.7348,label:null,gps:false};
 const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:600,
   dark:false,mapFitted:false,_mapCodes:null,rules:[],subId:null};
-let timer=null,freshTimer=null,loading=false;
+let timer=null,nextAt=0,loading=false;
 
 const $=s=>document.querySelector(s),$$=s=>document.querySelectorAll(s);
 function pick(o,...k){ for(const x of k){ if(o&&o[x]!=null&&o[x]!=="") return o[x]; } return null; }
@@ -1229,6 +1242,9 @@ function setView(v,dir){
   // the top on every switch — the map has nothing to scroll anyway, and a
   // fresh list read always starts from its first stop.
   window.scrollTo(0,0);
+  document.body.classList.toggle("mapview",v==="map");
+  document.documentElement.classList.toggle("mapview",v==="map");
+  if(v==="map") fitMapHeight();
   const el=v==="map"?$("#mapwrap"):$("#list");
   const cold=v==="map"&&!map;
   if(cold) renderView();         // settle the layout, then animate it
@@ -1323,6 +1339,20 @@ function initSwipes(){
   window.addEventListener("touchend",stop,{passive:true});
   window.addEventListener("touchcancel",stop,{passive:true});
 }
+/* Give the map exactly the room that is left under the controls. 57vh was
+   a guess, and on a short screen it overflowed, which is what let the map
+   tab scroll at all: you would swipe across and land a little way down the
+   page. Measured instead, so the frame always ends at the bottom edge. */
+function fitMapHeight(){
+  const el=document.getElementById("map"); if(!el) return;
+  const top=el.getBoundingClientRect().top+window.scrollY;
+  const h=Math.max(260,Math.round(window.innerHeight-top-12));
+  if(el.style.height!==h+"px"){ el.style.height=h+"px"; if(map) sizeMap(); }
+}
+addEventListener("resize",()=>{ if(state.view==="map") fitMapHeight(); });
+addEventListener("orientationchange",()=>setTimeout(()=>{
+  if(state.view==="map") fitMapHeight(); },250));
+
 function renderView(){ state.view==="map"?renderMap():renderList(); }
 
 /* The list refreshes every 30 s, and it used to throw away every card and
@@ -1507,13 +1537,26 @@ function ensureMap(){
 function routeChips(s){
   const rs=(s.routes||[]);
   if(!rs.length) return "";
-  const n={}; rs.forEach(r=>{ n[r.id]=(n[r.id]||0)+1; });
-  const seen=new Set();
-  return rs.map(r=>{
-    if(seen.has(r.code)) return ""; seen.add(r.code);
-    const d=n[r.id]>1?destOf(LANG==="en"?(r.en||r.el):(r.el||r.en)):"";
-    return `<button type="button" class="pp-chip num${String(rline.code)===String(r.code)?" on":""}"
-      data-rc="${esc(String(r.code))}">${esc(String(r.id))}${d?` <i>▸ ${esc(d)}</i>`:""}</button>`;
+  /* OASA lists a line once per route VARIANT — short workings, school
+     runs, depot trips — so a stop served by one bus route comes back as
+     "608, 608, 608". A rider standing there sees one line going one way,
+     so collapse on line + destination and keep the first code, which is
+     the one its arrivals quote. */
+  const uniq=new Map();
+  rs.forEach(r=>{
+    const d=destOf(LANG==="en"?(r.en||r.el):(r.el||r.en))||"";
+    const k=String(r.id)+"|"+d.toLowerCase();
+    if(!uniq.has(k)) uniq.set(k,{id:String(r.id),dest:d,code:String(r.code)});
+  });
+  const items=[...uniq.values()];
+  const n={}; items.forEach(x=>{ n[x.id]=(n[x.id]||0)+1; });
+  items.sort((a,b)=>a.id.localeCompare(b.id,undefined,{numeric:true}));
+  return items.map(x=>{
+    // spell out the destination only when the same number appears twice,
+    // i.e. it genuinely runs both ways through this stop
+    const d=n[x.id]>1?x.dest:"";
+    return `<button type="button" class="pp-chip num${String(rline.code)===x.code?" on":""}"
+      data-rc="${esc(x.code)}">${esc(x.id)}${d?` <i>▸ ${esc(d)}</i>`:""}</button>`;
   }).join("");
 }
 function popupHtml(s){
@@ -1545,11 +1588,18 @@ function popupHtml(s){
 function bindPopupPicks(m,s){
   const el=m.getPopup&&m.getPopup(); const node=el&&el.getElement();
   const box=node&&node.querySelector(".leaflet-popup-content");
-  if(!box||box._picks) return;
+  if(!box) return;
+  box._openedAt=Date.now();          // refreshed even on a re-bind
+  if(box._picks) return;
   box._picks=1;
   L.DomEvent.disableClickPropagation(box);
   box.addEventListener("click",e=>{
     const b=e.target.closest("[data-rc]"); if(!b) return;
+    /* The popup opens on the first tap. If the second tap of a double-tap
+       lands here it means the rider was pinning the stop, not choosing a
+       line, so ignore anything that arrives while a double-tap could still
+       be in progress. Deliberately picking a line takes longer than this. */
+    if(Date.now()-(box._openedAt||0) < DTAP.ms+120) return;
     const code=b.dataset.rc;
     m.closePopup();
     if(String(rline.code)===String(code)) return clearRoute(true);
@@ -1592,7 +1642,14 @@ function renderMap(){
     drawn.forEach(s=>{
       if(!isFinite(s.lat)||!isFinite(s.lng)) return;
       const m=L.marker([s.lat,s.lng],{icon:stopIcon(s)}).addTo(layerStops);
-      m.bindPopup(()=>popupHtml(s));
+      /* autoPan is off on purpose. Leaflet's default is to shove the map so
+         a tall popup fits, which slides the stop's dot down the screen and
+         puts the popup where your finger already is — so the second tap of
+         a double-tap lands on a line chip and draws a route instead of
+         pinning the stop. With the map held still, the popup opens above
+         the dot and the dot stays under your thumb. The popup is capped in
+         height (.leaflet-popup-content) so it has room to do that. */
+      m.bindPopup(()=>popupHtml(s),{autoPan:false,closeButton:true});
       m.on("popupopen",()=>{
         bindPopupPicks(m,s);
         const jobs=[];
@@ -1624,7 +1681,12 @@ function renderMap(){
       const m=mapMarkers[s.code]; if(!m) return;
       // redraw when the line count changes OR the stop was pinned/unpinned
       const fav=isFav(s.code)?1:0;
-      if((s._drawn||0)!==s.lines.length||s._fav!==fav){
+      /* setIcon throws the marker's element away and builds a new one. Do
+         that while a tap is in flight and the tap is lost, which is the
+         "sometimes the popup just doesn't open" — a refresh sweep landed
+         between finger down and finger up. Never re-icon a marker whose
+         popup is open; the icon is redrawn when it closes. */
+      if(((s._drawn||0)!==s.lines.length||s._fav!==fav) && !(m.isPopupOpen&&m.isPopupOpen())){
         m.setIcon(stopIcon(s)); s._drawn=s.lines.length; s._fav=fav;
         bindMarkerGestures(m,s); }
       if(m.isPopupOpen&&m.isPopupOpen()){ m.setPopupContent(popupHtml(s)); bindPopupPicks(m,s); }
@@ -1857,7 +1919,7 @@ async function loadStops(){
     await loadStopsLegacy();
   }catch(e){
     if(state.view==="list")
-      $("#list").innerHTML=`<div class="msg"><b>${t("err")}</b><br><button onclick="startRefresh()">${t("retry")}</button></div>`;
+      $("#list").innerHTML=`<div class="msg"><b>${esc(navigator.onLine===false?t("offline"):t("err"))}</b><br><button onclick="startRefresh()">${t("retry")}</button></div>`;
   }
   loading=false;
 }
@@ -1902,10 +1964,7 @@ let paused=false, lastTouch=Date.now(), sleeping=false;
      idle     — after 4 min without interaction, every 45s
      asleep   — after 15 min, stop entirely and wait for a tap
      hidden   — stop immediately (tab backgrounded / phone locked) */
-function stopTimers(){
-  clearInterval(timer); timer=null;
-  clearInterval(freshTimer); freshTimer=null;
-}
+function stopTimers(){ clearInterval(timer); timer=null; }
 /* When the numbers were last refreshed. The old two-pixel bar animated a
    width every 250 ms forever, which is a repaint per tick on every device
    for information nobody reads mid-sweep. One line of text, updated every
@@ -1914,15 +1973,13 @@ let lastLoad=0;
 function markLoaded(){ lastLoad=Date.now(); paintFresh(); }
 function paintFresh(){
   const el=$("#fresh"); if(!el) return;
-  if(!lastLoad){ el.textContent=""; el.classList.remove("stale"); return; }
+  if(!lastLoad){ if(el.textContent){ el.textContent=""; el.classList.remove("stale"); } return; }
   const secs=Math.round((Date.now()-lastLoad)/1000);
-  el.textContent=secs<15?t("freshNow"):t("freshAgo")(secs<90?`${secs}${t("secShort")}`
+  const txt=secs<15?t("freshNow"):t("freshAgo")(secs<90?`${secs}${t("secShort")}`
     :`${Math.round(secs/60)}${t("minShort")}`);
+  // called four times a second, so never write what is already there
+  if(el.textContent!==txt) el.textContent=txt;
   el.classList.toggle("stale",secs>150);
-}
-function startFreshTicker(){
-  clearInterval(freshTimer);
-  freshTimer=setInterval(paintFresh,20000);
 }
 function currentInterval(){
   return (Date.now()-lastTouch > CONFIG.idleAfter) ? CONFIG.idleMs : CONFIG.refreshMs;
@@ -1935,19 +1992,36 @@ function wake(){
   const b=$("#wake"); if(b) b.classList.remove("on");
   sleeping=false; lastTouch=Date.now(); startRefresh();
 }
+/* Why a 250 ms tick drives a 30 s refresh.
+ *
+ * A bare setInterval(loadStops, 30000) is wrong in two ways on a phone.
+ * Browsers throttle long timers on a page that looks idle, and a plain
+ * interval has no memory: if a tick is deferred you do not get it late,
+ * you get it a whole period later. Between the two, arrivals were landing
+ * a minute or more behind the sign at the stop, and a bus that had already
+ * gone kept its row until the sweep that never came.
+ *
+ * So the deadline is the state and the tick only asks whether it has
+ * passed. Late ticks self-correct instead of compounding, and the tier
+ * (active / idle) is re-read at each refresh rather than frozen when the
+ * timer was created. This is the cadence the progress bar used to run on;
+ * the bar is what was wasteful, not the tick, since it wrote a style four
+ * times a second. Comparing two numbers costs nothing. */
+const TICK_MS=250;
 function startRefresh(){
   stopTimers();
   if(document.hidden){ paused=true; return; }
   paused=false; sleeping=false;
   const b=$("#wake"); if(b) b.classList.remove("on");
-  startFreshTicker();
   loadStops();
-  const iv=currentInterval();
-  timer=setInterval(()=>{
-    if(Date.now()-lastTouch > CONFIG.sleepAfter){ showSleep(); return; }
-    if(currentInterval()!==iv){ startRefresh(); return; }   // re-tier
-    loadStops();
-  },CONFIG.refreshMs>iv?CONFIG.refreshMs:iv);
+  nextAt=Date.now()+currentInterval();
+  timer=setInterval(tick,TICK_MS);
+}
+function tick(){
+  const now=Date.now();
+  if(now-lastTouch > CONFIG.sleepAfter) return showSleep();
+  if(now>=nextAt){ nextAt=now+currentInterval(); loadStops(); }
+  paintFresh();
 }
 function touched(){
   const wasIdle = Date.now()-lastTouch > CONFIG.idleAfter;
@@ -2008,13 +2082,14 @@ async function doSearch(){
   const box=$("#results"); box.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
   try{
     const items=await geocode(q);
-    if(!items.length){ box.innerHTML=`<div class="res-msg">${t("noResults")}</div>`; return; }
+    if(!items.length){
+      box.innerHTML=`<div class="res-msg">${esc(emptyMsg(false,"noResults"))}</div>`; return; }
     box.innerHTML="";
     items.forEach(it=>{ const b=document.createElement("button"); b.className="res";
       b.textContent=it.display_name;
       b.onclick=()=>setLocation(Number(it.lat),Number(it.lon),placeLabel(it)||t("you"),false,true);
       box.appendChild(b); });
-  }catch(_){ box.innerHTML=`<div class="res-msg">${t("err")}</div>`; }
+  }catch(_){ box.innerHTML=`<div class="res-msg">${esc(emptyMsg(true,"err"))}</div>`; }
 }
 
 /* ---------------------- full-screen map picker --------------------- */
@@ -3166,6 +3241,16 @@ function localStopMatches(q){
   });
   return out.sort((a,b)=>(a.dist||0)-(b.dist||0)).slice(0,6);
 }
+/* "No line by that name" is only true if we actually looked. Offline, or
+   with the service unreachable, the honest answer is that we could not,
+   and with no location fix the local match had nothing to match against.
+   Saying the wrong one of these sends people hunting for a typo. */
+function emptyMsg(netFail,fallback){
+  if(navigator.onLine===false) return t("offline");
+  if(netFail) return t("netErr");
+  if(!hasBackend()&&!here.gps) return t("noFix");
+  return t(fallback);
+}
 async function doLineSearch(){
   const box=$("#lnres"), q=$("#lnq").value;
   if(!q.trim()) return;
@@ -3175,12 +3260,13 @@ async function doLineSearch(){
   const lineHits=matchLines(lines,q);
   const localStops=localStopMatches(q);
 
-  let remoteStops=[];
+  let remoteStops=[], netFail=false;
   if(hasBackend()){
     try{
       const r=await fetch(`${base()}/stops/search?q=${encodeURIComponent(q)}`,{cache:"no-store"});
       if(r.ok){ const j=await r.json(); remoteStops=Array.isArray(j.stops)?j.stops:[]; }
-    }catch(_){}
+      else netFail=true;
+    }catch(_){ netFail=true; }
   }
   // de-dupe: a stop we already hold locally wins (it has live arrivals)
   const haveLocal={}; localStops.forEach(s=>{ haveLocal[String(s.code)]=1; });
@@ -3188,7 +3274,8 @@ async function doLineSearch(){
     .slice(0,8);
 
   if(!lineHits.length&&!stopHits.length){
-    box.innerHTML=`<div class="res-msg">${t("noLine")}</div>`; return;
+    box.innerHTML=`<div class="res-msg">${esc(emptyMsg(netFail||!lines.length,"noLine"))}</div>`;
+    return;
   }
   box.innerHTML="";
   if(lineHits.length){
@@ -3210,7 +3297,11 @@ async function doLineSearch(){
     const b=document.createElement("button"); b.className="res";
     b.innerHTML=`${isFav(s.code)?'<span class="star">★</span> ':""}🚏 ${esc(stopName(s))}`
       +(isFinite(s.dist)?` <span style="color:var(--ink3)">· ${fmtDist(s.dist)}</span>`:"");
-    b.onclick=()=>{ closeLineSearch(); openStopCard(s); };
+    /* The results stay open underneath. Picking a stop used to close the
+       search, so deciding it was the wrong stop meant typing the query
+       again; now closing the card puts you back in the list you were
+       choosing from. */
+    b.onclick=()=>openStopCard(s);
     box.appendChild(b);
   });
 }
@@ -3383,7 +3474,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v37</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v38</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -3668,7 +3759,7 @@ function renderForm(){
     const q=qIn.value.trim();
     if(q.length<2){ qRes.innerHTML=""; return; }
     qRes.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
-    let hits=localStopMatches(q);
+    let hits=localStopMatches(q), netFail=false;
     if(hasBackend()){
       try{
         const r=await fetch(`${base()}/stops/search?q=${encodeURIComponent(q)}`,{cache:"no-store"});
@@ -3676,11 +3767,12 @@ function renderForm(){
           const j=await r.json();
           const have={}; hits.forEach(x=>{ have[String(x.code)]=1; });
           hits=hits.concat((Array.isArray(j.stops)?j.stops:[]).filter(x=>!have[String(x.code)]));
-        }
-      }catch(_){}
+        } else netFail=true;
+      }catch(_){ netFail=true; }
     }
     hits=hits.slice(0,8);
-    if(!hits.length){ qRes.innerHTML=`<div class="res-msg">${t("noStopHit")}</div>`; return; }
+    if(!hits.length){
+      qRes.innerHTML=`<div class="res-msg">${esc(emptyMsg(netFail,"noStopHit"))}</div>`; return; }
     qRes.innerHTML="";
     hits.forEach(raw=>{
       const b=document.createElement("button");

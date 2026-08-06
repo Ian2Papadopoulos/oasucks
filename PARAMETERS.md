@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v37 defaults** — if you edit the
+breaks if you change it. Values here are the **v38 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -121,7 +121,8 @@ couple of hours until it expires.
 | `imminentMin` | **15 min** | An arrival within this many minutes makes a stop "live" and floats it above dead ones. | Raise it and almost everything counts as live, so the sort stops doing anything. |
 | `maxMarkers` | **120** | Stops drawn on the map. Markers are nearly free — no per-stop request. | Raise freely; the map is not what costs money. |
 | `maxRows` | **6** | Arrival rows shown per stop. | Display only. |
-| `refreshMs` | **30 000 ms** | Foreground refresh interval. | Doubling it halves your request rate. |
+| `refreshMs` | **30 000 ms** | Foreground refresh interval. **A deadline, not a timer** — see `TICK_MS`. | Doubling it halves your request rate. |
+| `TICK_MS` | **250 ms** | How often the app asks whether the refresh deadline has passed. Not a refresh rate and not a cost: it compares two numbers. It exists because a bare `setInterval(load, 30000)` gets throttled on a phone and has no memory of being late, so a deferred tick costs a whole extra period. Under a 3x timer throttle the old shape refreshed every 90 s instead of 30; this one stays within a tick of the deadline. | Raising it makes the refresh that much less punctual. Do not replace it with a long interval. |
 | `idleMs` | **45 000 ms** | Refresh interval once idle. |  |
 | `idleAfter` | **240 000 ms** (4 min) | No interaction → switch to the idle interval. |  |
 | `sleepAfter` | **900 000 ms** (15 min) | No interaction → stop refreshing entirely. |  |

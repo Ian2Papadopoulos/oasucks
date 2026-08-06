@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v37.**
+version: v38.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -96,6 +96,14 @@ JSON to host at `/.well-known/assetlinks.json`.
    together. There is no countdown bar; the location line carries a quiet **"just now"
    / "40s ago"** stamp instead, which turns red once the data is over 150s old.
 
+   The 30s is a **deadline, not an interval**. A 250ms tick asks whether it has passed.
+   That sounds like more work and is less: comparing two numbers costs nothing, while a
+   bare `setInterval(load, 30000)` is throttled by phones on a page that looks idle and
+   has no memory of being late, so one deferred tick costs a whole extra period. Under a
+   3x timer throttle the interval version refreshed every **90s instead of 30**, which is
+   how arrivals ended up a minute or two behind the sign at the stop and how rows for
+   buses that had already gone stayed on screen. The tick version holds its cadence.
+
 **Row order:** favourites first, then stops that actually have a bus coming (within
 15 minutes) by distance, then the rest by distance. The nearest shelter is useless if
 nothing calls there for half an hour, so it yields to one a little further with a bus
@@ -120,6 +128,18 @@ drawn; tap the same line again, or ✕, to clear it and return the map to where 
 A line running both directions through the stop appears twice, each chip spelling out
 where it goes, so you pick a direction rather than being given one.
 
+OASA lists a line once per route *variant* — short workings, school runs, depot trips —
+so one bus route came back as `608, 608, 608`. Chips collapse on line **and destination**,
+which is the distinction a rider standing there can actually see, and sort by number.
+
+**The popup never moves the map, and never covers the stop.** Leaflet's default is to
+pan so a tall popup fits, which slides the dot down the screen and puts the popup where
+your finger already is: the second tap of a double-tap then lands on a line chip and
+draws a route instead of pinning the stop. Auto-panning is off, the popup opens above the
+dot, and a chip ignores taps that arrive within a double-tap's window of the popup
+appearing. A refresh sweep also no longer rebuilds a pin whose popup is open, which is
+what used to swallow taps that happened to coincide with one.
+
 This replaced a carousel: holding a pin used to parade every line serving it past on a
 3.2s timer. It answered a question nobody asks — you want the line you are waiting for,
 not all of them in turn — and it fetched every route's geometry to do it. Now nothing
@@ -134,7 +154,9 @@ side of Athens look like a short hop. The next nine stops are still the ones num
 and listed underneath, since that is the part you actually count down.
 
 **Switching views:** the Λίστα / Χάρτης tabs, or **swipe left for the map, right for the
-list**. The slide starts on the same frame as the gesture and the incoming tab renders on
+list**. The map tab is a frame, not a document: its height is measured against what is
+left of the viewport and the page is pinned while it is up, so a swipe can no longer land
+you halfway down it. The slide starts on the same frame as the gesture and the incoming tab renders on
 the next one, so the motion is never waiting on work. The first trip to the map is the
 expensive one, since Leaflet has to be built, so `warmMap` builds it in idle time while
 the list is still on screen, laid out but invisible. On a phone-class CPU that took the
@@ -167,6 +189,9 @@ instead of just the stretch ahead of you, and the strip lists all its stops.
 
 The line catalogue comes from the Worker's `/lines` (cached a day); directions come
 from `getRoutesForLine`.
+
+Picking a result opens its card **over** the results, which stay where they are. Deciding
+it was the wrong stop used to mean typing the query again.
 
 The same query also returns **stops**. OASA has no stop-name search, so `/stops/search`
 geocodes the query (Nominatim — the path the address search already uses) and returns
@@ -477,6 +502,11 @@ headers on `worker.js`, `public/index.html` and `public/sw.js`, and `license` in
 The choice is deliberate. The permissive licence this started under would have let
 anyone take the work, close it, and ship it as their own; a transit app built by the
 people who ride the network should stay open to them.
+
+**When a search comes back empty**, the app says which kind of empty it is: no
+connection, a service that will not answer, or no location fix to match against.
+"No line by that name" is reserved for the case where it actually looked and found
+nothing, since anything else sends people hunting for a typo they did not make.
 
 **Before you publish:**
 
