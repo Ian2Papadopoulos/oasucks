@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v38.**
+version: v39.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -103,6 +103,29 @@ JSON to host at `/.well-known/assetlinks.json`.
    3x timer throttle the interval version refreshed every **90s instead of 30**, which is
    how arrivals ended up a minute or two behind the sign at the stop and how rows for
    buses that had already gone stayed on screen. The tick version holds its cadence.
+
+**It follows you.** The board used to be pinned to wherever you were when it
+launched: one `getCurrentPosition` at boot and nothing after. Walk 150 m and every
+distance, every walking estimate and the ordering of the whole list still described
+where you set off from, while the arrivals beside them were seconds old. It now
+**watches** your position instead, and four rules keep that from being worse than
+the bug:
+
+- **A location you set by hand is yours.** Searching an address or dropping the pin
+  means "show me there"; the watch stops, and a GPS fix arriving after it will not
+  drag the board back to your feet. Going back to GPS starts it again.
+- **A fix is not a fact.** Phones emit 300 m garbage between good fixes, in street
+  canyons and indoors. Anything worse than `GEO.accGate` is dropped unless there is
+  nothing better at all.
+- **Moving a few metres is not moving.** Under `GEO.moveM` nothing happens, or the
+  list churns while you stand at the kerb.
+- **Most moves cost nothing.** Distances, walking times and the ordering are all
+  computable from coordinates already held, so a short walk re-sorts locally and
+  instantly. Only drifting `GEO.refetchM` from where the list was fetched buys a new
+  one, and never faster than `GEO.minFetchMs`.
+
+The watch is released when the tab is hidden and when the app puts itself to sleep,
+so it is not running in your pocket.
 
 **Row order:** favourites first, then stops that actually have a bus coming (within
 15 minutes) by distance, then the rest by distance. The nearest shelter is useless if

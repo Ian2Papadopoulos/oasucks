@@ -625,7 +625,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v38</span></div>
+  <div class="foot"><span class="ver">v39</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1637,7 +1637,7 @@ function renderMap(){
   const codes=drawn.map(s=>s.code).join(",")+"|"+favs.map(f=>f.code).join(",");
   if(codes!==state._mapCodes){
     layerStops.clearLayers(); mapMarkers={};
-    L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:1000}).addTo(layerStops);
+    meMarker=L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:1000}).addTo(layerStops);
     const b=[[here.lat,here.lng]];
     drawn.forEach(s=>{
       if(!isFinite(s.lat)||!isFinite(s.lng)) return;
@@ -1677,6 +1677,7 @@ function renderMap(){
     if(!state.mapFitted&&!rline.code&&b.length>1){ map.fitBounds(b,{padding:[50,50],maxZoom:16}); state.mapFitted=true; }
     state._mapCodes=codes;
   } else {
+    if(meMarker) meMarker.setLatLng([here.lat,here.lng]);
     drawn.forEach(s=>{
       const m=mapMarkers[s.code]; if(!m) return;
       // redraw when the line count changes OR the stop was pinned/unpinned
@@ -1887,6 +1888,7 @@ async function loadStopsBatch(){
     };
   });
   state._mapCodes=null;
+  fetchedFrom={lat:here.lat,lng:here.lng};
   markLoaded();
   updateRadiusLabel(); renderView();
   warmMap();
@@ -1939,6 +1941,7 @@ async function loadStopsLegacy(){
       s.lines=p.lines; s.routes=p.routes; s.routeMap=p.routeMap; s.routesLoaded=p.routesLoaded;
       s.arrivals=p.arrivals; s.arrLoaded=p.arrLoaded; } });
     state.stops=stops; state._mapCodes=null;
+    fetchedFrom={lat:here.lat,lng:here.lng};
     markLoaded();
     updateRadiusLabel(); renderView();
     warmMap();
@@ -1985,7 +1988,7 @@ function currentInterval(){
   return (Date.now()-lastTouch > CONFIG.idleAfter) ? CONFIG.idleMs : CONFIG.refreshMs;
 }
 function showSleep(){
-  sleeping=true; stopTimers();
+  sleeping=true; stopTimers(); stopWatch();
   const b=$("#wake"); if(b) b.classList.add("on");
 }
 function wake(){
@@ -2010,8 +2013,9 @@ function wake(){
 const TICK_MS=250;
 function startRefresh(){
   stopTimers();
-  if(document.hidden){ paused=true; return; }
+  if(document.hidden){ paused=true; stopWatch(); return; }
   paused=false; sleeping=false;
+  if(here.gps) startWatch();
   const b=$("#wake"); if(b) b.classList.remove("on");
   loadStops();
   nextAt=Date.now()+currentInterval();
@@ -2032,18 +2036,109 @@ function touched(){
 ["pointerdown","keydown","wheel","touchstart"].forEach(ev=>
   window.addEventListener(ev,touched,{passive:true}));
 document.addEventListener("visibilitychange",()=>{
-  if(document.hidden){ stopTimers(); paused=true; }
+  if(document.hidden){ stopTimers(); stopWatch(); paused=true; }
   else { lastTouch=Date.now();
     if(sleeping) return;
     if(paused){ paused=false; startRefresh(); } }
 });
 
+
+/* ====================== keeping up while you walk ==================== *
+ * The board refreshed every 30 s against a position taken ONCE, at boot.
+ * Walk 150 m and every distance, every walking estimate and the ordering
+ * of the whole list still described where you set off from, while the
+ * arrivals beside them were seconds old. The two halves of the screen
+ * disagreed, and the stale half was the one you were standing in.
+ *
+ * So the fix is watched, not sampled. What that has to get right:
+ *
+ *   - a location you set BY HAND is yours. Searching an address or
+ *     dropping the pin means "show me there"; a GPS fix arriving after it
+ *     must not drag the board back to your feet.
+ *   - a fix is not a fact. Phones emit 300 m garbage between good fixes,
+ *     especially indoors and in street canyons, and one of those would
+ *     teleport the list. Anything worse than the accuracy gate is dropped
+ *     unless we have nothing better at all.
+ *   - moving a few metres is not moving. Below the move threshold nothing
+ *     happens, or the list would churn while you stand at the kerb.
+ *   - most moves need no request. Distances, walking times and the
+ *     ordering are all computable from coordinates we already hold, so a
+ *     short walk re-sorts locally and instantly; only drifting far enough
+ *     to change WHICH stops are near you costs a fetch.
+ * ------------------------------------------------------------------ */
+const GEO = {
+  accGate: 120,     // metres; a fix worse than this is noise, not a position
+  moveM: 25,        // metres before we accept that you have moved at all
+  refetchM: 150,    // metres of drift before the nearby set is worth refetching
+  minFetchMs: 15000,// never refetch faster than this, however fast you walk
+  maxAgeMs: 10000,  // a cached fix older than this is not "where you are now"
+};
+let watchId = null, fetchedFrom = null, lastGeoFetch = 0, meMarker = null;
+
+function startWatch() {
+  if (watchId != null || !navigator.geolocation) return;
+  watchId = navigator.geolocation.watchPosition(onFix, () => {}, {
+    enableHighAccuracy: true, maximumAge: GEO.maxAgeMs, timeout: 30000,
+  });
+}
+function stopWatch() {
+  if (watchId == null) return;
+  try { navigator.geolocation.clearWatch(watchId); } catch (_) {}
+  watchId = null;
+}
+
+function onFix(p) {
+  if (!here.gps) return;                       // a location you chose stays chosen
+  const la = p.coords.latitude, ln = p.coords.longitude;
+  const acc = Number(p.coords.accuracy);
+  if (!isFinite(la) || !isFinite(ln)) return;
+  // a wild fix is worse than a slightly old one
+  if (isFinite(acc) && acc > GEO.accGate && here.acc != null && here.acc <= GEO.accGate) return;
+  rememberPos(p);
+
+  const moved = haversine(here.lat, here.lng, la, ln);
+  const sharper = here.acc != null && isFinite(acc) && acc < here.acc * 0.6;
+  if (moved < GEO.moveM && !sharper) { here.acc = isFinite(acc) ? acc : here.acc; return; }
+
+  here.lat = la; here.lng = ln; here.acc = isFinite(acc) ? acc : null;
+  onOriginMoved();
+}
+
+/* Everything a move changes that costs nothing: how far each stop is, how
+   long it takes to walk there, what order they belong in, and where the
+   dot sits on the map. */
+function onOriginMoved() {
+  const fix = s2 => {
+    if (!s2 || !isFinite(s2.lat) || !isFinite(s2.lng)) return;
+    s2.dist = haversine(here.lat, here.lng, s2.lat, s2.lng);
+  };
+  (state.stops || []).forEach(fix);
+  Object.values(state.favLive || {}).forEach(fix);
+  state.stops = (state.stops || []).sort((a, b) => a.dist - b.dist);
+
+  if (meMarker) meMarker.setLatLng([here.lat, here.lng]);
+  $("#locwhere").textContent = here.label || t("you");
+  updateRadiusLabel();
+  renderView();
+
+  // and the one thing that does cost: a different set of stops is near you
+  const drift = fetchedFrom ? haversine(fetchedFrom.lat, fetchedFrom.lng, here.lat, here.lng) : Infinity;
+  if (drift >= GEO.refetchM && Date.now() - lastGeoFetch >= GEO.minFetchMs) {
+    lastGeoFetch = Date.now();
+    nextAt = Date.now() + currentInterval();   // this counts as the sweep
+    loadStops();
+  }
+}
+
 /* ------------------------- location flow --------------------------- */
 function openSheet(){ $("#sheetbg").classList.add("on"); }
 function closeSheet(){ $("#sheetbg").classList.remove("on"); }
 function setLocation(lat,lng,label,gps,fromSheet){
-  here={lat,lng,label,gps}; state.mapFitted=false; state._mapCodes=null; state.stops=[];
+  here={lat,lng,label,gps,acc:null}; state.mapFitted=false; state._mapCodes=null; state.stops=[];
+  fetchedFrom=null;
   if(fromSheet) closeSheet();
+  // watching only makes sense while the board is meant to follow you
+  if(gps) startWatch(); else stopWatch();
   applyStatics(); startRefresh();
 }
 /* One tap, not three. The old flow fired getCurrentPosition with an 8s
@@ -3474,7 +3569,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v38</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v39</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

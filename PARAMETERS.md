@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v38 defaults** — if you edit the
+breaks if you change it. Values here are the **v39 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -263,6 +263,22 @@ at costs nothing.
 | Parameter | Default | What it means |
 |---|---|---|
 | `labelZoom` | **15** | Below this zoom the permanent labels on the live-reports map are hidden — a dozen of them overlap into noise at city scale. The pin and its count badge stay; tap a pin for the popup. |
+
+### Following you while you walk
+
+`public/index.html` → `GEO`
+
+| Parameter | Default | What it means | If you change it |
+|---|---|---|---|
+| `accGate` | **120 m** | A fix reported worse than this is treated as noise, not a position — unless nothing better has ever arrived. | Raise it and a bad fix in a street canyon teleports the list. |
+| `moveM` | **25 m** | How far you must move before the app accepts that you moved. | Lower and the list churns while you stand still; higher and it lags behind a walk. |
+| `refetchM` | **150 m** | Drift from where the current stop list was fetched before a new one is worth requesting. | **The cost dial.** Moving inside this radius is free: distances and order are recomputed locally. |
+| `minFetchMs` | **15 000 ms** | Floor between position-driven refetches, however fast you are moving. | Stops a bus ride from firing a request every few seconds. |
+| `maxAgeMs` | **10 000 ms** | Oldest cached fix the watch will accept as "now". | |
+
+The watch runs only while the location is GPS-derived and the app is awake and
+visible; choosing a place by hand stops it, and `showSleep` / `visibilitychange`
+release it so it is not draining anything in a pocket.
 
 ### Freshness stamp and the guide
 
