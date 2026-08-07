@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v38";
+const APP_VERSION = "v39-plan";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1850,7 +1850,7 @@ function boardWait(g, stopCode, routeCode, offsetMin, at) {
  * for 9 stops", "M3 to Syntagma". Endpoints come from the node the edge
  * lands on, which is the only thing that cannot drift out of step with the
  * path itself. */
-function toLegs(g, res) {
+function toLegs(g, res, from, to) {
   const chain = [];
   for (let n = "D"; n && n !== "O"; ) {
     const p = res.prev.get(n); if (!p) break;
@@ -1864,6 +1864,14 @@ function toLegs(g, res) {
   const stationName = id => { const st = g.stations.find(x => x.id === id); return st && { el: st.el, en: st.en }; };
   const nameOf = key => key.startsWith("p:") ? stopName(key.slice(2))
     : key.startsWith("k:") ? stationName(key.slice(2)) : null;
+  // where a node is, so each leg can carry the line the map should draw
+  const posOf = key => {
+    if (key === "O") return [from.lat, from.lng];
+    if (key === "D") return [to.lat, to.lng];
+    if (key.startsWith("p:")) { const s2 = g.stops.get(key.slice(2)); return s2 && [s2.lat, s2.lng]; }
+    if (key.startsWith("k:")) { const st = g.stations.find(x => x.id === key.slice(2)); return st && [st.lat, st.lng]; }
+    return null;
+  };
 
   const legs = [];
   let scheduled = false, estimated = false, live = false;
@@ -1874,8 +1882,15 @@ function toLegs(g, res) {
 
     if (e.mode === "walk") {
       const last = legs[legs.length - 1];
-      if (last && last.mode === "walk") { last.min += tOut - tIn; last.metres += e.metres; last.to = nameOf(step.node) || last.to; }
-      else legs.push({ mode: "walk", min: tOut - tIn, metres: e.metres, startMin: tIn, to: nameOf(step.node) });
+      const here2 = posOf(step.node);
+      if (last && last.mode === "walk") {
+        last.min += tOut - tIn; last.metres += e.metres; last.to = nameOf(step.node) || last.to;
+        if (here2) last.path.push(here2);
+      } else {
+        const a0 = posOf(step.from);
+        legs.push({ mode: "walk", min: tOut - tIn, metres: e.metres, startMin: tIn,
+          to: nameOf(step.node), path: [a0, here2].filter(Boolean) });
+      }
       continue;
     }
 
@@ -1895,6 +1910,7 @@ function toLegs(g, res) {
         stopCode: isMetro ? null : e.stopCode,
         from: nameOf(step.from), to: nameOf(step.from),
         stops: 0, rideMin: 0, min: e.wait,
+        path: [posOf(step.from)].filter(Boolean),
       });
       continue;
     }
@@ -1909,11 +1925,15 @@ function toLegs(g, res) {
       if (e.mode === "ride") {
         const seq = g.seqs.get(e.route);
         const i = +step.node.split(":")[2];
-        if (seq && seq[i]) leg.to = { el: seq[i].name, en: seq[i].name_en || seq[i].name };
+        if (seq && seq[i]) {
+          leg.to = { el: seq[i].name, en: seq[i].name_en || seq[i].name };
+          leg.path.push([seq[i].lat, seq[i].lng]);
+        }
       } else {
         const [, line, , iS] = step.node.split(":");
         const seq = METRO_LINES[line];
-        if (seq && seq[+iS]) leg.to = stationName(seq[+iS]);
+        const st = seq && g.stations.find(x => x.id === seq[+iS]);
+        if (st) { leg.to = { el: st.el, en: st.en }; leg.path.push([st.lat, st.lng]); }
       }
       if (e.branchWait) leg.branchWait = (leg.branchWait || 0) + e.branchWait;
       continue;
@@ -1981,7 +2001,7 @@ async function planJourney(from, to, departMs) {
   for (const r of runs) {
     const res = search(g, from, to, r.opts);
     if (!res) continue;
-    const p = toLegs(g, res);
+    const p = toLegs(g, res, from, to);
     if (!p || !p.legs.length) continue;
     p.kind = r.key;
     if (!out.some(x => sameShape(x, p))) out.push(p);

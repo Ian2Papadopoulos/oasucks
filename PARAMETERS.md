@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v38 defaults** — if you edit the
+breaks if you change it. Values here are the **v39 defaults** (`claude/journey-planner`) — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -276,6 +276,45 @@ at costs nothing.
 
 The guide's four cards live in the `TOUR` array in `public/index.html`; add or remove
 entries and the dots follow. Seen-state is `localStorage.tourSeen`.
+
+---
+
+## 9. Journey planning
+
+`worker.js` → `PLAN`. Only on the `claude/journey-planner` branch.
+
+| Parameter | Default | What it means | If you change it |
+|---|---|---|---|
+| `walkSpeed` | **80 m/min** | Same figure the arrival list walks with. | Keep the two equal or the app contradicts itself. |
+| `detour` | **1.35** | Straight line × this = street distance. | |
+| `maxWalkM` | **1100 m** | Furthest one walking leg will ever propose. | Raising it finds more routes and proposes longer walks. |
+| `accessM` | **750 m** | Radius for candidate boarding / alighting stops. | |
+| `maxAccess` | **5** | Candidate stops per end. **Subrequest budget** — one `webRoutesForStop` each. | |
+| `maxRoutes` | **20** | Route stop-lists fetched. **Subrequest budget** — one `webGetStops` each. | The main cost dial; also the main quality dial. |
+| `transferM` | **300 m** | Stop-to-stop walk that counts as an interchange. | |
+| `liveHorizonMin` | **35 min** | Past this no vehicle has been dispatched, so waits fall back to headway and the leg is flagged `scheduled`. | Should match how far ahead OASA's arrivals actually reach. |
+| `changePenaltyMin` | **8** | Search weight for the "fewer changes" alternative. Never added to a reported time. | |
+| `interchangeMin` | **2 min** | Platform to platform inside one metro station. | |
+| `busDwellS` | **20 s** | Per intermediate stop on a bus leg. | |
+| `roadFactor` | **1.25** | Straight line between stops × this = road distance. | |
+| `walkOnlyMaxMin` | **40 min** | Longest journey offered on foot alone. | |
+| `maxRefine` | **3** | Live-ETA lookups spent improving the chosen itinerary. **Subrequest budget.** | |
+
+### Frequencies and speeds
+
+| Table | What it is |
+|---|---|
+| `HEADWAY_METRO` | Minutes between trains by day type (`wd`/`sat`/`sun`) over bands of the day. Published STASY service patterns rounded to something defensible, **not a timetable**. |
+| `METRO_LINE_FACTOR` | **1.3** for line 1 (ISAP), 1 for lines 2 and 3. ISAP runs longer headways all day. |
+| `AIRPORT_HEADWAY_MIN` | **36 min**. Only some line 3 trains continue past Doukissis Plakentias, so crossing onto the branch is charged this rather than the city headway. |
+| `HEADWAY_BUS` | The weakest table here: ~300 lines with nothing alike about their frequencies. Used **only** where no live ETA exists. |
+| `BUS_SPEED` | km/h including stops, by day type and hour. Traffic dominates any bus estimate, which is why it is a curve and not a constant. |
+| `METRO_SPEED_KMH` | 34 urban, 30 ISAP, 62 on the airport branch. |
+| `METRO_SERVICE` / `BUS_SERVICE` | Service windows in minutes from midnight. Lines 2 and 3 run to ~02:00 on Friday and Saturday nights. |
+
+The station order per line is `METRO_LINES` in `worker.js`. **Adjacency comes from
+those sequences, never from the order of `METRO_STATIONS`**, which is grouped by the
+line that "owns" each station — so the interchanges sit in someone else's block.
 
 ---
 

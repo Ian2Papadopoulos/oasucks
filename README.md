@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v38.**
+version: v39 (`claude/journey-planner` branch — v38 is what `main` carries).**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -172,6 +172,73 @@ shared list, so no one can hide a healthy stop from everyone else.
 
 Field names in the API are inconsistent (mixed casing), so the parsing is defensive —
 if line-mapping fails it degrades to the route code and still shows the countdown.
+
+## Journey planning (A → B)
+
+**This lives on the `claude/journey-planner` branch, not on `main`.**
+
+☰ → **Journey** takes two places and returns up to three ways to get between
+them using **walking, bus/trolley and metro/ISAP** — the three modes this app has
+any business claiming to know about. Either end can be your location, a favourite,
+a stop, a metro station, or anything the geocoder can find.
+
+### What it actually does
+
+The Worker exposes `GET /plan?from=lat,lng&to=lat,lng` and runs a **time-dependent
+Dijkstra**. The graph has a node per bus stop, a node per metro station, a node for
+each *"aboard route R at its i-th stop"*, and the two endpoints. Boarding is its own
+edge, which is the detail that makes it correct: without it the search strolls
+between routes at a shared stop for free and invents connections nobody could make.
+Time-dependent because the cost of boarding depends on **when** you reach the stop —
+a wait is not a constant. Dijkstra stays valid under that as long as a later vehicle
+can never deliver you sooner, which holds for everything modelled here.
+
+Three searches run over the same graph and the distinct results are offered:
+fastest, fewest changes (a search-time penalty per boarding, not a fake duration),
+and metro-only. Walking straight there is always considered and wins when it should.
+
+### The graph is bounded, on purpose
+
+OASA publishes the network one route or one stop at a time, so building the whole
+city means thousands of calls, and a Worker gets **fifty**. What gets fetched is the
+routes that touch either end of *this* journey plus every stop along them; the metro
+is static and therefore free. A cold plan costs about a dozen subrequests.
+
+The honest limit: it will not find a three-bus trip whose middle leg starts somewhere
+neither end has ever heard of. For a city the size of Athens that is a rare shape, and
+the alternative does not fit in the budget.
+
+### Which numbers are real
+
+Every leg carries a `basis`, and the UI shows it, because a journey is routinely half
+measured and half modelled:
+
+| Basis | What it means |
+|---|---|
+| **live** | A real ETA for a vehicle that exists. Used for the first boarding, the only stop worth spending a request on up front, and for later boardings inside the live horizon once an itinerary has been picked. |
+| **scheduled** | Past `liveHorizonMin` (35 min) no vehicle has been dispatched, so the wait is half the line's average headway for that day and hour. |
+| **estimated** | Every metro time. OASA's telematics feed carries **no trains at all**, so frequencies come from the published service bands by day type and hour, and run times from distance and line speed. |
+
+Bus *ride* time is modelled everywhere: OASA gives no inter-stop times, so it is road
+distance against an average speed that varies by day and hour, because Athens traffic
+is a bigger term in any bus estimate than distance is. Metro run times use 34 km/h in
+the city, 30 for ISAP, and 62 on the airport branch.
+
+**Only some line 3 trains carry on past Doukissis Plakentias**, so crossing onto the
+airport branch is charged its own 36-minute headway rather than the city one. It is
+the single most common way an Athens estimate goes wrong.
+
+Outside service hours the modes are simply unavailable, and an empty answer says
+"neither buses nor trains are running" rather than "no route".
+
+### Tuning it
+
+Every number above is in `PLAN`, `HEADWAY_METRO`, `HEADWAY_BUS`, `BUS_SPEED`,
+`METRO_SPEED_KMH` and the service windows in `worker.js`, and in
+[PARAMETERS.md](PARAMETERS.md). The headway tables are the weakest part and the
+easiest to improve: OASA has ~300 lines whose frequencies are nothing alike, so one
+table can only ever be an order of magnitude. It is used **only** where no live ETA
+exists to use instead.
 
 ## The ☰ menu
 
