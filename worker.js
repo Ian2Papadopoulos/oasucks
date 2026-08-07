@@ -28,6 +28,7 @@
  *  POST /reports                → file (or renew) a report
  *  POST /reports/delete         → withdraw a report (reporter-only)
  *  GET  /metro                  → static Athens metro station list
+ *  GET  /plan?from=&to=         → A-to-B itineraries (walk / bus / metro)
  *  GET  /lines                  → every OASA line (id, code, description)
  *  GET  /live?lat=&lng=         → live vehicle positions around a point
  *  GET  /scan?lat=&lng=         → batched "which bus am I on?" candidates
@@ -1337,6 +1338,671 @@ const METRO_STATIONS = [
   { id: "m-aerodromio",      el: "Αεροδρόμιο",           en: "Airport",              lines: ["3"], lat: 37.9364, lng: 23.9445 },
 ];
 
+/* ==================== journey planning: the model ==================== *
+ * Everything below turns "A to B" into a graph with time on its edges.
+ * Three modes only: walking, bus/trolley, and metro/ISAP.
+ *
+ * What is measured and what is modelled, stated plainly because the
+ * difference is the whole honesty of the feature:
+ *
+ *   measured   your walk (the app's own speed model), the live ETA of the
+ *              bus you are about to board, the stop sequence of a route
+ *   modelled   how long a bus takes between two stops (traffic-dependent
+ *              speed x road distance), how long you wait for a service
+ *              whose next vehicle has not been dispatched yet, and every
+ *              metro time, since OASA's telematics feed does not carry
+ *              trains at all
+ *
+ * Anything modelled is flagged in the response so the UI can say so.
+ * ------------------------------------------------------------------ */
+
+/* Station order along each line. The station table above is grouped by the
+ * line that "owns" a station, so the interchanges (Piraeus, Monastiraki,
+ * Omonia, Attiki, Syntagma) sit in someone else's block. Adjacency comes
+ * from these sequences, never from the order of that array. */
+const METRO_LINES = {
+  "1": ["m-peiraias", "m-faliro", "m-moschato", "m-kallithea", "m-tavros", "m-petralona",
+        "m-thiseio", "m-monastiraki", "m-omonoia", "m-viktoria", "m-attiki", "m-agios-nikolaos",
+        "m-kato-patisia", "m-agios-eleftherios", "m-ano-patisia", "m-perissos", "m-pefkakia",
+        "m-nea-ionia", "m-irakleio", "m-eirini", "m-neratziotissa", "m-marousi", "m-kat",
+        "m-kifisia"],
+  "2": ["m-anthoupoli", "m-peristeri", "m-agios-antonios", "m-sepolia", "m-attiki",
+        "m-stathmos-larisis", "m-metaxourgeio", "m-omonoia", "m-panepistimio", "m-syntagma",
+        "m-akropoli", "m-syngrou-fix", "m-neos-kosmos", "m-agios-ioannis", "m-dafni",
+        "m-agios-dimitrios", "m-ilioupoli", "m-alimos", "m-argyroupoli", "m-elliniko"],
+  "3": ["m-dimotiko-theatro", "m-peiraias", "m-maniatika", "m-nikaia", "m-korydallos",
+        "m-agia-varvara", "m-agia-marina", "m-aigaleo", "m-elaionas", "m-kerameikos",
+        "m-monastiraki", "m-syntagma", "m-evangelismos", "m-megaro-mousikis", "m-ampelokipoi",
+        "m-panormou", "m-katechaki", "m-ethniki-amyna", "m-cholargos", "m-nomismatokopeio",
+        "m-agia-paraskevi", "m-chalandri", "m-doukissis-plakentias", "m-pallini",
+        "m-paiania-kantza", "m-koropi", "m-aerodromio"],
+};
+
+/* Only some trains from Doukissis Plakentias carry on to the airport, and
+ * that branch has its own, much longer, headway. Everyone knows this one
+ * by heart; it is the single most common way an estimate goes wrong. */
+const AIRPORT_LEG = new Set(["m-pallini", "m-paiania-kantza", "m-koropi", "m-aerodromio"]);
+const AIRPORT_HEADWAY_MIN = 36;
+
+/* Headways in minutes, by day type, over [fromMinute, toMinute) of the day.
+ * These are the published service patterns rounded to something defensible,
+ * NOT a timetable: STASY publishes frequency bands rather than departure
+ * times for the metro, and they shift with the season. Treat every number
+ * here as "about". */
+const HEADWAY_METRO = {
+  wd:  [[330, 420, 7], [420, 570, 4], [570, 780, 6], [780, 900, 5],
+        [900, 1020, 6], [1020, 1230, 4], [1230, 1380, 8], [1380, 1560, 10]],
+  sat: [[330, 480, 9], [480, 900, 7], [900, 1260, 6], [1260, 1560, 9]],
+  sun: [[330, 480, 11], [480, 1260, 8], [1260, 1560, 11]],
+};
+// ISAP runs a longer headway than the two newer lines, all day.
+const METRO_LINE_FACTOR = { "1": 1.3, "2": 1, "3": 1 };
+
+/* Buses are the weak spot: OASA has ~300 lines and their frequencies are
+ * nothing alike, so a single table can only ever be an order of magnitude.
+ * It is used ONLY when there is no live ETA to use instead, which in
+ * practice means a boarding far enough ahead that no vehicle has been
+ * dispatched for it yet. */
+const HEADWAY_BUS = {
+  wd:  [[300, 420, 20], [420, 570, 12], [570, 780, 16], [780, 900, 14],
+        [900, 1020, 15], [1020, 1230, 12], [1230, 1380, 20], [1380, 1500, 30]],
+  sat: [[300, 480, 25], [480, 1230, 18], [1230, 1500, 28]],
+  sun: [[300, 480, 35], [480, 1230, 25], [1230, 1500, 35]],
+};
+
+/* Average bus speed in km/h INCLUDING stops, by day type and time of day.
+ * Athens traffic is the dominant term in any bus estimate, well ahead of
+ * distance, which is why this is a curve and not a constant. */
+const BUS_SPEED = {
+  wd:  [[0, 360, 21], [360, 420, 17], [420, 570, 11], [570, 780, 14], [780, 900, 12],
+        [900, 1020, 13], [1020, 1230, 11], [1230, 1380, 16], [1380, 1440, 19]],
+  sat: [[0, 420, 21], [420, 600, 16], [600, 1260, 13], [1260, 1440, 18]],
+  sun: [[0, 480, 23], [480, 1260, 17], [1260, 1440, 20]],
+};
+
+// Metro is grade-separated, so it keeps its speed; the airport branch is
+// effectively suburban rail and much faster between stations.
+const METRO_SPEED_KMH = { urban: 34, isap: 30, airport: 62 };
+const METRO_DWELL_S = 25;
+
+/* Service window, minutes from midnight. The metro stops before the buses
+ * do; asking for a 03:00 journey should say so rather than quietly plan a
+ * train that is not running. */
+const METRO_SERVICE = { open: 5 * 60 + 30, close: 24 * 60 + 20, lateClose: 26 * 60 };
+const BUS_SERVICE = { open: 5 * 60, close: 24 * 60 + 30 };
+
+const PLAN = {
+  walkSpeed: 80,          // m/min — the same figure the arrival list walks with
+  detour: 1.35,           // straight line x this = street distance
+  maxWalkM: 1100,         // furthest we will propose walking in one go
+  accessM: 750,           // radius for candidate boarding / alighting stops
+  maxAccess: 5,           // candidate stops per end (subrequest budget)
+  maxRoutes: 20,          // route stop-lists we will fetch (subrequest budget)
+  transferM: 300,         // stop-to-stop walk that counts as an interchange
+  liveHorizonMin: 35,     // past this, no vehicle has been dispatched yet
+  changePenaltyMin: 8,    // only for the "fewer changes" alternative
+  interchangeMin: 2,      // platform to platform inside one metro station
+  busDwellS: 20,          // per intermediate stop on a bus leg
+  roadFactor: 1.25,       // straight line between stops x this = road distance
+  walkOnlyMaxMin: 40,     // offer "just walk" up to here
+  maxRefine: 3,           // live-ETA lookups spent improving a found itinerary
+};
+
+function dayType(d) { const k = d.getDay(); return k === 0 ? "sun" : k === 6 ? "sat" : "wd"; }
+function bandValue(table, minutes, fallback) {
+  for (const [a, b, v] of table) if (minutes >= a && minutes < b) return v;
+  return fallback;
+}
+// Athens is the only timezone this app has ever cared about.
+function athensParts(ms) {
+  const f = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Athens", hour12: false,
+    weekday: "short", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(new Date(ms));
+  const g = t => (f.find(x => x.type === t) || {}).value;
+  const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[g("weekday")] ?? 1;
+  return { day: wd, min: (+g("hour")) * 60 + (+g("minute")) };
+}
+function clockAt(baseMs, offsetMin) {
+  const p = athensParts(baseMs + offsetMin * 60000);
+  return { dayType: p.day === 0 ? "sun" : p.day === 6 ? "sat" : "wd", day: p.day, min: p.min };
+}
+
+function walkMinutes(metres) { return (metres * PLAN.detour) / PLAN.walkSpeed; }
+
+function metroHeadway(line, at) {
+  const base = bandValue(HEADWAY_METRO[at.dayType], at.min, 12);
+  return base * (METRO_LINE_FACTOR[line] || 1);
+}
+function metroRunMinutes(a, b, line) {
+  const d = hav(a.lat, a.lng, b.lat, b.lng);
+  const branch = AIRPORT_LEG.has(a.id) || AIRPORT_LEG.has(b.id);
+  const kmh = branch ? METRO_SPEED_KMH.airport
+    : line === "1" ? METRO_SPEED_KMH.isap : METRO_SPEED_KMH.urban;
+  return (d / 1000) / kmh * 60 + METRO_DWELL_S / 60;
+}
+function metroRunning(at) {
+  // Fri and Sat nights the two newer lines run on into the small hours.
+  const late = at.day === 5 || at.day === 6;
+  const close = late ? METRO_SERVICE.lateClose : METRO_SERVICE.close;
+  return at.min >= METRO_SERVICE.open && at.min <= close;
+}
+function busRunning(at) { return at.min >= BUS_SERVICE.open && at.min <= BUS_SERVICE.close; }
+function busRunMinutes(metres, at) {
+  const kmh = bandValue(BUS_SPEED[at.dayType], at.min, 14);
+  return (metres * PLAN.roadFactor / 1000) / kmh * 60 + PLAN.busDwellS / 60;
+}
+function busHeadway(at) { return bandValue(HEADWAY_BUS[at.dayType], at.min, 25); }
+
+/* ==================== journey planning: the graph =================== *
+ * Node keys, because the shape of the graph is the whole algorithm:
+ *
+ *   O, D                origin and destination
+ *   p:<stopCode>        standing at a bus stop
+ *   k:<stationId>       standing in a metro station (one node per station,
+ *                       so changing lines inside Syntagma is an edge cost,
+ *                       not a walk)
+ *   r:<routeCode>:<i>   aboard route at its i-th stop
+ *   t:<line>:<dir>:<i>  aboard a train
+ *
+ * Boarding is its own edge, which is what stops the search from strolling
+ * between routes at a shared stop for free: you always pay the wait.
+ * ------------------------------------------------------------------ */
+
+// A small binary heap. Dijkstra on a few thousand nodes does not need more.
+function heapPush(h, node, key) {
+  h.push({ node, key });
+  let i = h.length - 1;
+  while (i > 0) {
+    const p = (i - 1) >> 1;
+    if (h[p].key <= h[i].key) break;
+    [h[p], h[i]] = [h[i], h[p]]; i = p;
+  }
+}
+function heapPop(h) {
+  const top = h[0], last = h.pop();
+  if (h.length) {
+    h[0] = last;
+    let i = 0;
+    for (;;) {
+      const l = 2 * i + 1, r = l + 1; let m = i;
+      if (l < h.length && h[l].key < h[m].key) m = l;
+      if (r < h.length && h[r].key < h[m].key) m = r;
+      if (m === i) break;
+      [h[m], h[i]] = [h[i], h[m]]; i = m;
+    }
+  }
+  return top;
+}
+
+/* Stops within a few hundred metres of each other are interchange
+ * candidates, and there can be a couple of thousand of them. Comparing
+ * every pair is a million haversines for nothing, so bucket by a grid
+ * whose cell is the search radius and only look at the nine cells around
+ * each stop. */
+function spatialIndex(points, cellM) {
+  const dLat = cellM / 111320;
+  const cells = new Map();
+  const key = (a, b) => a + "/" + b;
+  points.forEach((p, i) => {
+    const ca = Math.floor(p.lat / dLat);
+    const cb = Math.floor(p.lng / (dLat / Math.cos(p.lat * Math.PI / 180)));
+    const k = key(ca, cb);
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(i);
+  });
+  return {
+    near(lat, lng, radiusM) {
+      const ca = Math.floor(lat / dLat);
+      const cb = Math.floor(lng / (dLat / Math.cos(lat * Math.PI / 180)));
+      /* Scan as many rings as the radius asks for. Scanning a fixed 3x3
+         is only correct when the cell is at least as wide as the query,
+         and this index is built at transfer range but also queried at
+         walking range — which quietly lost every stop past half a cell,
+         including whole bus routes that were a perfectly good option. */
+      const rings = Math.max(1, Math.ceil(radiusM / cellM));
+      const out = [];
+      for (let a = ca - rings; a <= ca + rings; a++) for (let b = cb - rings; b <= cb + rings; b++) {
+        const c = cells.get(key(a, b)); if (!c) continue;
+        for (const i of c) {
+          const d = hav(lat, lng, points[i].lat, points[i].lng);
+          if (d <= radiusM) out.push({ i, d });
+        }
+      }
+      return out.sort((x, y) => x.d - y.d);
+    },
+  };
+}
+
+async function closestStops(lat, lng) {
+  const arr = await getJSON(`${OASA}?act=getClosestStops&p1=${lat}&p2=${lng}`,
+    ACT_TTL.getClosestStops);
+  if (!Array.isArray(arr)) return [];
+  return arr.map(s => {
+    const la = Number(pickField(s, "StopLat", "StopY", "stop_lat"));
+    const ln = Number(pickField(s, "StopLng", "StopX", "stop_lng"));
+    return {
+      code: String(pickField(s, "StopCode", "StopID", "stop_code") || ""),
+      name: pickField(s, "StopDescr", "StopDescrEng") || "",
+      name_en: pickField(s, "StopDescrEng", "StopDescr") || "",
+      lat: la, lng: ln,
+      dist: (isFinite(la) && isFinite(ln)) ? hav(lat, lng, la, ln) : Infinity,
+    };
+  }).filter(s => s.code && isFinite(s.dist))
+    .sort((a, b) => a.dist - b.dist);
+}
+
+async function routeStops(routeCode) {
+  const arr = await getJSON(`${OASA}?act=webGetStops&p1=${routeCode}`, ACT_TTL.webGetStops);
+  if (!Array.isArray(arr)) return null;
+  const out = arr.map(x => {
+    const la = Number(pickField(x, "StopLat", "StopY", "stop_lat"));
+    const ln = Number(pickField(x, "StopLng", "StopX", "stop_lng"));
+    return {
+      code: String(pickField(x, "StopCode", "StopID", "stop_code") || ""),
+      name: pickField(x, "StopDescr", "StopDescrEng") || "",
+      name_en: pickField(x, "StopDescrEng", "StopDescr") || "",
+      lat: la, lng: ln,
+    };
+  }).filter(x => x.code && isFinite(x.lat) && isFinite(x.lng));
+  return out.length > 1 ? out : null;
+}
+
+async function stopArrivals(code) {
+  const arr = await getJSON(`${OASA}?act=getStopArrivals&p1=${code}`, ACT_TTL.getStopArrivals);
+  if (!Array.isArray(arr)) return null;
+  const by = new Map();
+  for (const a of arr) {
+    const rc = String(pickField(a, "route_code", "RouteCode") || "");
+    const m = parseInt(pickField(a, "btime2", "btime", "stop_time") || "999", 10);
+    if (!rc || !isFinite(m)) continue;
+    if (!by.has(rc) || m < by.get(rc)) by.set(rc, m);
+  }
+  return by;
+}
+
+/* Build the bounded graph, then run a time-dependent Dijkstra over it.
+ *
+ * Bounded, because the honest alternative does not fit: OASA exposes the
+ * network one route or one stop at a time, so the whole city is thousands
+ * of calls and a Worker gets fifty. What we fetch instead is the routes
+ * that actually touch either end of THIS journey, plus every stop along
+ * them, plus the metro, which is static and free. That is the subgraph a
+ * sane itinerary lives in; what it cannot find is a three-bus trip whose
+ * middle leg starts somewhere neither end has ever heard of.
+ *
+ * Time-dependent because the cost of boarding depends on when you arrive
+ * at the stop: a wait is not a constant. Dijkstra stays correct under that
+ * as long as taking a later train can never get you there sooner, which is
+ * true of everything modelled here. */
+async function buildGraph(from, to, departMs, budget) {
+  const [oNear, dNear] = await Promise.all([
+    closestStops(from.lat, from.lng),
+    closestStops(to.lat, to.lng),
+  ]);
+  budget.used += 2;
+
+  const originStops = oNear.filter(s => s.dist <= PLAN.accessM).slice(0, PLAN.maxAccess);
+  const destStops = dNear.filter(s => s.dist <= PLAN.accessM).slice(0, PLAN.maxAccess);
+
+  // which routes serve either end
+  const routeIds = new Map();          // routeCode -> {code, line, dest}
+  const endStops = [...originStops, ...destStops];
+  await pool(endStops.map(s => async () => {
+    const r = await fetchStopRoutes(s.code);
+    if (!r) return;
+    for (const rt of r.routes) if (!routeIds.has(rt.code)) routeIds.set(rt.code, rt);
+  }), 6);
+  budget.used += endStops.length;
+
+  // their stop sequences; this is what turns "route" into "path"
+  const wanted = [...routeIds.keys()].slice(0, PLAN.maxRoutes);
+  const seqs = new Map();
+  await pool(wanted.map(rc => async () => {
+    const st = await routeStops(rc);
+    if (st) seqs.set(rc, st);
+  }), 6);
+  budget.used += wanted.length;
+
+  // live ETAs where they exist: only the stops you could actually walk to
+  // now have a dispatched vehicle worth knowing about
+  const live = new Map();              // stopCode -> Map(routeCode -> minutes)
+  await pool(originStops.map(s => async () => {
+    const a = await stopArrivals(s.code);
+    if (a) live.set(s.code, a);
+  }), 5);
+  budget.used += originStops.length;
+
+  // every stop we know a position for, bus and metro alike
+  const stops = new Map();
+  const note = s => { if (!stops.has(s.code)) stops.set(s.code, s); };
+  originStops.forEach(note); destStops.forEach(note);
+  for (const seq of seqs.values()) seq.forEach(note);
+
+  const stations = METRO_STATIONS.map(m => ({ ...m }));
+  return { originStops, destStops, routeIds, seqs, live, stops, stations, departMs };
+}
+
+/* One run of the search. `changePenalty` is a search weight only: it biases
+ * against extra vehicles without pretending they take longer, so the times
+ * reported back are always the real ones. */
+function search(g, from, to, opts) {
+  const { changePenalty = 0, allowBus = true, allowMetro = true } = opts || {};
+  const departMs = g.departMs;
+
+  const stopList = [...g.stops.values()];
+  const stopIdx = new Map(stopList.map((s, i) => [s.code, i]));
+  const stopGrid = spatialIndex(stopList, PLAN.transferM);
+  const stationGrid = spatialIndex(g.stations, PLAN.transferM);
+
+  const time = new Map();     // node -> minutes after departure, actual clock
+  const cost = new Map();     // node -> what the search orders by
+  const prev = new Map();
+  const heap = [];
+  const relax = (u, v, dt, dc, edge) => {
+    const nt = time.get(u) + dt, nc = cost.get(u) + (dc == null ? dt : dc);
+    if (cost.has(v) && cost.get(v) <= nc) return;
+    cost.set(v, nc); time.set(v, nt); prev.set(v, { from: u, edge });
+    heapPush(heap, v, nc);
+  };
+
+  time.set("O", 0); cost.set("O", 0); heapPush(heap, "O", 0);
+  const done = new Set();
+
+  // straight there on foot, always an option worth carrying
+  const directM = hav(from.lat, from.lng, to.lat, to.lng);
+  if (walkMinutes(directM) <= PLAN.walkOnlyMaxMin) {
+    relax("O", "D", walkMinutes(directM), null, { mode: "walk", metres: directM });
+  }
+
+  while (heap.length) {
+    const { node: u } = heapPop(heap);
+    if (done.has(u)) continue;
+    done.add(u);
+    if (u === "D") break;
+    const tu = time.get(u);
+    const at = clockAt(departMs, tu);
+
+    if (u === "O") {
+      // walk to nearby stops and stations
+      stopGrid.near(from.lat, from.lng, PLAN.maxWalkM).forEach(({ i, d }) =>
+        relax("O", "p:" + stopList[i].code, walkMinutes(d), null,
+          { mode: "walk", metres: d, to: stopList[i] }));
+      if (allowMetro) stationGrid.near(from.lat, from.lng, PLAN.maxWalkM).forEach(({ i, d }) =>
+        relax("O", "k:" + g.stations[i].id, walkMinutes(d), null,
+          { mode: "walk", metres: d, to: g.stations[i] }));
+      continue;
+    }
+
+    if (u.startsWith("p:")) {
+      const code = u.slice(2), s = g.stops.get(code);
+      if (!s) continue;
+      // finish on foot
+      const dEnd = hav(s.lat, s.lng, to.lat, to.lng);
+      if (dEnd <= PLAN.maxWalkM) relax(u, "D", walkMinutes(dEnd), null, { mode: "walk", metres: dEnd });
+      // step across to a neighbouring stop or into a station
+      stopGrid.near(s.lat, s.lng, PLAN.transferM).forEach(({ i, d }) => {
+        if (stopList[i].code === code) return;
+        relax(u, "p:" + stopList[i].code, walkMinutes(d), null,
+          { mode: "walk", metres: d, to: stopList[i] });
+      });
+      if (allowMetro) stationGrid.near(s.lat, s.lng, PLAN.transferM).forEach(({ i, d }) =>
+        relax(u, "k:" + g.stations[i].id, walkMinutes(d), null,
+          { mode: "walk", metres: d, to: g.stations[i] }));
+      // board something
+      if (allowBus && busRunning(at)) {
+        for (const [rc, seq] of g.seqs) {
+          const i = seq.findIndex(x => x.code === code);
+          if (i < 0 || i >= seq.length - 1) continue;
+          const w = boardWait(g, code, rc, tu, at);
+          relax(u, `r:${rc}:${i}`, w.min, w.min + changePenalty,
+            { mode: "board", route: rc, wait: w.min, basis: w.basis, stopCode: code });
+        }
+      }
+      continue;
+    }
+
+    if (u.startsWith("k:")) {
+      const id = u.slice(2), st = g.stations.find(x => x.id === id);
+      if (!st) continue;
+      const dEnd = hav(st.lat, st.lng, to.lat, to.lng);
+      if (dEnd <= PLAN.maxWalkM) relax(u, "D", walkMinutes(dEnd), null, { mode: "walk", metres: dEnd });
+      stopGrid.near(st.lat, st.lng, PLAN.transferM).forEach(({ i, d }) =>
+        relax(u, "p:" + stopList[i].code, walkMinutes(d), null,
+          { mode: "walk", metres: d, to: stopList[i] }));
+      if (allowMetro && metroRunning(at)) {
+        for (const line of st.lines) {
+          const seq = METRO_LINES[line]; if (!seq) continue;
+          const i = seq.indexOf(id); if (i < 0) continue;
+          for (const dir of [1, -1]) {
+            const nxt = i + dir;
+            if (nxt < 0 || nxt >= seq.length) continue;
+            let head = metroHeadway(line, at);
+            if (AIRPORT_LEG.has(seq[nxt]) || AIRPORT_LEG.has(id)) head = AIRPORT_HEADWAY_MIN;
+            const wait = head / 2 + PLAN.interchangeMin;
+            relax(u, `t:${line}:${dir}:${i}`, wait, wait + changePenalty,
+              { mode: "boardMetro", line, dir, wait, basis: "estimated" });
+          }
+        }
+      }
+      continue;
+    }
+
+    if (u.startsWith("r:")) {
+      const [, rc, iS] = u.split(":"); const i = +iS;
+      const seq = g.seqs.get(rc); if (!seq) continue;
+      relax(u, "p:" + seq[i].code, 0, 0, { mode: "alight" });
+      if (i + 1 < seq.length) {
+        const d = hav(seq[i].lat, seq[i].lng, seq[i + 1].lat, seq[i + 1].lng);
+        const rt = busRunMinutes(d, at);
+        relax(u, `r:${rc}:${i + 1}`, rt, rt, { mode: "ride", route: rc, metres: d });
+      }
+      continue;
+    }
+
+    if (u.startsWith("t:")) {
+      const [, line, dirS, iS] = u.split(":"); const dir = +dirS, i = +iS;
+      const seq = METRO_LINES[line]; if (!seq) continue;
+      const here = g.stations.find(x => x.id === seq[i]);
+      relax(u, "k:" + seq[i], 0, 0, { mode: "alightMetro" });
+      const j = i + dir;
+      if (j >= 0 && j < seq.length) {
+        const nxt = g.stations.find(x => x.id === seq[j]);
+        if (here && nxt) {
+          let rt = metroRunMinutes(here, nxt, line);
+          /* Only a fraction of line 3's trains carry on past Doukissis
+             Plakentias, so crossing onto the airport branch usually means
+             letting one or two go and waiting out the branch's own, much
+             longer headway. Charged once, where the branch begins. */
+          let branchWait = 0;
+          if (!AIRPORT_LEG.has(here.id) && AIRPORT_LEG.has(nxt.id)) {
+            branchWait = Math.max(0, (AIRPORT_HEADWAY_MIN - metroHeadway(line, at)) / 2);
+            rt += branchWait;
+          }
+          relax(u, `t:${line}:${dir}:${j}`, rt, rt, { mode: "rideMetro", line, dir, branchWait });
+        }
+      }
+      continue;
+    }
+  }
+
+  if (!time.has("D")) return null;
+  return { time, prev, totalMin: time.get("D") };
+}
+
+/* How long you stand at a stop. A live ETA is a fact about a vehicle that
+ * exists; past the horizon there is no vehicle yet, so the best anyone can
+ * do is half a headway, and we say so. */
+function boardWait(g, stopCode, routeCode, offsetMin, at) {
+  if (offsetMin <= PLAN.liveHorizonMin) {
+    const byRoute = g.live.get(stopCode);
+    const m = byRoute && byRoute.get(routeCode);
+    if (m != null && isFinite(m) && m < 300) {
+      const w = Math.max(0, m - offsetMin);
+      if (w <= PLAN.liveHorizonMin) return { min: w, basis: "live" };
+    }
+  }
+  return { min: busHeadway(at) / 2, basis: "scheduled" };
+}
+
+/* Walk the predecessor chain forward and glue consecutive edges of the same
+ * kind into the legs a person actually thinks in: "walk 6 min", "the 608
+ * for 9 stops", "M3 to Syntagma". Endpoints come from the node the edge
+ * lands on, which is the only thing that cannot drift out of step with the
+ * path itself. */
+function toLegs(g, res) {
+  const chain = [];
+  for (let n = "D"; n && n !== "O"; ) {
+    const p = res.prev.get(n); if (!p) break;
+    chain.push({ node: n, from: p.from, edge: p.edge });
+    n = p.from;
+  }
+  chain.reverse();
+  if (!chain.length) return null;
+
+  const stopName = c => { const s2 = g.stops.get(c); return s2 && { el: s2.name, en: s2.name_en || s2.name }; };
+  const stationName = id => { const st = g.stations.find(x => x.id === id); return st && { el: st.el, en: st.en }; };
+  const nameOf = key => key.startsWith("p:") ? stopName(key.slice(2))
+    : key.startsWith("k:") ? stationName(key.slice(2)) : null;
+
+  const legs = [];
+  let scheduled = false, estimated = false, live = false;
+
+  for (const step of chain) {
+    const e = step.edge; if (!e) continue;
+    const tIn = res.time.get(step.from), tOut = res.time.get(step.node);
+
+    if (e.mode === "walk") {
+      const last = legs[legs.length - 1];
+      if (last && last.mode === "walk") { last.min += tOut - tIn; last.metres += e.metres; last.to = nameOf(step.node) || last.to; }
+      else legs.push({ mode: "walk", min: tOut - tIn, metres: e.metres, startMin: tIn, to: nameOf(step.node) });
+      continue;
+    }
+
+    if (e.mode === "board" || e.mode === "boardMetro") {
+      const isMetro = e.mode === "boardMetro";
+      if (e.basis === "live") live = true;
+      if (e.basis === "scheduled") scheduled = true;
+      if (e.basis === "estimated") estimated = true;
+      const info = isMetro ? null : g.routeIds.get(e.route);
+      legs.push({
+        mode: isMetro ? "metro" : "bus",
+        line: isMetro ? e.line : (info && info.id) || e.route,
+        routeCode: isMetro ? null : e.route,
+        headsign: isMetro || !info ? null : { el: info.el, en: info.en },
+        dir: isMetro ? e.dir : null,
+        wait: e.wait, basis: e.basis, startMin: tIn,
+        stopCode: isMetro ? null : e.stopCode,
+        from: nameOf(step.from), to: nameOf(step.from),
+        stops: 0, rideMin: 0, min: e.wait,
+      });
+      continue;
+    }
+
+    if (e.mode === "ride" || e.mode === "rideMetro") {
+      const leg = legs[legs.length - 1];
+      if (!leg || (leg.mode !== "bus" && leg.mode !== "metro")) continue;
+      leg.stops += 1;
+      leg.rideMin = tOut - (leg.startMin + leg.wait);
+      leg.min = leg.wait + leg.rideMin;
+      // where we now are, so the last ride edge leaves `to` correct
+      if (e.mode === "ride") {
+        const seq = g.seqs.get(e.route);
+        const i = +step.node.split(":")[2];
+        if (seq && seq[i]) leg.to = { el: seq[i].name, en: seq[i].name_en || seq[i].name };
+      } else {
+        const [, line, , iS] = step.node.split(":");
+        const seq = METRO_LINES[line];
+        if (seq && seq[+iS]) leg.to = stationName(seq[+iS]);
+      }
+      if (e.branchWait) leg.branchWait = (leg.branchWait || 0) + e.branchWait;
+      continue;
+    }
+    // alight / alightMetro cost nothing and change nothing
+  }
+
+  const vehicles = legs.filter(l => l.mode !== "walk").length;
+  return {
+    totalMin: Math.round(res.time.get("D")),
+    legs: legs.map(l => ({ ...l, min: Math.round(l.min * 10) / 10 })),
+    changes: Math.max(0, vehicles - 1),
+    vehicles,
+    basis: estimated && (scheduled || live) ? "mixed" : estimated ? "estimated"
+      : scheduled && live ? "mixed" : scheduled ? "scheduled" : "live",
+  };
+}
+
+/* The user asked for live ETAs and a fall back to schedule beyond their
+ * horizon. The search can only use live data for the first boarding, since
+ * that is the only stop we can afford to ask about up front. Once we know
+ * which itinerary won, the later boardings are worth a lookup too: if the
+ * connection is close enough that a vehicle exists for it, replace the
+ * half-headway guess with the real wait and re-time everything after it. */
+async function refineWithLive(plan, budget) {
+  let spent = 0;
+  for (const leg of plan.legs) {
+    if (spent >= PLAN.maxRefine || budget.used >= 46) break;
+    if (leg.mode !== "bus" || leg.basis !== "scheduled") continue;
+    if (leg.startMin > PLAN.liveHorizonMin || !leg.stopCode) continue;
+    const by = await stopArrivals(leg.stopCode);
+    spent++; budget.used++;
+    const m = by && by.get(leg.routeCode);
+    if (m == null || !isFinite(m)) continue;
+    const realWait = Math.max(0, m - leg.startMin);
+    if (realWait > PLAN.liveHorizonMin) continue;
+    const shift = realWait - leg.wait;
+    leg.wait = realWait; leg.basis = "live"; leg.min = Math.round((realWait + leg.rideMin) * 10) / 10;
+    const k = plan.legs.indexOf(leg);
+    for (let i = k + 1; i < plan.legs.length; i++) plan.legs[i].startMin += shift;
+    plan.totalMin = Math.round(plan.totalMin + shift);
+  }
+  if (plan.legs.every(l => l.mode === "walk" || l.basis === "live")) {
+    plan.basis = plan.legs.some(l => l.mode === "metro") ? "mixed" : "live";
+  }
+  return plan;
+}
+
+function sameShape(a, b) {
+  const sig = p => p.legs.filter(l => l.mode !== "walk")
+    .map(l => l.mode + ":" + l.line).join(">");
+  return sig(a) === sig(b);
+}
+
+async function planJourney(from, to, departMs) {
+  const budget = { used: 0 };
+  const g = await buildGraph(from, to, departMs, budget);
+
+  const runs = [
+    { key: "best", opts: {} },
+    { key: "fewer", opts: { changePenalty: PLAN.changePenaltyMin } },
+    { key: "metro", opts: { allowBus: false } },
+  ];
+  const out = [];
+  for (const r of runs) {
+    const res = search(g, from, to, r.opts);
+    if (!res) continue;
+    const p = toLegs(g, res);
+    if (!p || !p.legs.length) continue;
+    p.kind = r.key;
+    if (!out.some(x => sameShape(x, p))) out.push(p);
+  }
+  const atNow = clockAt(departMs, 0);
+  const service = { metro: metroRunning(atNow), bus: busRunning(atNow) };
+  if (!out.length) return { departAt: departMs, itineraries: [], service, subrequests: budget.used,
+    reason: (!service.metro && !service.bus) ? "closed" : "noroute" };
+
+  out.sort((a, b) => a.totalMin - b.totalMin);
+  await refineWithLive(out[0], budget);
+  out.sort((a, b) => a.totalMin - b.totalMin);
+
+  return {
+    departAt: departMs,
+    itineraries: out.slice(0, 3),
+    subrequests: budget.used,
+    service,
+  };
+}
+
 /* Skip the D1 round-trip on every cron run when nothing is tracked.
  * Cached per isolate for a few minutes — adding a route is rare and
  * takes effect on the next refresh at the latest. */
@@ -1631,6 +2297,27 @@ export default {
       n.searchParams.set("addressdetails", "1");
       n.searchParams.set("accept-language", url.searchParams.get("lang") || "el");
       return proxy(n.toString(), GEO_CACHE);
+    }
+
+    /* GET /plan?from=lat,lng&to=lat,lng[&depart=<epoch ms>]
+     * Not cached: the answer depends on the minute you asked. */
+    if (p.endsWith("/plan")) {
+      const parse = v => {
+        const m = String(v || "").split(",").map(Number);
+        return (m.length === 2 && isFinite(m[0]) && isFinite(m[1])) ? { lat: m[0], lng: m[1] } : null;
+      };
+      const from = parse(url.searchParams.get("from"));
+      const to = parse(url.searchParams.get("to"));
+      if (!from || !to) return json({ error: "from and to required as lat,lng" }, 400);
+      if (hav(from.lat, from.lng, to.lat, to.lng) < 120)
+        return json({ itineraries: [], reason: "tooclose" });
+      const depart = Number(url.searchParams.get("depart")) || Date.now();
+      try {
+        const out = await planJourney(from, to, depart);
+        return json(out);
+      } catch (e) {
+        return json({ error: "planner failed", detail: String((e && e.message) || e) }, 500);
+      }
     }
 
     if (p.endsWith("/metro")) {
