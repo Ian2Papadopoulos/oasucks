@@ -625,7 +625,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v39</span></div>
+  <div class="foot"><span class="ver">v40</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1781,8 +1781,40 @@ function listStops(){
   return pinned.concat(rest).slice(0,cap);
 }
 /* Fetch arrivals for favourites the nearby sweep didn't return. */
+/* The sweep answered for them, so shape its rows into the same live stop
+   objects the per-stop path builds. Returning true means nothing more is
+   owed this round. */
+function farFavsFromSweep(rows){
+  favSweep=false;
+  if(!rows) return false;
+  favSweep=true;
+  rows.forEach(row=>{
+    const key=String(row.code);
+    const f=favs.find(x=>String(x.code)===key)||{};
+    let s=state.favLive[key];
+    if(!s){
+      s={code:key,name_el:f.name_el,name_en:f.name_en,street:f.street||"",
+        lat:Number(f.lat),lng:Number(f.lng),dist:NaN,
+        lines:[],routes:[],routeMap:{},arrivals:[],routesLoaded:false,arrLoaded:false};
+      state.favLive[key]=s;
+    }
+    const routes=(row.routes&&row.routes.length)?row.routes:s.routes;
+    const rm={}; (routes||[]).forEach(r=>{ rm[r.code]={line:r.id,el:r.el,en:r.en}; });
+    s.routes=routes||[]; s.routeMap=rm;
+    s.lines=(row.lines&&row.lines.length)?row.lines:s.lines;
+    s.routesLoaded=(routes||[]).length>0;
+    s.arrivals=(row.arrivals||[]).map(a=>({code:String(a.code||""),veh:String(a.veh||""),min:a.min}));
+    s.arrLoaded=true;
+    if(isFinite(here.lat)&&isFinite(s.lat)) s.dist=haversine(here.lat,here.lng,s.lat,s.lng);
+  });
+  return true;
+}
+let favSweep=false;
+
 async function loadFarFavs(){
   if(!favs.length) return;
+  // the sweep already carried them; asking again is the bug this replaced
+  if(favSweep){ renderView(); return; }
   const have={}; (state.stops||[]).forEach(s=>{ have[String(s.code)]=1; });
   const missing=favs.filter(f=>!have[String(f.code)]);
   if(!missing.length) return;
@@ -1865,12 +1897,18 @@ async function loadArrivals(s){
 
 /* One request instead of ~9: the Worker fans out to OASA for us. */
 async function loadStopsBatch(){
+  /* Favourites ride along with the sweep. Each one pinned outside the
+     nearby set used to be its own request, every 30 s — three of them and
+     a session cost four times what it should. The server skips any that
+     the sweep already returned. */
+  const favQ=favs.length?`&favs=${favs.map(f=>encodeURIComponent(f.code)).join(",")}`:"";
   const u=`${base()}/nearby?lat=${here.lat}&lng=${here.lng}&radius=${state.radius}`
-        +`&limit=${CONFIG.listPool}&markers=${CONFIG.maxMarkers}`;
+        +`&limit=${CONFIG.listPool}&markers=${CONFIG.maxMarkers}${favQ}`;
   const r=await fetch(u,{cache:"no-store"});
   if(!r.ok) throw new Error("nearby "+r.status);
   const j=await r.json();
   if(Array.isArray(j.reports)){ state.reports=j.reports; repBadge(); }
+  farFavsFromSweep(Array.isArray(j.favs)?j.favs:null);
   const prev={}; state.stops.forEach(s=>prev[s.code]=s);
   state.stops=notDead(j.stops).filter(s=>!(s.routes&&s.routes.length===0&&s.lines&&s.lines.length===0&&s.detail)).map(s=>{
     const p=prev[s.code]||{};
@@ -3569,7 +3607,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v39</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v40</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

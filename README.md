@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v39.**
+version: v40.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -103,6 +103,20 @@ JSON to host at `/.well-known/assetlinks.json`.
    3x timer throttle the interval version refreshed every **90s instead of 30**, which is
    how arrivals ended up a minute or two behind the sign at the stop and how rows for
    buses that had already gone stayed on screen. The tick version holds its cadence.
+
+**Favourites ride along with the sweep.** A pinned stop outside the nearby set —
+your home stop while you are at work — used to be its own request, every 30s. Three
+of them quadrupled a session's traffic, from 2.0 to **8.4 requests per minute**. The
+sweep now carries them: `/nearby` takes a `favs=` list and resolves the ones it did
+not already return.
+
+They are deliberately **not** part of the edge-cache key. Everyone standing on one
+corner shares the expensive half of that response, and folding a personal list into
+the key would fragment the cache per user and cost far more than it saves. So the
+cached body stays public and the favourites are merged on the way out — including on
+a cache hit, which is the path that has to be right or one rider's pins would reach
+another. The client falls back to per-stop fetches if the server sends no `favs`, so
+an older Worker still works.
 
 **It follows you.** The board used to be pinned to wherever you were when it
 launched: one `getCurrentPosition` at boot and nothing after. Walk 150 m and every

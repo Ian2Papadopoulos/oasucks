@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v39 defaults** — if you edit the
+breaks if you change it. Values here are the **v40 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -263,6 +263,16 @@ at costs nothing.
 | Parameter | Default | What it means |
 |---|---|---|
 | `labelZoom` | **15** | Below this zoom the permanent labels on the live-reports map are hidden — a dozen of them overlap into noise at city scale. The pin and its count badge stay; tap a pin for the popup. |
+
+### Favourites in the sweep
+
+`/nearby` accepts `favs=<code,code,…>`, capped at **8** server-side, and returns a
+`favs[]` array holding any of them the sweep did not already cover. Each costs up to
+two OASA subrequests, which is charged against the same 44-subrequest budget that
+governs stop probing — so a long favourites list eats probe budget rather than
+risking the 50-subrequest ceiling.
+
+`FAV_MAX` (6) is what the client will ever pin, so the server cap is slack.
 
 ### Following you while you walk
 

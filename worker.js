@@ -37,7 +37,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v39";
+const APP_VERSION = "v40";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -957,11 +957,29 @@ async function handleNearby(url, env, ctx) {
   // stops the list renders. Everything else lazy-loads when its popup opens.
   const withRoutes = limit;
 
+  /* Favourites pinned outside the nearby set used to cost the client one
+     request each, every sweep: three far favourites quadrupled a session's
+     traffic. They ride along here instead.
+     They are deliberately NOT part of the cache key. Everyone standing on
+     one corner shares the expensive half of this response, and folding a
+     personal list into that key would fragment the cache per user and cost
+     far more than it saves. So the cached body stays public, and the
+     favourites are resolved per request and merged on the way out. */
+  const favCodes = String(url.searchParams.get("favs") || "")
+    .split(",").map(x => x.trim()).filter(Boolean).slice(0, 8);
+
   // ~110m cache granularity, so a whole street corner shares one response
   const ck = `https://nearby/?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}&r=${radius}&l=${limit}&m=${markers}`;
   const cache = caches.default;
   const hit = await cache.match(new Request(ck));
-  if (hit) return withCors(hit);
+  if (hit) {
+    if (!favCodes.length) return withCors(hit);
+    let body = null;
+    try { body = await hit.json(); } catch (_) { }
+    if (!body) return withCors(hit);
+    body.favs = await farFavourites(favCodes, body.stops, lat, lng);
+    return json(body);
+  }
 
   const lists = await Promise.all(samplePts(lat, lng, radius).map(p =>
     getJSON(`${OASA}?act=getClosestStops&p1=${p[0]}&p2=${p[1]}`, ACT_TTL.getClosestStops)));
@@ -995,7 +1013,8 @@ async function handleNearby(url, env, ctx) {
   // unknown ones as the subrequest budget allows.
   const now = Math.floor(Date.now() / 1000);
   const known = await loadStopLines(env);
-  const used = samplePts(lat, lng, radius).length + limit;      // stop-lists + arrivals
+  // stop-lists + arrivals, plus up to two calls for each far favourite
+  const used = samplePts(lat, lng, radius).length + limit + favCodes.length * 2;
   let probeBudget = Math.max(0, 44 - used - withRoutes);
 
   const mustLoad = stops.slice(0, withRoutes);
@@ -1068,7 +1087,38 @@ async function handleNearby(url, env, ctx) {
     },
   });
   await cache.put(new Request(ck), res.clone());
-  return res;
+  if (!favCodes.length) return res;
+  // the shared body goes in the cache; the personal one goes back to you
+  const body = JSON.parse(await res.clone().text());
+  body.favs = await farFavourites(favCodes, stops, lat, lng);
+  return json(body);
+}
+
+/* A favourite the nearby sweep did not return — your home stop while you
+ * are at work. Same shape as an entry in `stops`, so the client can drop
+ * it straight into place. Only the genuinely missing ones are fetched; a
+ * favourite you happen to be standing next to is already in the list. */
+async function farFavourites(codes, stops, lat, lng) {
+  const have = new Set((stops || []).map(s => String(s.code)));
+  const missing = codes.filter(c => !have.has(String(c)));
+  if (!missing.length) return [];
+  const out = [];
+  await pool(missing.map(code => async () => {
+    const r = await fetchStopRoutes(code);
+    if (!r) return;
+    const raw = await getJSON(
+      `${OASA}?act=getStopArrivals&p1=${encodeURIComponent(code)}`, ACT_TTL.getStopArrivals);
+    const arrivals = (Array.isArray(raw) ? raw : [])
+      .map(a => ({
+        code: String(pickField(a, "route_code", "RouteCode") || ""),
+        veh: String(pickField(a, "veh_code", "VEH_NO", "VEH_CODE") || ""),
+        min: parseInt(pickField(a, "btime2", "btime", "stop_time") || "999", 10),
+      }))
+      .filter(a => isFinite(a.min))
+      .sort((x, y) => x.min - y.min);
+    out.push({ code: String(code), routes: r.routes, lines: r.lines, arrivals, detail: true });
+  }), 4);
+  return out;
 }
 
 /* ====================== user reports (KV) ========================= *
