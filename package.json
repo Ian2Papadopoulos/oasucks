@@ -6,9 +6,11 @@
   "description": "Live OASA arrivals — Cloudflare Worker serving the app + API proxy.",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "node test/tiles.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.117.0"
+    "wrangler": "^4.117.0",
+    "playwright-core": "^1.49.0"
   }
 }

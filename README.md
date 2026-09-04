@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v40.**
+version: v41.**
 
 **The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -544,6 +544,27 @@ people who ride the network should stay open to them.
 connection, a service that will not answer, or no location fix to match against.
 "No line by that name" is reserved for the case where it actually looked and found
 nothing, since anything else sends people hunting for a typo they did not make.
+
+**The basemap needs a key.** CARTO began requiring one on
+`basemaps.cartocdn.com` in August 2026; without it the tiles still load but every
+one carries an **"API KEY REQUIRED"** watermark. Get a free key (fair use, 5M tiles
+a month) at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey) and paste
+it into `TILE_KEY` near the top of the script in `public/index.html`.
+
+It is a public value like every browser-side tile key — it ships in the page and
+anyone can read it. **Restrict it to your domain in CARTO's dashboard** rather than
+trying to hide it; there is nowhere in a static app to hide it, and proxying tiles
+through the Worker would cost more requests than the whole rest of the app.
+
+With no key the app falls back to OpenStreetMap's own tiles, desaturated to sit in
+this palette (inverted for the dark toggle, since OSM has no dark style). That keeps
+a fresh clone working and an expired key from looking broken, but **OSM's tiles are a
+donated service with a usage policy written for small projects** — set a key before
+you publish to more than a few people.
+
+CARTO are also retiring these raster PNG endpoints in favour of vector tiles, so a
+key buys time rather than settling this for good. When that lands, the move is
+MapLibre plus a vector style, which is a bigger change than swapping a URL.
 
 **Before you publish:**
 

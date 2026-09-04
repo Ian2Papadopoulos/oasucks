@@ -205,6 +205,12 @@
   body.mapview .wrap{padding-bottom:0}
   body.mapview .foot{display:none}
   .leaflet-container{font:inherit}
+  /* Only used on the keyless fallback: OSM's own tiles are colourful, and
+     this app is not. Desaturating them lands close to the CARTO styles the
+     rest of the design was drawn against; inverting does the dark one,
+     with a hue rotation so roads and water do not come out as negatives. */
+  .tiles-plain{filter:grayscale(1) contrast(.92) brightness(1.05)}
+  .tiles-dark .tiles-plain{filter:grayscale(1) invert(1) hue-rotate(180deg) brightness(.92) contrast(1.05)}
   .maptoggle{position:absolute;top:9px;right:9px;z-index:600;width:32px;height:32px;
     background:var(--card);border:1px solid var(--toner);color:var(--toner);font-size:13px;
     cursor:pointer;display:grid;place-items:center;border-radius:2px}
@@ -625,7 +631,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v40</span></div>
+  <div class="foot"><span class="ver">v41</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1490,11 +1496,56 @@ function byCode(code){
 }
 
 /* ------------------------------ map -------------------------------- */
-const TILE_LIGHT="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
-const TILE_DARK="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
-const TILE_ATTR='&copy; OpenStreetMap &copy; CARTO';
+/* ------------------------------ basemap ----------------------------
+ * CARTO began requiring a key on basemaps.cartocdn.com in August 2026.
+ * Without one the tiles still load, but every one of them carries an
+ * "API KEY REQUIRED" watermark. A key is free (fair use, 5M tiles a
+ * month) from carto.com/basemaps/apikey — paste it into TILE_KEY below.
+ *
+ * It is a public value, like every browser-side tile key: it ships in
+ * this file and anyone can read it. Restrict it to your own domain in
+ * CARTO's dashboard rather than trying to hide it.
+ *
+ * With NO key we fall back to OpenStreetMap's own tiles, desaturated to
+ * sit closer to this app's palette. That means a fresh clone works out of
+ * the box and an expired key degrades to a plain map instead of a
+ * watermarked one — but OSM's tiles are a donated service with a usage
+ * policy written for small projects, so set a key before you publish to
+ * more than a few people.
+ *
+ * CARTO are also retiring these raster PNG endpoints in favour of vector
+ * tiles, so a key buys time rather than settling the question for good.
+ */
+const TILE_KEY="";
+const CARTO_LIGHT="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+const CARTO_DARK="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+const OSM_TILES="https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const CARTO_ATTR='&copy; OpenStreetMap &copy; CARTO';
+const OSM_ATTR='&copy; OpenStreetMap contributors';
+// tolerate a key pasted as "abc", "key=abc" or "?key=abc"
+function tileKey(){ return String(TILE_KEY||"").trim().replace(/^\?/,"").replace(/^key=/,""); }
+function hasTileKey(){ return tileKey().length>0; }
 let map=null,layerStops=null,mapMarkers={},tileLayer=null;
-function tileUrl(){ return state.dark?TILE_DARK:TILE_LIGHT; }
+function tileUrl(){
+  if(!hasTileKey()) return OSM_TILES;
+  return (state.dark?CARTO_DARK:CARTO_LIGHT)+"?key="+encodeURIComponent(tileKey());
+}
+/* The two providers do not take the same options: OSM serves no @2x tiles,
+   asks that its subdomains not be used, and stops at zoom 19. Building the
+   layer in one place keeps the four maps in the app from drifting apart. */
+function addTiles(map){
+  const keyed=hasTileKey();
+  const layer=L.tileLayer(tileUrl(),{
+    subdomains: keyed?"abcd":"abc",
+    maxZoom: keyed?20:19,
+    detectRetina: keyed,
+    crossOrigin: true,
+    className: keyed?"":"tiles-plain",
+    attribution: keyed?CARTO_ATTR:OSM_ATTR,
+  });
+  layer.addTo(map);
+  return layer;
+}
 function meIcon(){ return L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[16,16],iconAnchor:[8,8]}); }
 /* Double-tap a pin to favourite it — the whole marker, so the name label
    counts as well as the dot. Nothing is bound to long-press here any more:
@@ -1526,7 +1577,7 @@ function ensureMap(){
   map=L.map("map",{zoomControl:true}).setView([here.lat,here.lng],15);
   const nameZoom=()=>document.getElementById("map").classList.toggle("zoomed",map.getZoom()>=16);
   map.on("zoomend",nameZoom); setTimeout(nameZoom,0);
-  tileLayer=L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true,attribution:TILE_ATTR}).addTo(map);
+  tileLayer=addTiles(map);
   layerStops=L.layerGroup().addTo(map);
 }
 /* Every line in a popup is a button carrying its route code, because the
@@ -2276,7 +2327,7 @@ async function openRoutePreview(stop,routeCode,minutes,meta){
   $("#rp-strip").innerHTML=`<div class="res-msg" style="color:var(--muted);font-size:13px;padding:8px 2px">${t("searching")}</div>`;
   if(!rmap){
     rmap=L.map("rpmap",{zoomControl:true});
-    L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true,attribution:TILE_ATTR}).addTo(rmap);
+    addTiles(rmap);
     rlayer=L.layerGroup().addTo(rmap);
     rmap.setView([here.lat,here.lng],14);
   } else rlayer.clearLayers();
@@ -2546,7 +2597,7 @@ function openReports(){
   $("#rep-title").textContent=t("reports");
   if(!repmap){
     repmap=L.map("repmap",{zoomControl:true});
-    L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true,attribution:TILE_ATTR}).addTo(repmap);
+    addTiles(repmap);
     replayer=L.layerGroup().addTo(repmap);
     repmap.setView([here.lat,here.lng],14);
     repmap.on("zoomend",syncFlagLabels);
@@ -3487,7 +3538,7 @@ function openLiveMap(){
   $("#live-title").textContent=t("liveH");
   if(!lmap){
     lmap=L.map("livemap",{zoomControl:true}).setView([here.lat,here.lng],14);
-    L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true,attribution:TILE_ATTR}).addTo(lmap);
+    addTiles(lmap);
     llayer=L.layerGroup().addTo(lmap);
   }
   $("#live-hint").innerHTML=`<div class="shint">${t("liveHint")}</div>`;
@@ -3607,7 +3658,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v40</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v41</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -4008,6 +4059,7 @@ $("#basemap").onclick=()=>{
   state.dark=!state.dark;
   $("#basemap").textContent=state.dark?"☀️":"🌙";
   try{ localStorage.setItem("dark",state.dark?"1":"0"); }catch(_){}
+  document.body.classList.toggle("tiles-dark",state.dark&&!hasTileKey());
   if(tileLayer) tileLayer.setUrl(tileUrl());
 };
 let radTimer=null;
@@ -4020,6 +4072,7 @@ if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch
 
 try{ state.dark=localStorage.getItem("dark")==="1"; }catch(_){}
 $("#basemap").textContent=state.dark?"☀️":"🌙";
+document.body.classList.toggle("tiles-dark",state.dark&&!hasTileKey());
 try{ const r=+localStorage.getItem("radius"); if(r>=200&&r<=1000){ state.radius=r; $("#radius").value=r; } }catch(_){}
 applyStatics();
 here.label=LANG==="el"?PRESETS[0].el:PRESETS[0].en;

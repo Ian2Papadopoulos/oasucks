@@ -106,13 +106,22 @@ https://oasa-stop.<your-subdomain>.workers.dev
   *unconfirmed* flag that shows hollow for 5 minutes until someone agrees. Withdraw your
   own from the list under the map. A station must be within 600 m.
 
+### The map is covered in "API KEY REQUIRED"
+
+CARTO started requiring a key for their basemaps in August 2026. Get a free one at
+<https://carto.com/basemaps/apikey>, paste it into `TILE_KEY` near the top of the
+script block in `public/index.html`, and redeploy. Restrict it to your domain in
+CARTO's dashboard — it is visible in the page source, as every browser-side tile key
+is. Leave `TILE_KEY` empty and the app uses OpenStreetMap tiles instead, which need
+no key but are a donated service meant for small projects.
+
 ### If something's off
 - **Empty boards / "no arrivals":** normal late at night or on quiet lines — check a
   central stop (Change → Syntagma) during the day to confirm data is flowing.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v30"` to `v31` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v31"` to `v32` in `public/sw.js` and redeploy to force an update.
 
 ---
 
