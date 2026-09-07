@@ -82,6 +82,12 @@ https://oasa-stop.<your-subdomain>.workers.dev
 3. Install it like an app: Chrome menu (⋮) → **Add to Home screen** → Add. It now opens
    full-screen with its own icon, no browser bars.
 
+   The app says this itself on the **last card of the first-run carousel**, with the
+   steps for whichever device is reading — and on Chrome and Edge it offers a real
+   **Install** button instead of instructions. Worth checking on the phone: the card
+   should name Chrome's ⋮ menu, not iOS's Share sheet. It is reachable again from
+   ☰ → Settings → **How it works**.
+
 ---
 
 ## 6. Check it's actually working
@@ -135,6 +141,20 @@ past the 260 ms debounce, the 700 ms floor and three characters, cached at the e
 If you approach the daily quota, raise `JPQ.debounceMs` and `JPQ.minGapMs` in
 `public/index.html` before you touch anything else.
 
+### The logo changed but the installed icon didn't
+
+The home-screen icon is a PNG, not the CSS mark, so it does not follow a stylesheet
+edit. Rebuild it:
+
+```powershell
+npm run icons        # needs a Chromium; set CHROME_PATH if it is not found
+npx wrangler deploy
+```
+
+Already-installed phones keep the old icon until the launcher refreshes it — usually a
+reinstall. `npm test` fails if the icons and the mark have drifted apart, so this is
+caught before it ships rather than after.
+
 ### The map is covered in "API KEY REQUIRED"
 
 CARTO started requiring a key for their basemaps in August 2026. Get a free one at
@@ -150,7 +170,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v35"` to `v36` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v36"` to `v37` in `public/sw.js` and redeploy to force an update.
 
 ---
 

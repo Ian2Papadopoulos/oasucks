@@ -4,7 +4,8 @@
    than from whichever one someone remembered to check.
    The old name is assembled at runtime rather than written out, so this
    file does not trip its own search. */
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { chromium } from "playwright-core";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,14 +53,35 @@ console.log("\n— the wordmark is one word, and the mark carries an x —");
   ok("the wordmark reads OASA + x",
      /<span class="w-oasa">OASA<\/span><span class="w-x">x<\/span>/.test(idx));
   ok("...with the two-line pun stack gone", !/<span>O A<\/span>/.test(idx));
-  ok("the mark keeps its original strike",
-     /\.mark::after\{[^}]*rotate\(-7deg\)/s.test(idx));
-  ok("...and gains a second, shorter stroke that crosses it",
-     /\.mark::before\{[^}]*rotate\(52deg\)/s.test(idx));
-  const after = idx.match(/\.mark::after\{[^}]*\}/s)[0];
-  const before = idx.match(/\.mark::before\{[^}]*\}/s)[0];
-  ok("...which is genuinely shorter, or it would not read as an x",
-     /left:3px;right:3px/.test(after) && /width:22px/.test(before));
+
+  /* v46 replaced the two crossing strokes with a single yellow X. Two
+     lines read as a strikeout cancelling the name; one X reads as a mark
+     stamped on it, which is the thing the app is called. */
+  const after = (idx.match(/\.mark::after\{[^}]*\}/s) || [""])[0];
+  ok("the mark carries a literal X, not a pair of struck lines",
+     /content:"X"/.test(after), after.slice(0, 60));
+  ok("...no strikeout rules are left behind",
+     !/\.mark::before\{/.test(idx) && !/rotate\(-7deg\)/.test(idx),
+     "a leftover line would read as a strike through the X");
+  ok("...and it is yellow, the one colour the wordmark's x already uses",
+     /color:var\(--marker\)/.test(after), after);
+  ok("...set in the same face as the letters it sits on",
+     /var\(--mono\)/.test(after));
+
+  /* "In the middle, towards the bottom": horizontally on the seam between
+     the second A and the S, vertically in the lower third. */
+  const top = Number((after.match(/top:(\d+)%/) || [])[1]);
+  ok("it sits low in the block, not across the middle", top >= 65 && top <= 85,
+     `top:${top}% — a centred X would be a strikeout again`);
+  ok("...and on the horizontal centre of the word",
+     /left:calc\(50% - \dpx\)/.test(after),
+     "nudged off the box centre because the letter-spacing adds a trailing gap");
+  const pad = (idx.match(/\.mark\{[^}]*padding:(\d+)px (\d+)px (\d+)px/s) || []);
+  ok("the block is deeper below than above, to give the X room",
+     Number(pad[3]) > Number(pad[1]), `${pad[1]}px above, ${pad[3]}px below`);
+  ok("the dark outline is painted behind the yellow, not over it",
+     /paint-order:stroke fill/.test(after),
+     "without it the stroke eats into the glyph and the X goes thin");
 }
 
 console.log("\n— the icons were regenerated, not left behind —");
@@ -73,11 +95,33 @@ console.log("\n— the icons were regenerated, not left behind —");
     const want = f.includes("192") ? 192 : 512;
     ok(`...${w}x${h}, as the manifest promises`, w === want && h === want, `${w}x${h}`);
   }
-  const newer = ["icon-192.png", "icon-512.png", "icon-maskable-512.png"]
-    .map(f => statSync(path.join(REPO, "public", f)).mtimeMs);
-  const idxTime = statSync(path.join(REPO, "public", "index.html")).mtimeMs;
-  ok("they are not older than the rebrand itself",
-     newer.every(t => t > idxTime - 7 * 86400e3), "regenerate them if this fails");
+  /* A timestamp only proves someone touched the file. This looks for the
+     mark's yellow in the actual pixels: an icon still carrying the old
+     white-on-black strikeout has none of it anywhere, so forgetting to run
+     `npm run icons` after changing `.mark` fails here rather than shipping
+     last year's logo to everyone who installs the app. */
+  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+  const page = await (await browser.newContext()).newPage();
+  for (const f of ["icon-192.png", "icon-512.png", "icon-maskable-512.png"]) {
+    const b64 = readFileSync(path.join(REPO, "public", f)).toString("base64");
+    const share = await page.evaluate(async src => {
+      const img = new Image();
+      await new Promise(r => { img.onload = r; img.src = src; });
+      const c = document.createElement("canvas");
+      c.width = img.width; c.height = img.height;
+      c.getContext("2d").drawImage(img, 0, 0);
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let hits = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        // near #FFE24A: high red, high green, low blue
+        if (d[i] > 220 && d[i + 1] > 190 && d[i + 1] < 245 && d[i + 2] < 130) hits++;
+      }
+      return hits / (c.width * c.height);
+    }, "data:image/png;base64," + b64);
+    ok(`${f} carries the mark's yellow X`, share > 0.004,
+       `${(share * 100).toFixed(2)}% yellow — run \`npm run icons\` after changing .mark`);
+  }
+  await browser.close();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

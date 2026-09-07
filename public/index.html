@@ -64,14 +64,23 @@
   header{position:sticky;top:0;z-index:800;background:var(--paper);
     padding:14px 16px 10px;margin:0 -16px 2px;border-bottom:1px solid var(--rule)}
   .brand{display:flex;align-items:center;gap:9px}
-  .mark{background:var(--toner);color:var(--paper);padding:5px 7px;font-weight:700;
+  /* Deeper at the bottom than the top: that is the room the X hangs in. */
+  .mark{background:var(--toner);color:var(--paper);padding:5px 7px 10px;font-weight:700;
     font-size:12px;letter-spacing:.1em;flex:none;position:relative}
-  /* The strike that was always here, plus its mirror: shorter, centred, so
-     the two of them read as an x struck through the middle of OASA. */
-  .mark::after{content:"";position:absolute;left:3px;right:3px;top:50%;height:2px;
-    background:var(--paper);transform:translateY(-1px) rotate(-7deg)}
-  .mark::before{content:"";position:absolute;left:50%;width:22px;margin-left:-11px;
-    top:50%;height:2px;background:var(--paper);transform:translateY(-1px) rotate(52deg)}
+  /* One yellow X, not a strikeout. It sits on the seam between the second
+     A and the S — the middle of the word — and low, in the bottom third,
+     so OASA still reads in full above it and the X lands as a stamp on
+     the name rather than a line cancelling it. Set as a glyph in the same
+     mono face as the letters, so it belongs to the same alphabet.
+     `paint-order` keeps the dark stroke outside the yellow instead of
+     eating into it; the shadow is the fallback where that is ignored, and
+     is invisible under the stroke where it is not. */
+  .mark::after{content:"X";position:absolute;left:calc(50% - 2px);top:74%;
+    transform:translate(-50%,-50%);
+    font:700 19px/1 var(--mono);letter-spacing:0;color:var(--marker);
+    -webkit-text-stroke:2.5px var(--toner);paint-order:stroke fill;
+    text-shadow:0 0 1px var(--toner),0 0 1px var(--toner);
+    pointer-events:none}
   /* One word now, so the two-line stack that made the old pun work is gone.
      Everything else about it is the same: mono, bold, uppercase, tracked. */
   .wordmark{display:flex;align-items:baseline;margin:0;line-height:1;
@@ -467,6 +476,20 @@
     font-family:var(--mono);font-size:11.5px;font-weight:700;cursor:pointer;
     border-radius:2px;letter-spacing:.08em;text-transform:uppercase}
   .tournext:active{opacity:.85}
+  /* the install card: the steps for THIS device, set apart from the prose */
+  .inst{margin-top:10px}
+  .inst-steps{display:block;background:var(--paper);border:1px dashed var(--rule);
+    border-radius:2px;padding:9px 11px;font-family:var(--mono);font-size:11.5px;
+    line-height:1.7;color:var(--toner)}
+  .inst-steps b{background:var(--marker);padding:1px 4px;border-radius:2px;
+    font-weight:700;white-space:nowrap}
+  .tourinstall{width:100%;background:var(--marker);color:var(--toner);
+    border:2px solid var(--toner);padding:11px;font-family:var(--mono);font-size:12px;
+    font-weight:700;cursor:pointer;border-radius:2px;letter-spacing:.1em;
+    text-transform:uppercase}
+  .tourinstall:active{opacity:.85}
+  .tourinstall:disabled{opacity:.5}
+  .inst-other{margin-top:9px;color:var(--ink3);font-size:10.5px;line-height:1.5}
 
   /* ------------------------------ settings ------------------------------ */
   .setrow{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);
@@ -691,7 +714,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v45</span></div>
+  <div class="foot"><span class="ver">v46</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1017,6 +1040,23 @@ const T={
   tour4h:"Ειδοποιήσεις",
   tour4p:"Βάλε ειδοποίηση για οποιαδήποτε στάση, όχι μόνο τις κοντινές: το καμπανάκι έχει "+
     "αναζήτηση για κάθε στάση της Αθήνας.",
+  /* Η κάρτα εγκατάστασης δείχνει τα βήματα ΤΗΣ συσκευής που κρατάς — οι
+     οδηγίες για τις άλλες τρεις είναι θόρυβος τη στιγμή που θέλεις να το
+     εγκαταστήσεις εδώ. Οι υπόλοιπες μπαίνουν σε μία γραμμή από κάτω. */
+  tour5h:"Βάλ' το στην αρχική οθόνη",
+  instWhy:"Ανοίγει σε πλήρη οθόνη, με δικό του εικονίδιο, χωρίς μπάρες του browser — "+
+    "και ξεκινά πιο γρήγορα.",
+  instAndroid:"Chrome → μενού <b>⋮</b> → <b>Προσθήκη στην αρχική οθόνη</b>.",
+  instIOS:"Safari → <b>Κοινοποίηση</b> <b>↑</b> → <b>Προσθήκη στην οθόνη Αφετηρίας</b>.",
+  instDesktop:"Chrome ή Edge → το εικονίδιο εγκατάστασης <b>⊕</b> στη γραμμή διευθύνσεων, "+
+    "ή μενού → <b>Εγκατάσταση</b>.",
+  instMac:"Safari → <b>Κοινοποίηση</b> → <b>Προσθήκη στο Dock</b>.",
+  instFirefox:"Ο Firefox δεν εγκαθιστά ιστοσελίδες ως εφαρμογές. Άνοιξε αυτή τη σελίδα "+
+    "στον Chrome, στον Edge ή στον Safari.",
+  instOther:"Αλλού: Android → μενού ⋮ · iPhone → Κοινοποίηση ↑ · υπολογιστής → "+
+    "εικονίδιο εγκατάστασης στη γραμμή διευθύνσεων.",
+  instBtn:"Εγκατάσταση",
+  instDone:"Τρέχει ήδη εγκατεστημένο ✓",
   setEmpty:"Απόκρυψη στάσεων χωρίς αφίξεις",
   setEmptyH:"Όταν είναι ενεργό, οι στάσεις που δεν έχουν άφιξη τα επόμενα 15′ δεν εμφανίζονται "+
     "στη λίστα, όσο κοντά κι αν είναι. Τα αγαπημένα εμφανίζονται πάντα.",
@@ -1164,6 +1204,22 @@ const T={
   tour4h:"Alerts",
   tour4p:"Set an alert for any stop, not just nearby ones: the bell has a search for every stop "+
     "in Athens.",
+  /* The install card shows the steps for the device in your hand — the
+     other three platforms' instructions are noise at the moment you want
+     to install it on this one. They get a single line underneath. */
+  tour5h:"Put it on your home screen",
+  instWhy:"It opens full-screen with its own icon, no browser bars — and starts faster.",
+  instAndroid:"Chrome → menu <b>⋮</b> → <b>Add to Home screen</b>.",
+  instIOS:"Safari → <b>Share</b> <b>↑</b> → <b>Add to Home Screen</b>.",
+  instDesktop:"Chrome or Edge → the install icon <b>⊕</b> in the address bar, "+
+    "or menu → <b>Install</b>.",
+  instMac:"Safari → <b>Share</b> → <b>Add to Dock</b>.",
+  instFirefox:"Firefox doesn't install websites as apps. Open this page in Chrome, "+
+    "Edge or Safari.",
+  instOther:"Elsewhere: Android → menu ⋮ · iPhone → Share ↑ · desktop → the install "+
+    "icon in the address bar.",
+  instBtn:"Install",
+  instDone:"Already running as an installed app ✓",
   setEmpty:"Hide stops with no arrivals",
   setEmptyH:"When on, stops with nothing due in the next 15 min are left out of the list, "+
     "however close they are. Favourites always show.",
@@ -3764,8 +3820,51 @@ const TOUR=[
   {art:"★", h:"tour2h", p:"tour2p"},
   {art:"↔", h:"tour3h", p:"tour3p"},
   {art:"🔔", h:"tour4h", p:"tour4p"},
+  {art:"⤓", h:"tour5h", p:installCard, html:true},
 ];
 let tourAt=0;
+
+/* ---------------------- installing it as an app --------------------- *
+ * Chrome and Edge hand us the install prompt themselves; when they do,
+ * the card offers a button that installs in one tap and no instructions
+ * are needed. Everywhere else there is no such API and the steps live in
+ * a browser menu, so the card has to name them — for the device in your
+ * hand, not for all four at once. */
+let installEvt=null;
+addEventListener("beforeinstallprompt",e=>{
+  e.preventDefault(); installEvt=e;
+  if(!$("#tour").hidden) paintTour();          // upgrade the card if it is open
+});
+addEventListener("appinstalled",()=>{ installEvt=null; });
+
+function isStandalone(){
+  try{
+    return matchMedia("(display-mode: standalone)").matches
+      || matchMedia("(display-mode: window-controls-overlay)").matches
+      || navigator.standalone === true;        // iOS Safari's own flag
+  }catch(_){ return false; }
+}
+/* Coarse on purpose. Getting this wrong shows someone the steps for the
+   wrong menu, which is annoying; the "elsewhere" line under it is the
+   safety net, and it is always there. */
+function platformKey(){
+  const ua=navigator.userAgent||"";
+  const iOS=/iPad|iPhone|iPod/.test(ua)
+    || (/Macintosh/.test(ua) && navigator.maxTouchPoints>1);   // iPadOS lies
+  if(/Firefox|FxiOS/.test(ua)) return "instFirefox";
+  if(iOS) return "instIOS";
+  if(/Android/.test(ua)) return "instAndroid";
+  if(/Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg/.test(ua)) return "instMac";
+  return "instDesktop";
+}
+function installCard(){
+  if(isStandalone()) return `<b>${esc(t("instDone"))}</b>`;
+  const steps=installEvt
+    ? `<button class="tourinstall" id="tour-install">${esc(t("instBtn"))}</button>`
+    : `<span class="inst-steps">${t(platformKey())}</span>`;
+  return `${esc(t("instWhy"))}<div class="inst">${steps}</div>
+    <div class="inst-other">${esc(t("instOther"))}</div>`;
+}
 function tourDone(){
   try{ localStorage.setItem(TOUR_KEY,"1"); }catch(_){}
   $("#tour").hidden=true;
@@ -3774,7 +3873,16 @@ function paintTour(){
   const c=TOUR[tourAt]; if(!c) return tourDone();
   $("#tour-art").textContent=c.art;
   $("#tour-h").textContent=t(c.h);
-  $("#tour-p").textContent=t(c.p);
+  // a card may build its own body — the install one differs per device
+  const body=typeof c.p==="function"?c.p():t(c.p);
+  if(c.html) $("#tour-p").innerHTML=body; else $("#tour-p").textContent=body;
+  const btn=$("#tour-install");
+  if(btn) btn.onclick=async()=>{
+    if(!installEvt) return;
+    btn.disabled=true;
+    try{ installEvt.prompt(); await installEvt.userChoice; }catch(_){}
+    installEvt=null; paintTour();
+  };
   $("#tour-dots").innerHTML=TOUR.map((_,i)=>`<i class="${i===tourAt?"on":""}"></i>`).join("");
   $("#tour-skip").textContent=t("tourSkip");
   $("#tour-next").textContent=tourAt===TOUR.length-1?t("tourGo"):t("tourNext");
@@ -4160,7 +4268,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v45</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v46</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

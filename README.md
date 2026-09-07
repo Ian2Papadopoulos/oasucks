@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v45.**
+version: v46.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -34,7 +34,8 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 364 assertions across seven suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the brand and report suites read the source; the tile, journey and legal suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 406 assertions across eight suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal and install suites drive a real browser via Playwright. |
+| `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The one thing you must understand
 
@@ -76,6 +77,27 @@ Serve over HTTPS — that's required for geolocation and service-worker install.
 
 Open the hosted URL in Chrome → menu → **Add to Home screen**. It launches full-screen,
 standalone, with the app icon. No Play Store needed.
+
+**The app tells people this itself.** The last card of the first-run carousel is the
+install card, and it names the steps for *the device in your hand* — Android's ⋮ menu,
+iOS's Share sheet, the desktop address-bar icon, Safari's Add to Dock — rather than
+listing all four and making the reader find their own. Firefox gets told plainly that
+it doesn't install web apps, because it doesn't, and a vague instruction there is worse
+than none.
+
+Where Chrome and Edge hand the page an install prompt of their own
+(`beforeinstallprompt`), the instructions give way to a real **Install** button and the
+whole thing is one tap. An app already running standalone is not told how to install
+itself; it just says so. The carousel is reachable again from **Settings → How it works**,
+so the card is not a one-time thing someone dismissed on day one.
+
+### The icons
+
+`npm run icons` rebuilds `icon-192`, `icon-512` and `icon-maskable-512` from the CSS mark
+rather than from a separate drawing, because two drawings of one logo drift and the drift
+is invisible until somebody installs the app and gets last year's icon. `test/brand.mjs`
+looks for the mark's yellow in the icons' actual pixels, so forgetting to run it fails
+the suite instead of shipping.
 
 ## Ship it as a real Play Store app (optional)
 
