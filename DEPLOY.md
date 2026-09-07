@@ -29,13 +29,13 @@ You should see something like `v20.x` or `v22.x`.
 Clone the repo (needs Git — https://git-scm.com — or use GitHub Desktop / "Download ZIP"
 from the repo page):
 ```powershell
-git clone <your-repo-url> oasucks
-cd oasucks
+git clone <your-repo-url> oasax
+cd oasax
 ```
 
 ## 2. Open a terminal *in that folder*
 
-If you cloned from the command line you're already there. Otherwise open the `oasucks`
+If you cloned from the command line you're already there. Otherwise open the `oasax`
 folder in VS Code → Terminal → New Terminal, or Shift + right-click the folder →
 **"Open PowerShell window here"**.
 
@@ -121,7 +121,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v31"` to `v32` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v32"` to `v33` in `public/sw.js` and redeploy to force an update.
 
 ---
 

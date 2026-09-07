@@ -1,6 +1,6 @@
 /**
- * OASUCKS — Cloudflare Worker backend
- * Copyright (C) 2026 OASUCKS contributors
+ * OASAx — Cloudflare Worker backend
+ * Copyright (C) 2026 OASAx contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  *
  * This program is free software: you can redistribute it and/or modify it
@@ -37,7 +37,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v41";
+const APP_VERSION = "v42";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1948,7 +1948,7 @@ export default {
       const sub = b && b.sub ? await env.ALERTS.get(`sub:${b.sub}`, "json") : null;
       if (!sub) return json({ error: "unknown subscription" }, 404);
       const status = await sendPush(sub, {
-        title: "OASUCKS ✓", body: "Οι ειδοποιήσεις δουλεύουν.", tag: "test", url: "./",
+        title: "OASAx ✓", body: "Οι ειδοποιήσεις δουλεύουν.", tag: "test", url: "./",
       }, env);
       return json({ ok: status < 300, status });
     }

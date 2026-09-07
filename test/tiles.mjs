@@ -12,14 +12,17 @@ const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "pu
 const NOW = Math.floor(Date.now() / 1000);
 const LAT = 37.9760, LNG = 23.7300;
 
-/* Build a copy of public/ with TILE_KEY set to whatever this run wants,
-   so the real file is never edited by a test. */
+/* Build a copy of public/ with TILE_KEY forced to whatever this run wants,
+   so the real file is never edited and a key already set in it cannot make
+   the keyless case silently pass. */
 function withKey(key) {
   const dir = mkdtempSync(path.join(tmpdir(), "tiles-"));
   cpSync(SRC, dir, { recursive: true });
   const f = path.join(dir, "index.html");
-  const html = readFileSync(f, "utf8").replace('const TILE_KEY="";', `const TILE_KEY=${JSON.stringify(key)};`);
-  writeFileSync(f, html);
+  const src = readFileSync(f, "utf8");
+  const pat = /const TILE_KEY\s*=\s*"[^"]*";/;
+  if (!pat.test(src)) throw new Error("TILE_KEY declaration not found in index.html");
+  writeFileSync(f, src.replace(pat, `const TILE_KEY=${JSON.stringify(key)};`));
   return dir;
 }
 
@@ -51,7 +54,7 @@ const ok = (n, c, x = "") => { (c ? pass++ : fail++); console.log(`${c ? "  ok  
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 
 async function run(key) {
-  ROOT = key === null ? SRC : withKey(key);
+  ROOT = withKey(key === null ? "" : key);
   const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true,
     isMobile: true, permissions: ["geolocation"],
     geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- OASUCKS · Copyright (C) 2026 OASUCKS contributors
+<!-- OASAx · Copyright (C) 2026 OASAx contributors
      SPDX-License-Identifier: AGPL-3.0-or-later
      Complete source available on request: oasax@proton.me -->
 <html lang="el">
@@ -7,13 +7,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#F7F7F5" />
-<title>OASUCKS · Live arrivals</title>
+<title>OASAx · Live arrivals</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <!-- iOS reads these, not (only) the manifest -->
 <link rel="apple-touch-icon" href="icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="OASUCKS" />
+<meta name="apple-mobile-web-app-title" content="OASAx" />
 <!-- Leaflet is self-hosted (was cdnjs): same-origin, so no third-party
      code path to compromise, no SRI hash to break, and it works offline. -->
 <link rel="stylesheet" href="vendor/leaflet-1.9.4.min.css" />
@@ -63,12 +63,20 @@
   .brand{display:flex;align-items:center;gap:9px}
   .mark{background:var(--toner);color:var(--paper);padding:5px 7px;font-weight:700;
     font-size:12px;letter-spacing:.1em;flex:none;position:relative}
+  /* The strike that was always here, plus its mirror: shorter, centred, so
+     the two of them read as an x struck through the middle of OASA. */
   .mark::after{content:"";position:absolute;left:3px;right:3px;top:50%;height:2px;
     background:var(--paper);transform:translateY(-1px) rotate(-7deg)}
-  .wordmark{display:flex;flex-direction:column;align-items:center;margin:0;line-height:.96;
+  .mark::before{content:"";position:absolute;left:50%;width:22px;margin-left:-11px;
+    top:50%;height:2px;background:var(--paper);transform:translateY(-1px) rotate(52deg)}
+  /* One word now, so the two-line stack that made the old pun work is gone.
+     Everything else about it is the same: mono, bold, uppercase, tracked. */
+  .wordmark{display:flex;align-items:baseline;margin:0;line-height:1;
     text-transform:uppercase;font-weight:700}
-  .wordmark span:first-child{font-size:12.5px;letter-spacing:.42em;text-indent:.42em}
-  .wordmark span:last-child{font-size:15px;letter-spacing:.06em}
+  .wordmark .w-oasa{font-size:16px;letter-spacing:.11em;text-indent:.11em}
+  /* the x is set apart the way it is in the mark, one size down and struck
+     in the app's single accent colour */
+  .wordmark .w-x{font-size:16px;letter-spacing:0;color:var(--marker2);margin-left:-.06em}
   .brand .spacer{flex:1}
   .iconbtn{width:30px;height:30px;border:1px solid var(--rule);background:var(--card);
     color:var(--toner);font-size:13px;cursor:pointer;display:grid;place-items:center;
@@ -592,7 +600,7 @@
   <header>
     <div class="brand">
       <div class="mark">OASA</div>
-      <h1 class="wordmark"><span>O A</span><span>SUCKS</span></h1>
+      <h1 class="wordmark"><span class="w-oasa">OASA</span><span class="w-x">x</span></h1>
       <div class="spacer"></div>
       <button class="iconbtn alert" id="reportbtn" aria-label="live reports"><span class="livedot"></span><span class="badge" id="repcount" style="display:none">0</span></button>
       <button class="iconbtn" id="bell">🔔<span class="badge" id="bellcount" style="display:none">0</span></button>
@@ -631,7 +639,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v41</span></div>
+  <div class="foot"><span class="ver">v42</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -895,7 +903,7 @@ const T={
   liveCount:n=>`${n} λεωφορεία σε κίνηση`, liveNone:"Κανένα λεωφορείο σε κίνηση εδώ.",
   liveHint:"Δείχνει τα λεωφορεία των γραμμών γύρω από το κέντρο του χάρτη. Μετακίνησε τον χάρτη και πάτα ↻.",
   aboutH:"Σχετικά", srcLink:"Πηγαίος κώδικας (AGPL v3): διατίθεται κατόπιν αιτήματος",
-  aboutBody:`<p><b>OASUCKS</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
+  aboutBody:`<p><b>OASAx</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
     γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
     <p><b>Ζωντανές αναφορές.</b> Μια κοινή εικόνα του τι συμβαίνει τώρα στο δίκτυο, από τους
     ίδιους τους επιβάτες. Δύο κατηγορίες:</p>
@@ -1006,7 +1014,7 @@ const T={
   liveCount:n=>`${n} buses running`, liveNone:"No buses running here.",
   liveHint:"Shows buses on the lines around the centre of the map. Pan the map and tap ↻.",
   aboutH:"About", srcLink:"Source code (AGPL v3): free on request",
-  aboutBody:`<p><b>OASUCKS</b> shows live bus and trolley arrivals for the stops around you,
+  aboutBody:`<p><b>OASAx</b> shows live bus and trolley arrivals for the stops around you,
     using the unofficial OASA telematics API.</p>
     <p><b>Live reports.</b> A shared picture of what's happening on the network right now, from
     the people on it. Two categories:</p>
@@ -1516,7 +1524,7 @@ function byCode(code){
  * CARTO are also retiring these raster PNG endpoints in favour of vector
  * tiles, so a key buys time rather than settling the question for good.
  */
-const TILE_KEY="";
+const TILE_KEY="cb1_2zw8_1_69e54b3a1b17086aafdedb75";
 const CARTO_LIGHT="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 const CARTO_DARK="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
 const OSM_TILES="https://tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -3658,7 +3666,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASUCKS · v41</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v42</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

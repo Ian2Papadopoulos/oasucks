@@ -5,9 +5,9 @@
 > Not legal advice. This mirrors the in-app text at `public/legal.html` — change
 > both together.
 
-By using OASUCKS you agree to the following.
+By using OASAx you agree to the following.
 
-**Unofficial.** OASUCKS is a free, non-commercial app. It is not affiliated with,
+**Unofficial.** OASAx is a free, non-commercial app. It is not affiliated with,
 endorsed by or connected to OASA, OSY, STASY or any authority. Trade marks belong
 to their owners.
 
