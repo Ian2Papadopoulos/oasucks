@@ -106,6 +106,18 @@ https://oasa-stop.<your-subdomain>.workers.dev
   *unconfirmed* flag that shows hollow for 5 minutes until someone agrees. Withdraw your
   own from the list under the map. A station must be within 600 m.
 
+### Walking times say "estimated"
+
+The planner routes walking legs for real when a key is configured, and falls back to a
+distance-aware straight-line estimate when it is not. To turn routing on:
+
+```bash
+npx wrangler secret put ORS_KEY     # free key from openrouteservice.org
+```
+
+Unlike the tile key this one is a **secret**: it stays in the Worker and never reaches a
+browser. Without it nothing breaks, the app just says walking times are estimated.
+
 ### The map is covered in "API KEY REQUIRED"
 
 CARTO started requiring a key for their basemaps in August 2026. Get a free one at
@@ -121,7 +133,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v32"` to `v33` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v33"` to `v34` in `public/sw.js` and redeploy to force an update.
 
 ---
 

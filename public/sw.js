@@ -8,7 +8,7 @@
  * anything with a query string, anything cross-origin) goes to the network
  * every time. New endpoints are safe by default.
  */
-const SHELL = "stop-shell-v32";
+const SHELL = "stop-shell-v33";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest",
   "./vendor/leaflet-1.9.4.min.css", "./vendor/leaflet-1.9.4.min.js"];
 // self-hosted, version-pinned vendor .js is now cacheable too (the app's

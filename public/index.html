@@ -534,6 +534,68 @@
   .rl button{background:var(--card);border:1px solid var(--toner);color:var(--toner);
     width:34px;height:34px;font-size:13px;cursor:pointer;flex:none;border-radius:2px}
 
+  /* --------------------------- journey planner -------------------------- */
+  /* The place picker is opened FROM the full-screen journey panel, so it has
+     to sit above it; a sheet's usual z-index is below one. */
+  #jppick{z-index:3900}
+  /* start is a ring, destination is a filled square — the same two shapes
+     the form uses, so the map reads without a legend */
+  .jp-end{width:15px;height:15px;background:var(--toner);border:2.5px solid var(--paper);
+    box-shadow:0 0 0 1.5px var(--toner);border-radius:1px}
+  #jpr{z-index:3850}
+  .jp-form{padding:12px 13px;border-bottom:1px solid var(--rule);flex:none;
+    display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center}
+  .jp-field{grid-column:1;display:flex;align-items:center;gap:9px;text-align:left;
+    background:var(--card);border:1px solid var(--toner);color:var(--toner);
+    padding:11px 12px;font-size:12.5px;font-family:var(--mono);cursor:pointer;border-radius:2px;
+    overflow:hidden}
+  .jp-lab{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .jp-field.empty .jp-lab{color:var(--ink3)}
+  .jp-dot{width:9px;height:9px;flex:none;border:2px solid var(--toner);border-radius:50%}
+  .jp-dot.b{border-radius:1px;background:var(--toner)}
+  .jp-swap{grid-column:2;grid-row:1/3;width:38px;height:38px;align-self:center;
+    background:var(--card);border:1px solid var(--toner);color:var(--toner);
+    font-size:15px;cursor:pointer;border-radius:2px}
+  .jp-go{grid-column:1/3;background:var(--toner);color:var(--paper);border:none;
+    padding:12px;font-weight:700;font-size:12.5px;font-family:var(--mono);cursor:pointer;
+    text-transform:uppercase;letter-spacing:.12em;border-radius:2px}
+  .jp-go[disabled]{opacity:.4;cursor:default}
+  .jp-out{flex:1;overflow-y:auto;padding:11px 13px calc(20px + env(safe-area-inset-bottom))}
+  .itin{background:var(--card);border:1px solid var(--rule);border-radius:2px;
+    padding:11px 12px;margin-bottom:9px;cursor:pointer;width:100%;text-align:left;
+    font-family:var(--mono);color:var(--toner)}
+  .itin:active{border-color:var(--toner)}
+  .itin-top{display:flex;align-items:baseline;gap:8px}
+  .itin-min{font-size:19px;font-weight:700;letter-spacing:-.02em}
+  .itin-min small{font-size:10px;font-weight:400;letter-spacing:.1em;margin-left:3px}
+  .itin-meta{margin-left:auto;font-size:10px;color:var(--ink3);text-transform:uppercase;
+    letter-spacing:.1em}
+  .itin-chain{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:9px}
+  .hop{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;
+    border:1px solid var(--toner);padding:2px 6px;border-radius:2px;line-height:1.6}
+  .hop.walk{border-style:dashed;font-weight:400;color:var(--ink3);border-color:var(--rule)}
+  .hop.metro{background:var(--toner);color:var(--paper)}
+  /* tram and trolley run on the same graph as the buses, so they are the
+     same chip with a marker that says which one turned up */
+  .hop.tram{border-style:double;border-width:3px}
+  .hop.trolley{border-bottom-width:3px}
+  .hop-sep{color:var(--ink3);font-size:10px}
+  .itin-basis{margin-top:9px;font-size:9.5px;color:var(--ink3);line-height:1.5;
+    border-top:1px dashed var(--rule);padding-top:6px}
+  .jp-step{display:flex;gap:10px;padding:9px 2px;border-bottom:1px dashed var(--rule)}
+  .jp-step:last-child{border-bottom:0}
+  .jp-ic{width:30px;flex:none;text-align:center;font-size:11px;font-weight:700;
+    padding-top:1px}
+  .jp-ic.line{background:var(--toner);color:var(--paper);border-radius:2px;padding:2px 3px}
+  .jp-body{flex:1;min-width:0}
+  .jp-h{font-size:12px;font-weight:700;line-height:1.35}
+  .jp-d{font-size:10.5px;color:var(--ink3);margin-top:2px;line-height:1.45}
+  .jp-t{font-size:11px;font-weight:700;white-space:nowrap;margin-left:auto}
+  #jpmap{flex:1;min-height:190px;position:relative;z-index:0;background:#EDEDEA}
+  .jp-note{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--marker2);
+    padding:8px 10px;font-size:10.5px;color:var(--ink2);line-height:1.5;margin-bottom:10px;
+    border-radius:2px}
+
   /* ------------------------ alerts / tracking --------------------------- */
   .rule{background:var(--card);border:1px solid var(--rule);padding:10px 11px;margin-bottom:7px;
     display:flex;gap:9px;align-items:flex-start;border-radius:2px}
@@ -608,6 +670,7 @@
         <span class="bars"><i></i><i></i><i></i></span></button>
     </div>
     <nav class="menu" id="menu" hidden>
+      <button class="menu-item" id="m-plan"><span class="mi">⇢</span><span id="m-plan-t"></span></button>
       <button class="menu-item" id="m-line"><span class="mi">⌕</span><span id="m-line-t"></span></button>
       <!-- Live buses: retired from the menu, code kept intact (openLiveMap,
            #livebg, /live). Un-hide this button to bring it back. -->
@@ -639,7 +702,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v42</span></div>
+  <div class="foot"><span class="ver">v43</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -693,6 +756,41 @@
   <div id="repmap"></div>
   <div class="rp-strip" id="rep-strip"></div>
 </div>
+
+<div class="rp" id="jp">
+  <div class="rp-hd">
+    <div class="rp-tile" id="jp-tile">⇢</div>
+    <div class="rp-txt"><div class="rp-title" id="jp-title">Διαδρομή</div>
+      <div class="rp-sub" id="jp-sub"></div></div>
+    <button class="rp-x" id="jp-x">✕</button>
+  </div>
+  <div class="jp-form">
+    <button class="jp-field" id="jp-from"><span class="jp-dot a"></span>
+      <span class="jp-lab" id="jp-from-t"></span></button>
+    <button class="jp-swap" id="jp-swap">⇅</button>
+    <button class="jp-field" id="jp-to"><span class="jp-dot b"></span>
+      <span class="jp-lab" id="jp-to-t"></span></button>
+    <button class="jp-go" id="jp-go"></button>
+  </div>
+  <div class="jp-out" id="jp-out"></div>
+</div>
+
+<div class="rp" id="jpr">
+  <div class="rp-hd">
+    <div class="rp-tile" id="jpr-tile">⇢</div>
+    <div class="rp-txt"><div class="rp-title" id="jpr-title"></div>
+      <div class="rp-sub" id="jpr-sub"></div></div>
+    <button class="rp-x" id="jpr-x">✕</button>
+  </div>
+  <div id="jpmap"></div>
+  <div class="rp-strip" id="jpr-strip"></div>
+</div>
+
+<div class="sheet-bg" id="jppick"><div class="sheet">
+  <h3 id="jpp-h"></h3>
+  <div class="search"><input id="jpp-q" autocomplete="off" inputmode="search" /><button id="jpp-go">→</button></div>
+  <div class="results" id="jpp-res"></div>
+</div></div>
 
 <div class="sheet-bg" id="linebg"><div class="sheet">
   <h3 id="ln-h">Γραμμή</h3><p id="ln-p"></p>
@@ -871,6 +969,26 @@ const T={
   openTerms:"Όροι χρήσης", openPrivacy:"Πολιτική απορρήτου",
   back:"← Πίσω",
   mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
+  /* journey planner */
+  mPlan:"Διαδρομή", jpH:"Διαδρομή", jpFrom:"Από πού;", jpTo:"Πού πάμε;",
+  jpMyLoc:"Η τοποθεσία μου", jpGo:"Εύρεση διαδρομής", jpSearching:"Υπολογισμός…",
+  jpNone:"Δεν βρέθηκε διαδρομή με λεωφορείο, τρόλεϊ, τραμ ή μετρό.",
+  jpClosed:"Αυτή την ώρα δεν κυκλοφορούν λεωφορεία ούτε συρμοί.",
+  jpClose:"Η αφετηρία και ο προορισμός είναι σχεδόν στο ίδιο σημείο.",
+  jpPickH:"Επίλεξε σημείο", jpPickPh:"Διεύθυνση, στάση ή σταθμός…",
+  jpWalkAll:"Με τα πόδια", jpWalk:"Περπάτημα", jpTo2:"προς",
+  jpMin:"λεπτά", jpChanges:n=>n===0?"χωρίς αλλαγή":(n===1?"1 αλλαγή":`${n} αλλαγές`),
+  jpStops:n=>n===1?"1 στάση":`${n} στάσεις`,
+  jpWait:"αναμονή", jpRide:"διαδρομή", jpArrive:"Άφιξη",
+  jpBoard:"Επιβίβαση", jpAlight:"Αποβίβαση", jpDest:"Προορισμός", jpStart:"Αφετηρία",
+  jpLive:"Ζωντανές αφίξεις", jpSched:"Βάσει δρομολογίων", jpEst:"Εκτίμηση",
+  jpNoteSched:"Μια ανταπόκριση είναι πολύ μακριά για ζωντανά δεδομένα: κανένα όχημα δεν έχει ακόμη δρομολογηθεί. Ο χρόνος βγήκε από τα δημοσιευμένα δρομολόγια της γραμμής.",
+  jpNoteEst:"Οι χρόνοι του μετρό είναι εκτίμηση. Το τηλεματικό σύστημα του ΟΑΣΑ δεν δίνει θέσεις συρμών, οπότε χρησιμοποιούνται οι δημοσιευμένες συχνότητες ανά ημέρα και ώρα. Το ίδιο ισχύει όπου δεν βρέθηκε πίνακας δρομολογίων.",
+  jpNoteWalk:"Οι χρόνοι περπατήματος είναι κατ' εκτίμηση, σε ευθεία γραμμή με προσαύξηση για τους δρόμους, όχι πραγματική πεζοπορική διαδρομή.",
+  jpModeBus:"Λεωφορείο", jpModeTram:"Τραμ", jpModeTrolley:"Τρόλεϊ", jpModeMetro:"Μετρό",
+  jpDisclaim:"Ενδεικτικοί χρόνοι. Η κίνηση και η πραγματική συχνότητα αλλάζουν το αποτέλεσμα.",
+  jpMyLocErr:"Δεν ξέρω πού είσαι. Πάτα «Αλλαγή» για να ορίσεις τοποθεσία.",
+  jpFast:"Ταχύτερη", jpFewer:"Λιγότερες αλλαγές", jpMetro:"Με μετρό",
   mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις", setTour:"Οδηγός χρήσης",
   tourNext:"Επόμενο", tourGo:"Ξεκίνα", tourSkip:"Παράλειψη",
   tour1h:"Ζωντανές αναφορές",
@@ -982,6 +1100,26 @@ const T={
   openTerms:"Terms of use", openPrivacy:"Privacy policy",
   back:"← Back",
   mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
+  /* journey planner */
+  mPlan:"Journey", jpH:"Journey", jpFrom:"From where?", jpTo:"Where to?",
+  jpMyLoc:"My location", jpGo:"Find a route", jpSearching:"Working it out…",
+  jpNone:"No route by bus, trolley, tram or metro.",
+  jpClosed:"Neither buses nor trains are running at this hour.",
+  jpClose:"Start and destination are almost the same place.",
+  jpPickH:"Pick a place", jpPickPh:"Address, stop or station…",
+  jpWalkAll:"Walk", jpWalk:"Walk", jpTo2:"to",
+  jpMin:"min", jpChanges:n=>n===0?"no changes":(n===1?"1 change":`${n} changes`),
+  jpStops:n=>n===1?"1 stop":`${n} stops`,
+  jpWait:"wait", jpRide:"ride", jpArrive:"Arrive",
+  jpBoard:"Board", jpAlight:"Get off", jpDest:"Destination", jpStart:"Start",
+  jpLive:"Live arrivals", jpSched:"From the timetable", jpEst:"Estimated",
+  jpNoteSched:"One connection is too far ahead for live data: no vehicle has been dispatched for it yet. That time comes from the line's published timetable instead.",
+  jpNoteEst:"Metro times are estimates. OASA's telematics feed carries no trains, so this uses the published frequencies for the day and hour. The same applies anywhere no timetable could be read.",
+  jpNoteWalk:"Walking times are estimated from straight-line distance with an allowance for streets, not from a real pedestrian route.",
+  jpModeBus:"Bus", jpModeTram:"Tram", jpModeTrolley:"Trolley", jpModeMetro:"Metro",
+  jpDisclaim:"Indicative times. Traffic and real frequencies will move them.",
+  jpMyLocErr:"I do not know where you are. Tap Change to set a location.",
+  jpFast:"Fastest", jpFewer:"Fewer changes", jpMetro:"By metro",
   mSettings:"Settings", setH:"Settings", setTour:"How it works",
   tourNext:"Next", tourGo:"Start", tourSkip:"Skip",
   tour1h:"Live reports",
@@ -1180,6 +1318,7 @@ function onDoubleTap(el,fn){
 function applyStatics(){
   document.documentElement.lang=LANG;
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
+  $("#m-plan-t").textContent=t("mPlan");
   $("#m-line-t").textContent=t("mLine"); $("#m-live-t").textContent=t("mLive");
   $("#m-settings-t").textContent=t("mSettings"); $("#m-about-t").textContent=t("mAbout");
   $("#m-legal-t").textContent=t("mLegal");
@@ -3652,6 +3791,247 @@ function toggleHideEmpty(){
   renderSettings(); renderView();
 }
 
+
+/* ====================== journey planning (A → B) ==================== *
+ * The Worker does the routing; this end picks the two ends, renders the
+ * itineraries, and is honest about which numbers are measured and which
+ * are modelled. The distinction is per leg, not per journey, because a
+ * trip is routinely half of each: a live ETA for the bus you are about to
+ * catch, an estimate for the train you will change onto in forty minutes.
+ * ------------------------------------------------------------------ */
+const jp = { from: null, to: null, res: null, picking: null, map: null, layer: null, busy: false };
+
+function jpPlaceLabel(p) {
+  if (!p) return null;
+  if (p.kind === "me") return t("jpMyLoc");
+  return p.label || "";
+}
+function paintJourneyForm() {
+  const f = $("#jp-from"), to = $("#jp-to");
+  const lf = jpPlaceLabel(jp.from), lt = jpPlaceLabel(jp.to);
+  $("#jp-from-t").textContent = lf || t("jpFrom");
+  $("#jp-to-t").textContent = lt || t("jpTo");
+  f.classList.toggle("empty", !lf);
+  to.classList.toggle("empty", !lt);
+  $("#jp-go").textContent = jp.busy ? t("jpSearching") : t("jpGo");
+  $("#jp-go").disabled = jp.busy || !jp.from || !jp.to;
+}
+function openJourney() {
+  toggleMenu(false);
+  $("#jp-title").textContent = t("jpH");
+  $("#jp-sub").textContent = "";
+  if (!jp.from && here && isFinite(here.lat)) jp.from = { kind: "me", lat: here.lat, lng: here.lng };
+  paintJourneyForm();
+  $("#jp").classList.add("on");
+  loadMetro().catch(() => {});      // so stations are searchable in the picker
+}
+function closeJourney() { $("#jp").classList.remove("on"); }
+
+/* Both ends are picked the same way, and from everything the app already
+   knows how to name: where you are, your favourites, the stops around you,
+   every metro station, and failing all that the geocoder. */
+function openJourneyPick(which) {
+  jp.picking = which;
+  $("#jpp-h").textContent = t("jpPickH");
+  $("#jpp-q").placeholder = t("jpPickPh");
+  $("#jpp-q").value = "";
+  jpPickResults("");
+  $("#jppick").classList.add("on");
+  setTimeout(() => $("#jpp-q").focus(), 80);
+}
+function closeJourneyPick() { $("#jppick").classList.remove("on"); jp.picking = null; }
+function jpChoose(place) {
+  if (jp.picking === "to") jp.to = place; else jp.from = place;
+  closeJourneyPick(); paintJourneyForm();
+}
+async function jpPickResults(q) {
+  const box = $("#jpp-res");
+  const add = (label, place, note) => {
+    const b = document.createElement("button");
+    b.className = "res";
+    b.innerHTML = esc(label) + (note ? ` <span style="color:var(--ink3)">· ${esc(note)}</span>` : "");
+    b.onclick = () => jpChoose(place);
+    box.appendChild(b);
+  };
+  box.innerHTML = "";
+  const query = q.trim().toLowerCase();
+
+  if (!query) {
+    if (here && isFinite(here.lat)) add(t("jpMyLoc"), { kind: "me", lat: here.lat, lng: here.lng });
+    favs.slice(0, 4).forEach(f => {
+      const s2 = state.favLive[String(f.code)] || byCode(f.code) || f;
+      if (isFinite(s2.lat)) add("★ " + stopName(s2), { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) });
+    });
+    state.stops.slice(0, 4).forEach(s2 => add("🚏 " + stopName(s2),
+      { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) }, fmtDist(s2.dist)));
+    return;
+  }
+
+  // stations and loaded stops match instantly, with no request at all
+  const norm = x => String(x || "").toLowerCase();
+  (state.metro || []).filter(m => norm(m.name).includes(query) || norm(m.name_en).includes(query))
+    .slice(0, 5).forEach(m => add("Ⓜ " + (LANG === "en" ? (m.name_en || m.name) : m.name),
+      { kind: "metro", lat: m.lat, lng: m.lng, label: LANG === "en" ? (m.name_en || m.name) : m.name }));
+  localStopMatches(query).slice(0, 4).forEach(s2 => add("🚏 " + stopName(s2),
+    { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) }));
+
+  if (query.length < 3) return;
+  const msg = document.createElement("div");
+  msg.className = "res-msg"; msg.textContent = t("searching"); box.appendChild(msg);
+  let items = [], failed = false;
+  try { items = await geocode(q); } catch (_) { failed = true; }
+  msg.remove();
+  items.slice(0, 6).forEach(it => {
+    const lab = placeLabel(it);
+    const la = Number(it.lat), ln = Number(it.lon != null ? it.lon : it.lng);
+    if (!lab || !isFinite(la) || !isFinite(ln)) return;
+    add(lab, { kind: "addr", lat: la, lng: ln, label: lab });
+  });
+  if (!box.children.length) {
+    const m2 = document.createElement("div");
+    m2.className = "res-msg";
+    m2.textContent = navigator.onLine === false ? t("offline")
+      : failed ? t("netErr") : t("noResults");
+    box.appendChild(m2);
+  }
+}
+
+async function runJourney() {
+  if (!jp.from || !jp.to || jp.busy) return;
+  jp.busy = true; paintJourneyForm();
+  const out = $("#jp-out");
+  out.innerHTML = `<div class="res-msg">${esc(t("jpSearching"))}</div>`;
+  try {
+    const u = `${base()}/plan?from=${jp.from.lat},${jp.from.lng}&to=${jp.to.lat},${jp.to.lng}`;
+    const r = await fetch(u, { cache: "no-store" });
+    if (!r.ok) throw new Error("plan " + r.status);
+    jp.res = await r.json();
+    renderJourney();
+  } catch (_) {
+    out.innerHTML = `<div class="res-msg">${esc(navigator.onLine === false ? t("offline") : t("netErr"))}</div>`;
+  }
+  jp.busy = false; paintJourneyForm();
+}
+
+function hopChip(l) {
+  if (l.mode === "walk") return `<span class="hop walk">⏱ ${Math.round(l.min)}′</span>`;
+  return `<span class="hop ${esc(l.mode)}">${esc(String(l.line))}</span>`;
+}
+function modeName(m) {
+  return m === "metro" ? t("jpModeMetro") : m === "tram" ? t("jpModeTram")
+    : m === "trolley" ? t("jpModeTrolley") : t("jpModeBus");
+}
+function renderJourney() {
+  const out = $("#jp-out"), res = jp.res || {};
+  const list = res.itineraries || [];
+  if (!list.length) {
+    const why = res.reason === "closed" ? t("jpClosed") : res.reason === "tooclose" ? t("jpClose") : t("jpNone");
+    out.innerHTML = `<div class="res-msg">${esc(why)}</div>`;
+    return;
+  }
+  const label = { best: t("jpFast"), fewer: t("jpFewer"), metro: t("jpMetro") };
+  out.innerHTML =
+    `<div class="jp-note">${esc(t("jpDisclaim"))}</div>` +
+    list.map((it, i) => {
+      const chain = it.legs.map(hopChip).join('<span class="hop-sep">›</span>');
+      return `<button class="itin" data-i="${i}">
+        <div class="itin-top">
+          <span class="itin-min">${it.totalMin}<small>${esc(t("jpMin"))}</small></span>
+          <span class="itin-meta">${esc(label[it.kind] || "")} · ${esc(t("jpChanges")(it.changes))}</span>
+        </div>
+        <div class="itin-chain">${chain}</div>
+        <div class="itin-basis">${esc(basisLine(it))}</div>
+      </button>`;
+    }).join("");
+  $$("#jp-out .itin").forEach(b => b.onclick = () => openItinerary(list[+b.dataset.i]));
+}
+function basisLine(it) {
+  const b = it.basis;
+  if (b === "live") return t("jpLive");
+  if (b === "timetable") return t("jpSched");
+  if (b === "estimated") return t("jpEst");
+  return `${t("jpLive")} + ${t("jpEst")}`;     // mixed
+}
+function legBasis(l) {
+  return l.basis === "live" ? t("jpLive")
+    : l.basis === "timetable" ? t("jpSched") : t("jpEst");
+}
+
+/* The detail view: the legs written out, and the whole thing drawn. */
+function openItinerary(it) {
+  jp.current = it;
+  $("#jpr-title").textContent = `${it.totalMin} ${t("jpMin")}`;
+  $("#jpr-sub").textContent = `${t("jpChanges")(it.changes)} · ${basisLine(it)}`;
+  $("#jpr").classList.add("on");
+  const notes = [];
+  if (it.legs.some(l => l.mode !== "walk" && l.basis === "timetable")) notes.push(t("jpNoteSched"));
+  if (it.legs.some(l => l.mode !== "walk" && l.basis === "estimated")) notes.push(t("jpNoteEst"));
+  if (it.legs.some(l => l.mode === "walk" && l.basis !== "routed")) notes.push(t("jpNoteWalk"));
+  const nm = o => o ? (LANG === "en" ? (o.en || o.el) : (o.el || o.en)) : "";
+  const rows = it.legs.map(l => {
+    if (l.mode === "walk") {
+      const dest = nm(l.to) || t("jpDest");
+      return `<div class="jp-step"><div class="jp-ic">⏱</div><div class="jp-body">
+        <div class="jp-h">${esc(t("jpWalk"))} ${esc(fmtDist(l.metres))}</div>
+        <div class="jp-d">${esc(t("jpTo2"))} ${esc(dest)}</div></div>
+        <div class="jp-t">${Math.round(l.min)}′</div></div>`;
+    }
+    const head = l.headsign ? nm(l.headsign) : "";
+    const basis = legBasis(l);
+    return `<div class="jp-step"><div class="jp-ic line">${esc(String(l.line))}</div><div class="jp-body">
+      <div class="jp-h">${esc(t("jpBoard"))} ${esc(nm(l.from))}</div>
+      <div class="jp-d">${esc(modeName(l.mode))}${head ? " · " + esc(head) : ""} · ${esc(t("jpStops")(l.stops))} · ${esc(t("jpAlight"))} ${esc(nm(l.to))}</div>
+      <div class="jp-d">${esc(t("jpWait"))} ${Math.round(l.wait)}′ · ${esc(t("jpRide"))} ${Math.round(l.rideMin)}′ · ${esc(basis)}</div>
+      </div><div class="jp-t">${Math.round(l.min)}′</div></div>`;
+  }).join("");
+  $("#jpr-strip").innerHTML = notes.map(n => `<div class="jp-note">${esc(n)}</div>`).join("") + rows;
+  drawItinerary(it);
+}
+function closeItinerary() { $("#jpr").classList.remove("on"); }
+
+function drawItinerary(it) {
+  if (!jp.map) {
+    jp.map = L.map("jpmap", { zoomControl: true });
+    addTiles(jp.map);            // the one place tile options are decided
+    jp.layer = L.layerGroup().addTo(jp.map);
+    jp.map.setView([here.lat, here.lng], 13);
+  } else jp.layer.clearLayers();
+  setTimeout(() => jp.map.invalidateSize(), 70);
+
+  /* Each leg draws itself: walking dashed and grey, riding as the same
+     snake the rest of the app uses, so the shape of the trip reads at a
+     glance without a legend. The line follows the stops it calls at, which
+     is not the road, and is close enough to recognise the route by. */
+  const pts = [];
+  it.legs.forEach(l => {
+    const path = (l.path || []).filter(p => Array.isArray(p) && isFinite(p[0]));
+    if (path.length < 2) return;
+    path.forEach(p => pts.push(p));
+    if (l.mode === "walk") {
+      L.polyline(path, { color: "#8A8A84", weight: 3, opacity: .95, dashArray: "3 6" }).addTo(jp.layer);
+      return;
+    }
+    L.polyline(path, { color: "#FFFFFF", weight: 8, opacity: .95 }).addTo(jp.layer);
+    L.polyline(path, { color: "#17171A", weight: 4 }).addTo(jp.layer);
+    if (l.mode === "metro") L.polyline(path, { color: "#FFE24A", weight: 2, opacity: 1 }).addTo(jp.layer);
+    // a dot at each intermediate stop, and the line number where you board
+    path.slice(1, -1).forEach(p => L.circleMarker(p, { radius: 2.5, color: "#5A6B8C",
+      weight: 1, fillColor: "#8A97AD", fillOpacity: .85 }).addTo(jp.layer));
+    L.marker(path[0], { icon: L.divIcon({ className: "",
+      html: `<div class="endm">${esc(String(l.line))}</div>`, iconSize: [0, 0], iconAnchor: [0, 10] }),
+      zIndexOffset: 800 }).addTo(jp.layer);
+  });
+  if (!pts.length) { pts.push([jp.from.lat, jp.from.lng], [jp.to.lat, jp.to.lng]); }
+  L.marker([jp.from.lat, jp.from.lng], { icon: L.divIcon({ className: "",
+    html: '<div class="origin"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+    zIndexOffset: 900 }).addTo(jp.layer);
+  L.marker([jp.to.lat, jp.to.lng], { icon: L.divIcon({ className: "",
+    html: '<div class="jp-end"></div>', iconSize: [20, 20], iconAnchor: [10, 10] }),
+    zIndexOffset: 900 }).addTo(jp.layer);
+  const b = L.latLngBounds(pts.concat([[jp.from.lat, jp.from.lng], [jp.to.lat, jp.to.lng]]));
+  if (b.isValid()) jp.map.fitBounds(b, { padding: [42, 42], maxZoom: 16 });
+}
+
 /* ----------------------------- about ------------------------------- */
 function openAbout(){
   toggleMenu(false);
@@ -3666,7 +4046,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v42</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v43</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -4061,6 +4441,21 @@ $("#wake").onclick=wake;
 $("#statbg").onclick=e=>{ if(e.target.id==="statbg") closeStats(); };
 $("#rp-x").onclick=closeRP;
 $("#rl-x").onclick=()=>clearRoute(true);
+$("#m-plan").onclick=openJourney;
+$("#jp-x").onclick=closeJourney;
+$("#jp-from").onclick=()=>openJourneyPick("from");
+$("#jp-to").onclick=()=>openJourneyPick("to");
+$("#jp-swap").onclick=()=>{ const a=jp.from; jp.from=jp.to; jp.to=a; paintJourneyForm(); };
+$("#jp-go").onclick=runJourney;
+$("#jpr-x").onclick=closeItinerary;
+$("#jppick").onclick=e=>{ if(e.target.id==="jppick") closeJourneyPick(); };
+$("#jpp-go").onclick=()=>jpPickResults($("#jpp-q").value);
+$("#jpp-q").addEventListener("keydown",e=>{ if(e.key==="Enter") jpPickResults($("#jpp-q").value); });
+{
+  let qt=null;
+  $("#jpp-q").addEventListener("input",()=>{ clearTimeout(qt);
+    qt=setTimeout(()=>jpPickResults($("#jpp-q").value),320); });
+}
 $$("#seg button").forEach(b=>b.onclick=()=>setView(b.dataset.v));
 
 $("#basemap").onclick=()=>{
