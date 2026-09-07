@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v46.**
+version: v47.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -34,7 +34,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 406 assertions across eight suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal and install suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 453 assertions across nine suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install and usage suites drive a real browser via Playwright. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The one thing you must understand
@@ -90,6 +90,88 @@ Where Chrome and Edge hand the page an install prompt of their own
 whole thing is one tap. An app already running standalone is not told how to install
 itself; it just says so. The carousel is reachable again from **Settings → How it works**,
 so the card is not a one-time thing someone dismissed on day one.
+
+## How many people use it
+
+Three places, in increasing order of effort:
+
+**1. The Cloudflare dashboard, for free and with no code.** Workers & Pages → your
+Worker → **Metrics** gives requests per day, errors and CPU time. A session on the board
+is about **2 requests a minute**, so requests ÷ ~40 is a serviceable estimate of sessions.
+That is the zero-cost answer and for a while it is the only one you need.
+
+Do **not** reach for Cloudflare Web Analytics for this. It is a beacon script that
+fingerprints visitors, and installing it would make the app's privacy page false.
+
+**2. `/health?token=$ADMIN_TOKEN`** now carries a `usage` block: today's numbers and the
+last thirty days' totals.
+
+**3. `/stats/usage?token=$ADMIN_TOKEN&days=30`** returns the daily series:
+
+```json
+{ "since": "2026-08-09", "days": 30,
+  "total": { "open": 792, "open_app": 38, "install": 9 },
+  "byDay": { "2026-09-07": { "open": 412, "open_app": 38 } } }
+```
+
+- `open` — the app was opened.
+- `open_app` — of those, the ones launched from a home-screen icon rather than a browser
+  tab. This is the closest thing to an install figure that does not require tracking
+  anybody, and it is arguably the better number: an installed app nobody opens is not
+  counted.
+- `install` — the browser's own `appinstalled` event, on the day it fires.
+
+### What this deliberately cannot tell you
+
+**It counts openings, not people.** One row per day per kind, holding an integer. No
+identifier of any sort touches it — no IP, no device token, no user agent, no session, and
+nothing hashed that could stand in for a person. Two openings by one rider and one each by
+two riders are the same number here, and no later query will separate them.
+
+That is a real limitation and it was chosen. The app's privacy page promises no tracking,
+and a unique-visitor count is tracking however it is dressed up — an IP hash is still an
+identifier, daily rotation or not. If you ever decide the trade is worth making, the
+honest order is: change the privacy page first, then write the code.
+
+`test/usage.mjs` inspects every statement the counter issues and fails if an IP, a user
+agent, a session id, a coordinate or anything hashed reaches the database — and separately
+fails if the terms still claim there is no measurement at all.
+
+Storage is D1, not KV: a counter writing on every app open would eat the 1 000/day KV write
+ceiling by lunchtime, while D1's is 100 000. With no D1 binding the beacon is accepted and
+dropped, so an install without a database is uncounted rather than broken.
+
+## Moving to a real domain
+
+Short answer: **easy, and safe if you add the domain rather than replace the URL.**
+
+A PWA install, its service worker, its `localStorage` (favourites, settings, the anonymous
+report id) and its push subscription are all bound to the **origin**. A new origin is, to
+the browser, a different app. So:
+
+**Do this.** In the Cloudflare dashboard, Workers & Pages → your Worker → **Settings →
+Domains & Routes → Add custom domain**. The *same* Worker now answers on both
+`oasa-stop.<you>.workers.dev` and `yourdomain.gr`. Nothing breaks, because nothing moved:
+existing installs keep loading the origin they were installed from, and new users get the
+good URL. Point new links, the manifest and any QR code at the new domain and let the old
+one live on indefinitely — it costs nothing to keep.
+
+**Don't do this.** Delete or stop serving the `workers.dev` URL. Every installed app
+silently fails to load, every push subscription dies, and every rider's favourites are
+gone — none of which they can fix except by reinstalling, which nothing will have told them
+to do.
+
+Two caveats even on the good path:
+
+- **`localStorage` does not follow.** Someone who opens the new domain starts with no
+  favourites and a new report id, so they can no longer withdraw reports filed under the
+  old one. Unavoidable — browsers isolate origins by design.
+- **Push subscriptions do not follow.** Anyone with alerts set has to re-enable them on
+  the new origin. The VAPID keys can stay the same; the subscription cannot.
+
+The cheapest time to do this is **now, before there is a userbase**. If you are already
+past that, add the domain, keep both alive, and consider a one-line banner on the old
+origin pointing people at the new one — say the word and I will build it.
 
 ### The icons
 

@@ -667,13 +667,38 @@
   .foot{margin-top:20px;text-align:center;color:var(--ink3);font-size:9.5px;line-height:1.8;
     letter-spacing:.06em;text-transform:uppercase;border-top:1px solid var(--rule);padding-top:14px}
   .ver{opacity:.6}
+
+  /* ------------------------------- splash ------------------------------- */
+  /* Two rules keep this from being an annoyance rather than a moment:
+     it never outstays SPLASH.maxMs even if the network hangs, and it never
+     flashes for less than SPLASH.minMs, which is what makes a fast load
+     look deliberate instead of broken. */
+  .splash{position:fixed;inset:0;z-index:5000;background:var(--paper);
+    display:grid;place-items:center;
+    transition:opacity .28s ease-out,visibility 0s linear .28s}
+  .splash.gone{opacity:0;visibility:hidden;pointer-events:none}
+  .splash .mark{font-size:34px;padding:14px 20px 28px;letter-spacing:.1em;
+    animation:splashin .32s ease-out}
+  .splash .mark::after{font-size:54px;-webkit-text-stroke-width:7px}
+  @keyframes splashin{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){
+    .splash{transition:none} .splash .mark{animation:none}
+  }
 </style>
 </head>
 <body>
+<!-- Shown while the first board is being fetched, then faded out. It is
+     the one place the graphic mark appears, and the one moment when a
+     logo is the most useful thing on the screen: there is nothing else to
+     look at yet. Painted from markup rather than added by script so it is
+     up in the first frame, before any JavaScript has run. -->
+<div class="splash" id="splash"><div class="mark">OASA</div></div>
 <div class="wrap">
   <header>
     <div class="brand">
-      <div class="mark">OASA</div>
+      <!-- The graphic mark belongs to the splash, not to the header. In the
+           header it and the wordmark said the same word twice, side by side,
+           and neither of them was information the rider needed. -->
       <h1 class="wordmark"><span class="w-oasa">OASA</span><span class="w-x">x</span></h1>
       <div class="spacer"></div>
       <button class="iconbtn alert" id="reportbtn" aria-label="live reports"><span class="livedot"></span><span class="badge" id="repcount" style="display:none">0</span></button>
@@ -714,7 +739,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v46</span></div>
+  <div class="foot"><span class="ver">v47</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1090,7 +1115,9 @@ const T={
     ενημέρωση προσβασιμότητας</b>.</p>
     <p><b>Μην βασίζεσαι στο OASAx για να σχεδιάσεις διαδρομή χωρίς σκαλιά.</b></p>
     <div class="sec-label">Ιδιωτικότητα</div>
-    <p><b>Χωρίς λογαριασμό, διαφημίσεις ή analytics. Η τοποθεσία σου δεν αποθηκεύεται.</b></p>
+    <p><b>Χωρίς λογαριασμό, διαφημίσεις ή cookies. Η τοποθεσία σου δεν αποθηκεύεται.</b></p>
+    <p>Μετράμε μόνο πόσες φορές ανοίγει η εφαρμογή — ένας αριθμός την ημέρα, χωρίς
+    αναγνωριστικό, χωρίς IP. Μετράει ανοίγματα, όχι ανθρώπους.</p>
     <div class="sec-label">Τα δεδομένα</div>
     <p>Οι χρόνοι άφιξης και οι θέσεις οχημάτων προέρχονται από τον ΟΑΣΑ και μπορεί να είναι
     καθυστερημένοι ή λανθασμένοι.</p>
@@ -1253,7 +1280,9 @@ const T={
     information</b>.</p>
     <p><b>Don't use OASAx to plan a step-free journey.</b></p>
     <div class="sec-label">Privacy</div>
-    <p><b>No account, no advertising, no analytics. Your location is never stored.</b></p>
+    <p><b>No account, no advertising, no cookies. Your location is never stored.</b></p>
+    <p>The only thing measured is how many times the app is opened — one number per day,
+    with no identifier and no IP address. It counts openings, not people.</p>
     <div class="sec-label">The data</div>
     <p>Arrival times and vehicle positions come from OASA and can be delayed or wrong.</p>
     <p><b>Don't rely on OASAx for anything important or time-critical.</b></p>`,
@@ -1597,7 +1626,28 @@ addEventListener("resize",()=>{ if(state.view==="map") fitMapHeight(); });
 addEventListener("orientationchange",()=>setTimeout(()=>{
   if(state.view==="map") fitMapHeight(); },250));
 
-function renderView(){ state.view==="map"?renderMap():renderList(); }
+/* ------------------------------- splash ------------------------------- *
+ * The mark holds the screen until there is something behind it worth
+ * looking at, and no longer. `maxMs` is the promise that a dead network
+ * cannot trap anyone on a logo; `minMs` is the one that a warm cache does
+ * not make it flash. */
+const SPLASH={minMs:420,maxMs:2200};
+let splashAt=Date.now(), splashDone=false;
+function hideSplash(){
+  if(splashDone) return; splashDone=true;
+  const el=$("#splash"); if(el) el.classList.add("gone");
+}
+function dismissSplash(){
+  // whichever comes first: the board is up, or we have waited long enough
+  setTimeout(hideSplash,SPLASH.maxMs);
+}
+function splashReady(){
+  if(splashDone) return;
+  const waited=Date.now()-splashAt;
+  setTimeout(hideSplash,Math.max(0,SPLASH.minMs-waited));
+}
+
+function renderView(){ state.view==="map"?renderMap():renderList(); splashReady(); }
 
 /* The list refreshes every 30 s, and it used to throw away every card and
    rebuild it — ~70 elements and as many event listeners, each time. That
@@ -3835,7 +3885,23 @@ addEventListener("beforeinstallprompt",e=>{
   e.preventDefault(); installEvt=e;
   if(!$("#tour").hidden) paintTour();          // upgrade the card if it is open
 });
-addEventListener("appinstalled",()=>{ installEvt=null; });
+addEventListener("appinstalled",()=>{ installEvt=null; pulse("install"); });
+
+/* One beacon per cold boot, so the operator can tell whether anyone is
+   using this. It carries a single word — "the app was opened", and
+   whether from a home-screen icon or a browser tab — and the server
+   stores nothing but a running total for the day. No id, no session, no
+   coordinates: it cannot tell two opens by one person from one open each
+   by two, and is not meant to. Fire-and-forget; a failure is silent and
+   costs the rider nothing. */
+async function pulse(ev){
+  try{
+    await ensureMode();
+    if(!hasBackend()) return;                  // nothing to count against
+    const q=ev==="install" ? "?ev=install" : `?mode=${isStandalone()?"app":"web"}`;
+    fetch(base()+"/pulse"+q,{method:"POST",cache:"no-store",keepalive:true}).catch(()=>{});
+  }catch(_){}
+}
 
 function isStandalone(){
   try{
@@ -3894,7 +3960,11 @@ function openTour(from){
 function maybeTour(){
   let seen=true;
   try{ seen=localStorage.getItem(TOUR_KEY)==="1"; }catch(_){}
-  if(!seen) setTimeout(()=>openTour(),700);   // let the first stops paint behind it
+  if(seen) return;
+  /* After the splash, not on a timer of its own: on a slow first load the
+     tour used to open behind the splash and be revealed mid-animation. */
+  const go=()=>{ if(splashDone) openTour(); else setTimeout(go,120); };
+  setTimeout(go,700);                          // let the first stops paint behind it
 }
 
 /* ---------------------------- settings ----------------------------- *
@@ -4268,7 +4338,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v46</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v47</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -4710,7 +4780,9 @@ try{ const lp=JSON.parse(localStorage.getItem("lastPos")||"null");
 $("#locwhere").textContent=here.label;
 updateRadiusLabel();
 startRefresh();
+dismissSplash();
 maybeTour();
+pulse();
 useGPS();
 initSwipes();
 state.subId=localStorage.getItem("subId");

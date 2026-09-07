@@ -8,7 +8,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "icons": "node tools/icons.mjs",
-    "test": "node test/plan.mjs && node test/brand.mjs && node test/tiles.mjs && node test/journey.mjs && node test/geocode.mjs && node test/reports.mjs && node test/legal.mjs && node test/install.mjs"
+    "test": "node test/plan.mjs && node test/brand.mjs && node test/tiles.mjs && node test/journey.mjs && node test/geocode.mjs && node test/reports.mjs && node test/legal.mjs && node test/install.mjs && node test/usage.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.117.0",

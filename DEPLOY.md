@@ -141,6 +141,20 @@ past the 260 ms debounce, the 700 ms floor and three characters, cached at the e
 If you approach the daily quota, raise `JPQ.debounceMs` and `JPQ.minGapMs` in
 `public/index.html` before you touch anything else.
 
+### How many people are using it?
+
+```powershell
+curl "https://<your-url>/stats/usage?token=$ADMIN_TOKEN&days=30"
+```
+
+Daily totals of `open`, `open_app` (launched from a home-screen icon) and `install`.
+`/health?token=…` carries the headline figures too, and the Cloudflare dashboard
+(Workers & Pages → your Worker → **Metrics**) gives raw requests per day for free.
+
+These count **openings, not people** — nothing identifying is stored, so no unique-user
+figure exists or can be derived. See the README for why, and for what changing that would
+cost.
+
 ### The logo changed but the installed icon didn't
 
 The home-screen icon is a PNG, not the CSS mark, so it does not follow a stylesheet
@@ -170,7 +184,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v36"` to `v37` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v37"` to `v38` in `public/sw.js` and redeploy to force an update.
 
 ---
 

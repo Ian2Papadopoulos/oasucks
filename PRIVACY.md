@@ -6,7 +6,7 @@
 > served in both Greek and English — change all of them together. `test/legal.mjs`
 > checks that the page and this file still agree.
 
-**No account. No advertising. No analytics. No cookies.**
+**No account. No advertising. No cookies. No tracking.**
 
 We only process a small amount of information needed to provide the features you
 choose to use.
@@ -39,6 +39,13 @@ your IP address through the search request. Legal basis: legitimate interests.
 
 **Push subscription.** Only if you enable alerts. Legal basis: consent.
 
+**How many people use it.** When the app opens it sends a one-word message: "opened",
+and whether that was from a home-screen icon or a browser tab. The server adds one to a
+daily total and stores nothing else — no identifier, no IP address, no location. The
+number therefore counts **openings, not people**: two openings by you and one each by two
+people produce the same number, and there is no way to separate them afterwards. It is a
+counter, not usage analytics. Legal basis: legitimate interests.
+
 ## How long information is kept
 
 - Active reports are deleted when they expire, usually after **30 minutes to
@@ -48,6 +55,8 @@ your IP address through the search request. Legal basis: legitimate interests.
 - Push notification subscriptions remain until you disable alerts.
 - Local settings and your anonymous report ID remain in your browser until you
   clear site data.
+- Daily opening totals are kept indefinitely. They are plain numbers per day and are
+  not linked to anyone.
 
 ## Who helps us provide the service
 

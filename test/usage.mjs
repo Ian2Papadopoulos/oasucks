@@ -1,0 +1,322 @@
+/* The usage counter, and the splash.
+
+   The counter is the feature with the sharpest edge in this codebase: it
+   is the one place the app measures its own users, and the app's whole
+   promise is that it does not measure them. So most of what follows is
+   not "does it count" — it is "does it store anything it must not".
+   `bumpUsage` is called with a real D1 stub and every statement it issues
+   is inspected for an IP, a token, a user agent, a coordinate.
+
+   worker.js runs in a vm; the splash is checked in a real browser,
+   because "how long does a logo stay on screen" is a question about
+   timing and CSS. */
+import { chromium } from "playwright-core";
+import http from "node:http";
+import { readFileSync, existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+
+const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PUB = path.join(REPO, "public");
+let pass = 0, fail = 0;
+const ok = (n, c, x = "") => { (c ? pass++ : fail++); console.log(`${c ? "  ok  " : "FAIL  "}${n}${x ? "  — " + x : ""}`); };
+
+/* ---------------------------- the Worker ---------------------------- */
+
+let sql = [];                       // every statement, with its bindings
+let rows = [];                      // what a SELECT hands back
+const stmt = q => ({
+  _q: q, _b: [],
+  bind(...b) { this._b = b; sql.push({ q, b }); return this; },
+  async all() { sql.push({ q, b: this._b }); return { results: rows }; },
+  async run() { return { success: true }; },
+});
+const DB = {
+  prepare: q => stmt(q),
+  async batch(list) { return list.map(() => ({ success: true })); },
+};
+
+const src = readFileSync(path.join(REPO, "worker.js"), "utf8")
+  .replace(/^export default/m, "const __handler =");
+const ctx = {
+  console, Date, Math, JSON, Map, Set, Intl, Promise, Array, Object, String, Number,
+  isFinite, parseInt, parseFloat, setTimeout, clearTimeout, URL, URLSearchParams,
+  Request, Response, Headers, TextEncoder, TextDecoder, btoa, atob, WeakMap, Symbol,
+  Error, TypeError, RegExp, Uint8Array, ArrayBuffer, DataView,
+  encodeURIComponent, decodeURIComponent,
+  AbortController: class { constructor() { this.signal = null; } abort() {} },
+  crypto: { randomUUID: () => "x", subtle: {} },
+  caches: { default: { async match() {}, async put() {} } },
+  fetch: async () => { throw new Error("no network in the harness"); },
+};
+ctx.globalThis = ctx;
+vm.createContext(ctx);
+vm.runInContext(src, ctx);
+ctx.__DB = DB;
+
+const call = (path, { method = "POST", token, env = { DB } } = {}) => {
+  sql = [];
+  const e = { ...env };
+  if (token) e.ADMIN_TOKEN = token;
+  ctx.__req = new Request("https://x" + path, { method });
+  ctx.__env = e;
+  return vm.runInContext(`__handler.fetch(__req, __env, { waitUntil(){}, passThroughOnException(){} })`, ctx);
+};
+const body = async r => { try { return await r.json(); } catch (_) { return null; } };
+
+console.log("\n— it counts —");
+{
+  const r = await call("/pulse?mode=web");
+  const j = await body(r);
+  ok("a cold boot is accepted", r.status === 200 && j.ok === true, JSON.stringify(j));
+  ok("...and counted", j.counted === true);
+  const kinds = sql.flatMap(s => s.b).filter(x => typeof x === "string" && /^(open|open_app|install)$/.test(x));
+  ok("a browser tab counts as one open", kinds.join(",") === "open", kinds.join(","));
+}
+{
+  await call("/pulse?mode=app");
+  const kinds = sql.flatMap(s => s.b).filter(x => /^(open|open_app|install)$/.test(x));
+  ok("a home-screen launch counts as an open AND an app open",
+    kinds.includes("open") && kinds.includes("open_app"), kinds.join(","));
+}
+{
+  await call("/pulse?ev=install");
+  const kinds = sql.flatMap(s => s.b).filter(x => /^(open|open_app|install)$/.test(x));
+  ok("an install is its own kind, and not also an open",
+    kinds.join(",") === "install", kinds.join(","));
+}
+{
+  const r = await call("/pulse?mode=web", { method: "GET" });
+  ok("a GET cannot inflate the count from an address bar", r.status === 405);
+}
+{
+  const r = await call("/pulse?mode=nonsense");
+  const kinds = sql.flatMap(s => s.b).filter(x => /^(open|open_app|install)$/.test(x));
+  ok("an unknown mode falls back to a plain open rather than failing",
+    r.status === 200 && kinds.join(",") === "open", kinds.join(","));
+}
+{
+  const r = await call("/pulse?mode=web", { env: {} });   // no D1 bound
+  const j = await body(r);
+  ok("with no database the beacon is accepted and dropped",
+    r.status === 200 && j.ok === true && j.counted === false, JSON.stringify(j));
+  ok("...and nothing was written", sql.length === 0);
+}
+
+console.log("\n— and it stores nothing else —");
+{
+  await call("/pulse?mode=app");
+  const all = JSON.stringify(sql);
+  for (const [what, re] of [
+    ["an IP address", /\bip\b|\d+\.\d+\.\d+\.\d+|cf-connecting/i],
+    ["a user agent", /user.?agent|mozilla|chrome/i],
+    ["a device or session id", /\bsub_?id|session|device|token|uuid/i],
+    ["coordinates", /\blat\b|\blng\b|\blon\b/i],
+    ["anything hashed, which is an identifier wearing a hat", /hash|sha|digest|fingerprint/i],
+  ]) {
+    ok(`no ${what} reaches the database`, !re.test(all), all.slice(0, 120));
+  }
+  const bound = sql.flatMap(s => s.b);
+  ok("only a date and a kind are ever bound",
+    bound.every(b => /^\d{4}-\d{2}-\d{2}$/.test(b) || /^(open|open_app|install)$/.test(b)),
+    JSON.stringify(bound));
+  ok("the day is an Athens calendar day, not UTC",
+    /timeZone: "Europe\/Athens"/.test(src.slice(src.indexOf("function dayKey"), src.indexOf("function dayKey") + 300)),
+    "or a night bus at 01:00 lands on the wrong day");
+}
+{
+  /* The schema is the durable promise: a column that does not exist
+     cannot be filled in later by accident. */
+  const create = (src.match(/CREATE TABLE IF NOT EXISTS usage\([^`]*\)/s) || [""])[0];
+  ok("the table has three columns and no room for a fourth",
+    /day TEXT/.test(create) && /kind TEXT/.test(create) && /n INTEGER/.test(create)
+    && !/ip|user|device|session/i.test(create), create.replace(/\s+/g, " "));
+}
+
+console.log("\n— reading it back —");
+{
+  rows = [
+    { day: "2026-09-07", kind: "open", n: 412 },
+    { day: "2026-09-07", kind: "open_app", n: 38 },
+    { day: "2026-09-06", kind: "open", n: 380 },
+    { day: "2026-09-06", kind: "install", n: 9 },
+  ];
+  const j = await body(await call("/stats/usage?days=30&token=T", { method: "GET", token: "T" }));
+  ok("the series comes back by day", !!j.byDay && !!j.byDay["2026-09-07"], JSON.stringify(j).slice(0, 80));
+  ok("...with the kinds under each", j.byDay["2026-09-07"].open === 412);
+  ok("...and totals across the window",
+    j.total.open === 792 && j.total.open_app === 38 && j.total.install === 9,
+    JSON.stringify(j.total));
+}
+{
+  const r = await call("/stats/usage?days=30", { method: "GET", token: "T" });
+  ok("without the admin token it is refused", r.status === 403);
+}
+{
+  const r = await call("/stats/usage?days=30&token=T", { method: "GET", token: "T", env: {} });
+  ok("with no database it says so rather than pretending zero", r.status === 501,
+    String(r.status));
+}
+{
+  rows = [];
+  await call("/stats/usage?days=9999&token=T", { method: "GET", token: "T" });
+  const day = sql.flatMap(s => s.b).find(b => /^\d{4}-\d{2}-\d{2}$/.test(b));
+  ok("an absurd window is clamped rather than scanning everything", !!day, String(day));
+}
+{
+  rows = [{ day: "2026-09-07", kind: "open", n: 5 }];
+  const j = await body(await call("/health?token=T", { method: "GET", token: "T" }));
+  ok("/health carries the headline numbers", !!j.usage, JSON.stringify(j.usage || {}));
+  ok("...and says out loud that they are opens, not people",
+    /opens, not people/.test((j.usage || {}).note || ""), (j.usage || {}).note);
+}
+
+/* ----------------------------- the splash ---------------------------- */
+console.log("\n— the splash —");
+const NOW = Math.floor(Date.now() / 1000);
+const LAT = 37.976, LNG = 23.73;
+const stops = [{ code: "500", name_el: "ΚΟΝΤΑ", name_en: "NEAR", lat: LAT, lng: LNG, dist: 40,
+  detail: true, lines: [{ id: "608", el: "Κ", en: "C" }],
+  routes: [{ code: "r1", id: "608", el: "ΚΕΝΤΡΟ", en: "CENTRE" }],
+  arrivals: [{ code: "r1", veh: "V1", min: 4 }] }];
+let stall = 0, pulses = [];
+const server = http.createServer(async (req, res) => {
+  const u = new URL(req.url, "http://x");
+  if (u.pathname === "/pulse") { pulses.push(u.search); res.writeHead(200,
+    { "Content-Type": "application/json" }); return res.end('{"ok":true}'); }
+  if (u.pathname === "/nearby") {
+    if (stall) await new Promise(r => setTimeout(r, stall));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] }));
+  }
+  const f = path.join(PUB, u.pathname === "/" ? "index.html" : u.pathname.slice(1));
+  if (existsSync(f) && !f.includes("..")) {
+    const e = path.extname(f);
+    res.writeHead(200, { "Content-Type": e === ".js" ? "text/javascript" : "text/html; charset=utf-8" });
+    return res.end(readFileSync(f));
+  }
+  res.writeHead(200, { "Content-Type": "application/json" }); res.end("[]");
+});
+await new Promise(r => server.listen(0, r));
+const PORT = server.address().port;
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+
+async function boot({ standalone = false } = {}) {
+  pulses = [];
+  const c = await browser.newContext({ viewport: { width: 390, height: 780 },
+    permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
+  await c.addInitScript(s => {
+    try { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", "1"); } catch (_) {}
+    if (s) {
+      const mm = window.matchMedia.bind(window);
+      window.matchMedia = q => /display-mode: standalone/.test(q)
+        ? { matches: true, media: q, addListener() {}, removeListener() {},
+            addEventListener() {}, removeEventListener() {} } : mm(q);
+    }
+  }, standalone);
+  const page = await c.newPage();
+  const errs = [];
+  page.on("pageerror", e => errs.push(e.message));
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "commit" });
+  return { page, ctx: c, errs };
+}
+const covered = p => p.evaluate(() => {
+  const s = document.getElementById("splash");
+  return !!s && !s.classList.contains("gone");
+});
+
+{
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("it is in the markup, ahead of the app itself",
+    html.indexOf('class="splash"') < html.indexOf('class="wrap"'),
+    "added by script it would arrive a frame or two late, after a white flash");
+  const b = await boot();
+  await b.page.waitForTimeout(80);
+  ok("...so it is covering the screen before the board is fetched",
+    await covered(b.page));
+  const mark = await b.page.evaluate(() => {
+    const m = document.querySelector("#splash .mark");
+    return m ? { text: m.textContent, x: getComputedStyle(m, "::after").content } : null;
+  });
+  ok("...and it is the graphic mark", mark && mark.text === "OASA", JSON.stringify(mark));
+  ok("...X and all", mark && /X/.test(mark.x), mark && mark.x);
+  await b.page.waitForTimeout(200);
+  ok("it does not flash away instantly on a fast load", await covered(b.page),
+    "under SPLASH.minMs a quick load would strobe");
+  await b.page.waitForTimeout(1400);
+  ok("...but it is gone once the board is up", !(await covered(b.page)));
+  ok("no page errors", b.errs.length === 0, b.errs.join(" | "));
+  await b.ctx.close();
+}
+{
+  stall = 9000;                                  // a network that never answers
+  const b = await boot();
+  await b.page.waitForTimeout(3200);
+  ok("a dead network cannot trap anyone on a logo", !(await covered(b.page)),
+    "SPLASH.maxMs is the promise this keeps");
+  await b.ctx.close();
+  stall = 0;
+}
+{
+  const b = await boot();
+  await b.page.waitForTimeout(1500);
+  const brand = await b.page.evaluate(() => $(".brand").innerText.trim());
+  ok("the loaded header carries the wordmark", /OASAX/i.test(brand.replace(/\s/g, "")), brand);
+  ok("...and not the graphic mark as well",
+    await b.page.evaluate(() => !document.querySelector("header .mark")),
+    "it used to say the same word twice, side by side");
+  await b.ctx.close();
+}
+
+console.log("\n— the beacon, from the app —");
+{
+  const b = await boot();
+  await b.page.waitForTimeout(1500);
+  ok("one beacon per boot, and only one", pulses.length === 1, JSON.stringify(pulses));
+  ok("...a browser tab reports itself as web", /mode=web/.test(pulses[0] || ""), pulses[0]);
+  await b.ctx.close();
+}
+{
+  const b = await boot({ standalone: true });
+  await b.page.waitForTimeout(1500);
+  ok("an installed launch reports itself as app", /mode=app/.test(pulses[0] || ""), pulses[0]);
+  await b.ctx.close();
+}
+{
+  const b = await boot();
+  await b.page.waitForTimeout(1500);
+  const url = pulses[0] || "";
+  ok("the beacon carries nothing but the mode",
+    !/lat|lng|id=|token|uuid/.test(url), url);
+  await b.ctx.close();
+}
+
+console.log("\n— and the documents say so —");
+{
+  /* A counter the terms deny is worse than no counter. The moment the app
+     started measuring anything, "no analytics" stopped being true, and
+     these check the wording followed the code. */
+  const legal = readFileSync(path.join(PUB, "legal.html"), "utf8");
+  const priv = readFileSync(path.join(REPO, "PRIVACY.md"), "utf8");
+  const app = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("the flat 'no analytics' claim is gone from the terms",
+    !/No analytics/i.test(legal) && !/Χωρίς analytics/i.test(legal),
+    "it was true until the counter shipped, and then it was not");
+  ok("...and from PRIVACY.md", !/No analytics/i.test(priv));
+  ok("...and from About, both languages",
+    !/no analytics/i.test(app) && !/διαφημίσεις ή analytics/i.test(app));
+  ok("en: the terms explain the counter", /How many people use it/.test(legal));
+  ok("el: so do the Greek terms", /Πόσοι το χρησιμοποιούν/.test(legal));
+  ok("both say it counts openings rather than people",
+    /openings, not people/.test(legal) && /ανοίγματα, όχι ανθρώπους/.test(legal));
+  ok("...and About says the same, in short",
+    /counts openings, not people/.test(app) && /ανοίγματα, όχι ανθρώπους/.test(app));
+  ok("the retention list mentions the totals",
+    /Daily opening totals/.test(legal) && /Daily opening totals/.test(priv));
+}
+
+await browser.close();
+server.close();
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

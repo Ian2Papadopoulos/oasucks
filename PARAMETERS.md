@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v46 defaults** — if you edit the
+breaks if you change it. Values here are the **v47 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -193,6 +193,7 @@ All windows are **60 s**, per IP, per Cloudflare edge location.
 | `POST /reports/delete` | **30** |
 | `/scan`, `/live`, `/stops/search`, `/stops/dead` | **30** |
 | `/geocode` (address search) | **40** — generous for someone typing, and the only limit standing between one abusive client and the ORS daily quota |
+| `POST /pulse` (the open counter) | **20** — a real client sends one per cold boot |
 | `/api?nocache=1` | **60** |
 | `/push/subscribe`, `/push/test`, `/rules` | **15** |
 | `/rules/delete` | **30** |
@@ -352,6 +353,39 @@ entries and the dots follow. Seen-state is `localStorage.tourSeen`.
 The station order per line is `METRO_LINES` in `worker.js`. **Adjacency comes from
 those sequences, never from the order of `METRO_STATIONS`**, which is grouped by the
 line that "owns" each station — so the interchanges sit in someone else's block.
+
+### The usage counter
+
+`worker.js` → `USAGE_KINDS`, `bumpUsage`, `readUsage`; `public/index.html` → `pulse()`.
+
+There is nothing to tune, which is the point. One D1 row per day per kind holding an
+integer, and three kinds: `open`, `open_app` (of those, launched from a home-screen icon)
+and `install` (the browser's `appinstalled` event).
+
+**No identifier of any sort is stored** — no IP, no device token, no user agent, no
+session, nothing hashed. The counter therefore cannot distinguish people, and is not meant
+to: it answers "is anyone using this, and is it growing". `test/usage.mjs` inspects every
+statement it issues and fails if anything identifying appears.
+
+Days are **Athens calendar days**, not UTC, so a night bus at 01:00 lands where a person
+in Athens would put it.
+
+Read it at `/health?token=` (headline) or `/stats/usage?token=&days=N` (the series, N
+clamped to 1–365). Without a D1 binding the beacon is accepted and dropped and the
+endpoint returns 501 rather than pretending zero.
+
+### The splash
+
+`public/index.html` → `SPLASH`
+
+| Parameter | Default | What it means | If you change it |
+|---|---|---|---|
+| `minMs` | **420 ms** | Shortest the mark is ever on screen. | Below this a warm cache makes it strobe. |
+| `maxMs` | **2 200 ms** | Longest, whatever the network is doing. | This is the promise that a dead network cannot trap anyone on a logo. |
+
+The mark lives here and only here; the header carries the wordmark alone. It is painted
+from markup rather than added by script, so it is up in the first frame instead of after a
+white flash. The first-run carousel waits for it to clear before opening.
 
 ### Address search
 

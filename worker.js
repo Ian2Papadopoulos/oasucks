@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v46";
+const APP_VERSION = "v47";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -752,9 +752,69 @@ async function initSchema(env) {
        line_id TEXT, route_code TEXT, renewed INTEGER)`,
     `CREATE INDEX IF NOT EXISTS ix_rl_ts ON report_log(ts)`,
     `CREATE INDEX IF NOT EXISTS ix_rl_target ON report_log(kind, target_id, ts)`,
+    // How busy the app is, and nothing else. One row per day per kind,
+    // holding a number. See the note above `bumpUsage`.
+    `CREATE TABLE IF NOT EXISTS usage(day TEXT, kind TEXT, n INTEGER,
+       PRIMARY KEY(day, kind))`,
   ];
   await env.DB.batch(stmts.map(s => env.DB.prepare(s)));
   schemaDone = true;
+}
+
+/* ======================== how busy it is ========================== *
+ * A counter, deliberately not analytics.
+ *
+ * What is stored is one integer per day per kind — "2026-09-07, open,
+ * 412". No identifier of any sort touches the row: no IP, no device
+ * token, no user agent, no session, no coordinates, nothing hashed that
+ * could stand in for a person. That is a real constraint, not a framing
+ * one, and it has a consequence worth stating plainly at the top of the
+ * file that implements it: **this cannot count people.** Two opens by
+ * one rider and one open each by two riders are the same number here,
+ * and no amount of later querying will separate them. It answers "is
+ * anyone using this, and is that going up" — which is the question — and
+ * refuses to answer "who".
+ *
+ * `open` counts cold boots. `open_app` counts the subset launched from a
+ * home-screen icon rather than a browser tab, which is the closest thing
+ * to an install figure that does not require tracking anybody: an
+ * installed app that is never opened is not counted, which is arguably
+ * the more useful number anyway. `install` counts the browser's own
+ * `appinstalled` event, so it is new installs on the day they happen.
+ *
+ * Lives in D1, not KV: a counter that writes on every app open would eat
+ * the 1 000/day KV write ceiling by lunchtime, while D1's is 100 000.
+ * Without a D1 binding the endpoint accepts the beacon and drops it, so
+ * an install without a database is not broken, just uncounted.
+ * ------------------------------------------------------------------ */
+const USAGE_KINDS = new Set(["open", "open_app", "install"]);
+function dayKey(ms) {
+  // Athens, so "yesterday" means what a person in Athens means by it
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens", year: "numeric",
+    month: "2-digit", day: "2-digit" }).format(new Date(ms));
+}
+async function bumpUsage(env, kinds) {
+  if (!dbReady(env)) return false;
+  await initSchema(env);
+  const day = dayKey(Date.now());
+  await env.DB.batch(kinds.map(k => env.DB
+    .prepare(`INSERT INTO usage(day, kind, n) VALUES(?, ?, 1)
+              ON CONFLICT(day, kind) DO UPDATE SET n = n + 1`)
+    .bind(day, k)));
+  return true;
+}
+async function readUsage(env, days) {
+  if (!dbReady(env)) return null;
+  await initSchema(env);
+  const since = dayKey(Date.now() - (days - 1) * 86400e3);
+  const rows = (await env.DB.prepare(
+    `SELECT day, kind, n FROM usage WHERE day >= ? ORDER BY day DESC`)
+    .bind(since).all()).results || [];
+  const byDay = {};
+  for (const r of rows) (byDay[r.day] = byDay[r.day] || {})[r.kind] = r.n;
+  const total = {};
+  for (const r of rows) total[r.kind] = (total[r.kind] || 0) + r.n;
+  return { since, days, total, byDay };
 }
 
 async function stopsForRoute(env, routeCode) {
@@ -3013,6 +3073,31 @@ export default {
        uptime monitor); with the admin token it reports the numbers that
        actually decide when you'd need to pay — reports drive KV writes,
        which is the ceiling that gives way first. */
+    /* POST /pulse?mode=app|web  — "the app was opened".
+     * POST /pulse?ev=install    — "the browser installed it".
+     * Increments a number and stores nothing else; see bumpUsage. The
+     * rate limit is generous because a legitimate client sends one of
+     * these per cold boot and no more. */
+    if (p.endsWith("/pulse")) {
+      if (req.method !== "POST") return json({ error: "POST only" }, 405);
+      if (!rateLimit(ip, "pulse", 20, 60)) return tooMany();
+      const ev = url.searchParams.get("ev") === "install" ? "install" : "open";
+      const kinds = ev === "install" ? ["install"]
+        : (url.searchParams.get("mode") === "app" ? ["open", "open_app"] : ["open"]);
+      if (kinds.some(k => !USAGE_KINDS.has(k))) return json({ error: "bad kind" }, 400);
+      let counted = false;
+      try { counted = await bumpUsage(env, kinds); } catch (_) { /* never fail a boot */ }
+      return json({ ok: true, counted });
+    }
+
+    /* GET /stats/usage?token=&days=30 — the daily series behind /health. */
+    if (p.endsWith("/stats/usage")) {
+      if (!adminOK(req, env)) return json({ error: "forbidden" }, 403);
+      const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days")) || 30));
+      const u = await readUsage(env, days);
+      return json(u || { error: "no database configured" }, u ? 200 : 501);
+    }
+
     if (p.endsWith("/health")) {
       const full = adminOK(req, env);
       const nowS = Math.floor(Date.now() / 1000);
@@ -3042,6 +3127,12 @@ export default {
       }
 
       if (dbReady(env)) {
+        try {
+          // today and the last 30 days, the two numbers worth a glance
+          const u = await readUsage(env, 30);
+          out.usage = { last30: u.total, today: u.byDay[dayKey(Date.now())] || {},
+            note: "opens, not people — see /stats/usage" };
+        } catch (_) { }
         try {
           await initSchema(env);
           const d1 = await env.DB.prepare(
