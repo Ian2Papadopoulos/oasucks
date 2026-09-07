@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v43 defaults** — if you edit the
+breaks if you change it. Values here are the **v44 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -57,16 +57,17 @@ Two files hold almost everything: **`public/index.html`** (the app) and
 | Parameter | Default | What it means |
 |---|---|---|
 | `TTL.bus.breakdown` | **3 600 s** (1 h) | |
-| `TTL.bus.crowded` | **3 600 s** (1 h) | |
+| `TTL.bus.crowded` | **3 600 s** (1 h) | A crowded vehicle stays crowded for its run. |
 | `TTL.bus.noac` | **3 600 s** (1 h) | Lasts the trip. |
-| `TTL.bus.fare` | **900 s** (15 min) | Staff ride a few stops and get off. |
 | `TTL.bus.security` | **1 800 s** (30 min) | |
-| `TTL.bus.staff` | **1 800 s** (30 min) | |
+| `TTL.bus.staff` | **1 800 s** (30 min) | Staff ride a few stops and get off. |
 | `TTL.metro.lift` | **7 200 s** (2 h) | A broken lift is a facility fault, not a passing event. |
-| `TTL.metro.fare` | **7 200 s** (2 h) | A station is worked for hours, unlike a bus. |
+| `TTL.metro.escalator` | **7 200 s** (2 h) | Same reasoning as the lift. |
+| `TTL.metro.nowheel` | **10 800 s** (3 h) | The longest of the lot: a station with no step-free route is a fact about the building, not about this morning. |
+| `TTL.metro.crowded` | **1 800 s** (30 min) | A platform clears in minutes; a bus does not. |
 | `TTL.metro.security` | **7 200 s** (2 h) | |
-| `TTL.metro.staff` | **7 200 s** (2 h) | |
-| `DEFAULT_TTL` | **3 600 s** | Fallback for a type not in the table. |
+| `TTL.metro.staff` | **7 200 s** (2 h) | A station is worked for hours, unlike a bus. |
+| `DEFAULT_TTL` | **3 600 s** | Fallback for a type not in the table — including the retired `fare` and `inspector`, so rows already in KV age out instead of living forever. |
 | `MAX_ACTIVE_PER_REPORTER` | **2** | Live reports one anonymous device may hold at once. |
 
 ### Trust model
@@ -86,27 +87,33 @@ be cleared by its author (✕) or by the admin purge — see the README.
 `worker.js` → `REPORT_TYPES` (enforced) and `public/index.html` → `TYPES_BY_KIND` (shown).
 **Keep these two in sync** — the server rejects anything the client offers that it doesn't know.
 
-Two **target kinds** (where you are) crossed with two **categories** (what kind of
-report it is). `CATEGORY` in both files maps type → category.
+Two **target kinds** — where you are. `bus` covers every surface vehicle, bus and
+trolley alike; `metro` covers stations.
 
-| Target kind | Issue types (red) | Operational types (blue) |
-|---|---|---|
-| `bus` | `breakdown`, `crowded`, `noac` | `fare`, `security`, `staff` |
-| `metro` | `lift` | `fare`, `security`, `staff` |
+| Target kind | Types |
+|---|---|
+| `bus` | `breakdown`, `crowded`, `noac`, `security`, `staff` |
+| `metro` | `lift`, `escalator`, `nowheel`, `crowded`, `security`, `staff` |
 
-Labels live in the `ti_*` i18n keys (`ti_fare`, `ti_lift`, …) in both languages.
-**Colour encodes the category and nothing else** — red for "something is wrong",
-blue for "who is present / what is operationally happening". Severity is not
-encoded anywhere.
+Labels live in the `ti_*` i18n keys (`ti_escalator`, `ti_nowheel`, …) in both
+languages.
 
-Operational types are deliberately factual and staff-agnostic: they record that an
-activity is happening on a line or at a station, never anything about a person. If
-you add a type, keep it in that register — and add it to `REPORT_TYPES`,
-`TYPES_BY_KIND`, `CATEGORY` (both files), `TTL`, and the `ti_*` labels.
+**There are no categories.** Since v44 every flag is one colour — `--flag`, a
+single token in the stylesheet — and carries its meaning in the word printed on
+it rather than in a palette the reader has to decode first. Shape still
+distinguishes a vehicle (square) from a station (diamond); severity is not
+encoded anywhere, and neither is anything else.
 
-The retired `inspector` type is rejected by the server; the client still maps it to
-the *Fare inspection* label so any record filed before v32 renders sensibly for the
-couple of hours until it expires.
+Entries stay factual and staff-agnostic: they record that a situation exists on a
+line or at a station, never anything about a person. If you add a type, keep it in
+that register — and add it to `REPORT_TYPES` (`worker.js`), `TYPES_BY_KIND`
+(`index.html`), `TTL`, and the `ti_*` labels in **both** languages. `test/reports.mjs`
+fails if any of those four fall out of step.
+
+Retired types are rejected by the server but still carry a label in the client, so
+a record filed before the deploy renders as words rather than as its own key for
+the hour or two until it expires: `inspector` (dropped in v32) and `fare` (dropped
+in v44) both read as *OASA staff*.
 
 ---
 
@@ -185,6 +192,7 @@ All windows are **60 s**, per IP, per Cloudflare edge location.
 | `POST /reports` (file a flag) | **8** |
 | `POST /reports/delete` | **30** |
 | `/scan`, `/live`, `/stops/search`, `/stops/dead` | **30** |
+| `/geocode` (address search) | **40** — generous for someone typing, and the only limit standing between one abusive client and the ORS daily quota |
 | `/api?nocache=1` | **60** |
 | `/push/subscribe`, `/push/test`, `/rules` | **15** |
 | `/rules/delete` | **30** |
@@ -344,12 +352,72 @@ The station order per line is `METRO_LINES` in `worker.js`. **Adjacency comes fr
 those sequences, never from the order of `METRO_STATIONS`**, which is grouped by the
 line that "owns" each station — so the interchanges sit in someone else's block.
 
+### Address search
+
+`public/index.html` → `JPQ`, and `worker.js` → the geocoding block.
+
+| Parameter | Default | What it means | If you change it |
+|---|---|---|---|
+| `JPQ.minChars` | **3** | Characters before an address request goes out. Stops, favourites and metro stations match locally from the first character and cost nothing. | Lowering it to 2 roughly doubles the requests for very little extra reach. |
+| `JPQ.debounceMs` | **260 ms** | Quiet time after the last keystroke before asking. | The single biggest dial on ORS quota consumption. |
+| `JPQ.minGapMs` | **700 ms** | Floor between two address requests, on top of the debounce. A request that arrives inside the gap waits it out, and a newer keystroke supersedes it before it is ever sent. | Without it, someone typing steadily at just over `debounceMs` fires one request per keystroke — measured at **7** for a nine-letter street, **5** with it. |
+| `JPQ.memo` | **40** | Queries answered this session, kept in memory. Backspacing walks back through them and costs nothing: measured **0** requests to retype four characters just deleted. | |
+| `ORS_LAYERS` | `address,venue,street,neighbourhood,borough,locality,localadmin` | Pelias layers kept. Regions and countries are excluded — you cannot walk to "Greece". | |
+| `ATTICA` | 23.40–24.10 E, 37.70–38.40 N | Bounding box on results. Same window as `VIEWBOX`, spelled as corners because Pelias wants corners. | |
+| focus rounding | **2 dp** (~1 km) | Precision of the position sent as `focus.point`. | It only nudges the ranking, so more precision buys nothing and costs cache hits. |
+| `GEO_CACHE` | **86 400 s** (24 h) | Edge-cache lifetime for a geocode answer, ORS and Nominatim alike. | |
+
+Two geocoders sit behind `/geocode`. **OpenRouteService (Pelias) autocomplete**
+when `ORS_KEY` is set — it matches partial tokens, takes a focus point, and
+carries house numbers. **Nominatim** when it is not, and whenever ORS misses,
+errors or rejects the key. Both are flattened to the same rows, so the app never
+learns which answered; only the `source` field says.
+
+A latin query gets **two** shots at ORS — as typed, then transliterated — rather
+than the four spellings Nominatim gets, because every ORS miss is a request off a
+daily quota while Nominatim's are free.
+
+The key goes in an `Authorization` header, never the query string, so the request
+URL is safe to use as a cache key. Putting it in the query would file the secret
+into Cloudflare's cache index for every search anyone ever runs.
+
 ---
 
 ## What actually costs money
 
 Cloudflare's free tier gives 100 000 requests/day and **1 000 KV writes/day** — the
 KV write ceiling is what breaks first, and only reports write to KV.
+
+### Measured, not estimated
+
+Counted by driving the real app against a stub Worker and tallying every call it
+made (`test/`-style Playwright harness; the numbers below are what came back):
+
+| What the rider did | Requests |
+|---|---|
+| Cold boot | **4** — one `/nearby`, one `/reports`, two `/api` |
+| One idle minute watching the board | **2** — `/nearby` at `refreshMs`; flags ride along |
+| Typing an 8-letter destination at 90 ms/key | **1** geocode — the debounce absorbs the rest |
+| Typing a 9-letter street at 400 ms/key | **5** geocode — the pathological case, right at the debounce boundary |
+| Backspacing 4 characters | **2** geocode |
+| Retyping those 4 characters | **0** — served from `JPQ.memo` |
+| Planning a journey | **1** `/plan`, which spends ≤ 4 ORS routings server-side |
+
+**The Cloudflare bill is the board, and only the board.** Two requests a minute is
+the whole steady state. A 20-minute session is ~40 requests plus a boot; 100 000/day
+is therefore around **2 400 sessions a day**, or a few hundred daily users at several
+sessions each, before the request ceiling is anywhere in sight. The KV write ceiling
+(1 000/day) binds first and only counts *filed reports* — 1 000 reports a day from a
+community this size is not a near-term problem either.
+
+**The ORS quota is address search, and only address search.** Journey planning costs
+at most 4 routings and only for the itinerary that won; typing costs 1–5 per search
+before the 24-hour edge cache, and popular Athens prefixes converge onto cache hits
+within days. If the quota does bind, raise `JPQ.debounceMs` and `JPQ.minGapMs` before
+touching anything else — and note that losing the key degrades rather than breaks:
+Nominatim answers, walking times revert to `estimated`, nothing 500s.
+
+### The levers
 
 Per list refresh (every `refreshMs`): **1** request to `/nearby`, which fans out to
 about 30 OASA subrequests. Subrequests are free; the one browser request is what

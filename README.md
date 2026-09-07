@@ -3,17 +3,18 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v43.**
+version: v44.**
 
-**The top bar** is three buttons — live reports (the red dot), alerts 🔔, and a ☰ menu
+**The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
 to hide stops with nothing coming), About, and Terms & privacy.
 
-**Live reports.** The old line-stats button is now the red live dot. Tap it and a live map of
+**Live reports.** The old line-stats button is now the orange live dot. Tap it and a live map of
 Athens opens — only the buses and metro stations that currently carry a flag, each
-labelled with what it is. Reports come in two categories: **issues** (red — breakdown,
-overcrowding, no A/C, broken lift) and **operational** (blue — fare inspection,
-security presence, customer service staff). Under the map, **New report** lets you
+labelled with what it is. Every flag is one colour and says what it is in words:
+on a vehicle, breakdown · overcrowded · no A/C · security presence · OASA staff;
+at a station, elevator or escalator out of order · no wheelchair access ·
+overcrowded · security presence · OASA staff. Under the map, **New report** lets you
 flag the bus you are actually riding (the app works out which one) or a metro station
 within 600 m. Every report is trusted; when several people flag the same thing it
 becomes one marker carrying the head count.
@@ -33,6 +34,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
+| `test/` | `npm test` — 265 assertions across six suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the brand, tile and report suites read the source; the tile and journey suites drive a real browser via Playwright. |
 
 ## The one thing you must understand
 
@@ -286,6 +288,36 @@ npx wrangler secret put ORS_KEY     # free key from openrouteservice.org
 Without it the app still plans, still draws, and says plainly that walking times are
 estimated rather than routed.
 
+### Typing a destination
+
+The picker at each end of a journey searches four things at once. Your location, your
+favourites, the stops already loaded and every metro station match **locally**, from the
+first character, with no request at all. Past three characters it also asks the geocoder.
+
+Which geocoder depends on the same `ORS_KEY`:
+
+- **With it** — OpenRouteService's Pelias *autocomplete*, which is built for type-ahead.
+  It matches partial tokens, so "synt" already finds Syntagma; it takes a focus point, so
+  the Φιλοτίμου two streets away outranks the one in Piraeus; and it carries street
+  addresses down to the house number, which is the part Nominatim's `display_name`
+  routinely loses.
+- **Without it** — Nominatim, which wants a near-complete query and ranks by nothing you
+  can steer. Still works; noticeably worse.
+
+Either way the answers are flattened to the same rows server-side, so the app never
+learns which one replied. ORS misses, errors and a rejected key all fall through to
+Nominatim rather than surfacing an error.
+
+Greeklish is handled in front of both — "filotimou" → "φιλοτίμου" — but with different
+budgets. Nominatim gets four candidate spellings because its requests are free; ORS gets
+two, the query as typed and then transliterated, because every miss is a request off a
+daily quota.
+
+Typing fast used to be able to show you the wrong answer: a slow request for "syn"
+landing after a fast one for "syntagma" overwrote the better list. Each keystroke now
+aborts the request before it, and anything that still lands late is discarded rather
+than rendered.
+
 ### Modes
 
 Bus, **tram** and **trolley** all ride the same telematics feed and come back through the
@@ -397,29 +429,40 @@ cached 15 s. Pan the map and tap **↻** to load another area. Tune the ceilings
 The live-dot button in the header opens the live-reports view. The map shows *only* what is
 currently flagged — the flagged buses (following their live
 positions, so a reported bus keeps moving on the map) and the flagged metro stations.
-Each pin carries a label above it saying what it is — *Fare inspection*, *No A/C*,
-*Security presence* — so the map answers "what and where" without a tap. Colour
-carries the **category**: red for issues, blue for operational. Below zoom 15 the labels hide (a dozen of them overlap into
+Each pin carries a label above it saying what it is — *Escalator out of order*, *No A/C*,
+*Overcrowded* — so the map answers "what and where" without a tap.
+
+**Every flag is one colour.** There used to be two — red for problems, blue for
+operational — and the split cost more than it bought: you had to decode a palette
+before reading a word that was already printed on the pin. Shape still separates a
+vehicle (square) from a station (diamond). Severity is not encoded anywhere.
+
+Below zoom 15 the labels hide (a dozen of them overlap into
 noise at city scale) and the pin's count badge carries the weight; tap a pin and the
 popup says the same thing. Nothing that is fine is drawn. The full list of active
 reports sits underneath, busiest first, above a **Report an issue** button.
 
 You can only report what you are actually next to — no free text, ever:
 
-| Where you are | Who can report it | Issues (red) | Operational (blue) |
-|---|---|---|---|
-| **On a bus** | only the vehicle you're riding (see below) | breakdown · overcrowded · no A/C | fare inspection · security presence · customer service staff |
-| **At a metro station** | stations within **600 m** of you | elevator not working | fare inspection · security presence · customer service staff |
+| Where you are | Who can report it | What you can flag |
+|---|---|---|
+| **On a bus or trolley** | only the vehicle you're riding (see below) | breakdown · overcrowded · no A/C · security presence · OASA staff |
+| **At a metro station** | stations within **600 m** of you | elevator not working · escalator out of order · no wheelchair access · overcrowded · security presence · OASA staff |
 
-The menu changes with where you are — a bus never offers *elevator not working* — and
+The menu changes with where you are — a bus never offers *escalator out of order* — and
 the Worker enforces the same menus server-side, so a hand-made request can't file a
 type the UI doesn't show.
 
-**On the operational category.** These entries are factual, staff-agnostic statements
-about a *situation*: "fare inspection is happening on this line" is service information
-of the same kind as "this bus has no air conditioning". The app has no free-text field,
-no photo upload, and no way to describe or identify a person — by design, and it is the
-single most important thing to keep that way. See [Legal](#legal).
+**On staff and security entries.** These are factual, staff-agnostic statements about a
+*situation*: "OASA staff are on this line" is service information of the same kind as
+"this bus has no air conditioning". The app has no free-text field, no photo upload, and
+no way to describe or identify a person — by design, and it is the single most important
+thing to keep that way. See [Legal](#legal).
+
+**On accessibility entries.** *Elevator not working*, *escalator out of order* and *no
+wheelchair access* exist because a step-free route that turns out not to be step-free is
+not an inconvenience, it is a journey that cannot be made. They carry the longest
+lifetimes in the table for the same reason.
 
 ### Which bus am I on?
 
@@ -485,17 +528,18 @@ longer a way for other riders to vote one down.
 At most **2 active reports per person** at a time.
 
 Flags then show up on the reports map and inline in the list view: a flagged bus gets
-**"Fare inspection · 3 reports · 4′ ago"** under its direction — in the category's
-colour — matched to that exact vehicle, so the other bus on the same line stays clean.
+**"Overcrowded · 3 reports · 4′ ago"** under its direction, matched to that exact
+vehicle, so the other bus on the same line stays clean.
 
 The rules:
 
 | Flag | Expires after |
 |---|---|
-| Fare inspection on a bus | **15 min** — staff ride a few stops and get off |
-| Security presence / customer service staff on a bus | **30 min** |
-| Anything at a metro station | **2 h** — a station is worked for hours, and a broken lift outlasts a trip |
-| Breakdown / overcrowded / no A/C (bus) | **60 min** |
+| OASA staff / security presence on a bus | **30 min** — staff ride a few stops and get off |
+| Breakdown / overcrowded / no A/C on a bus | **60 min** — it lasts the trip |
+| Overcrowded at a station | **30 min** — a platform clears; a bus does not |
+| Elevator / escalator out of order, staff, security at a station | **2 h** — a station is worked for hours, and a broken lift outlasts a trip |
+| No wheelchair access | **3 h** — the longest of the lot: it is a fact about the building, not about this morning |
 
 All of these live in one table, `TTL` in `worker.js` — see
 [PARAMETERS.md](PARAMETERS.md).
@@ -508,7 +552,7 @@ Re-reporting the same thing renews your own record's timer without inflating the
 **History for statistics:** active flags live in KV and vanish when they expire, but
 every filed report is *also* appended to D1's `report_log` table (timestamp, kind,
 type, target, line — **no coordinates and no reporter id**).
-`GET /reports/toplist?days=30&type=fare` returns the most-reported
+`GET /reports/toplist?days=30&type=breakdown` returns the most-reported
 buses/lines/stations, ready for a future public stats page. Rows are deleted after
 **90 days** by the same cron that prunes tracking events.
 
@@ -540,10 +584,10 @@ feeds `/reports/toplist` — test flags left there would skew any future statist
 To wipe both at once (needs `ADMIN_TOKEN`, see [Security model](#security-model)):
 
 ```powershell
-# every fare-inspection report, live + history
+# every breakdown report, live + history
 curl -X POST "https://<your-url>/admin/reports/purge" ^
   -H "X-Admin-Token: YOUR_TOKEN" -H "Content-Type: application/json" ^
-  -d "{\"type\":\"fare\",\"log\":true}"
+  -d "{\"type\":\"breakdown\",\"log\":true}"
 
 # just one vehicle/station
 … -d "{\"targetId\":\"70142\",\"log\":true}"
@@ -566,7 +610,7 @@ npx wrangler kv key put --binding=ALERTS "reports:index" "[]" --remote   # wipe 
 
 # history rows
 npx wrangler d1 execute oasa-stats --remote ^
-  --command "DELETE FROM report_log WHERE type='fare' AND ts > unixepoch()-21600"
+  --command "DELETE FROM report_log WHERE type='breakdown' AND ts > unixepoch()-21600"
 ```
 </details>
 

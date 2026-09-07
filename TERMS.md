@@ -1,6 +1,6 @@
 # Terms of use
 
-**Last updated: 4 August 2026**
+**Last updated: 7 September 2026**
 
 > Not legal advice. This mirrors the in-app text at `public/legal.html` — change
 > both together.
@@ -20,6 +20,12 @@ minutes. **Do not rely on this app for anything that matters.**
 situations on a line or at a station. We do not check them. A report count means
 several people said the same thing, not that it is true. The absence of a report
 means nothing.
+
+**Accessibility reports especially.** Flags such as *elevator not working*,
+*escalator out of order* and *no wheelchair access* are passenger observations at
+one moment, not an accessibility record. A station with no flag may still be
+unusable, and a flagged one may have been fixed since. **Do not plan a step-free
+journey on this app.** Check with OASA, STASY or the station itself.
 
 **Always carry a valid ticket.**
 
@@ -45,9 +51,15 @@ remove it in the app.
 **Licence.** The source code is licensed under the GNU Affero General Public License v3
 (see `LICENSE`). The complete corresponding source of the version running here is free
 on request: oasax@proton.me.
-That covers the code only; it does not license OASA's data. By filing a report you
-allow us to display it while active and to keep an anonymous, coordinate-free
-record for up to 90 days.
+That covers the code only; it does not license OASA's data, OpenStreetMap's, or any
+other third party's. By filing a report you allow us to display it while active and
+to keep an anonymous, coordinate-free record for up to 90 days.
+
+**Address search.** Typing a place name sends that text from our server to a
+geocoding service (OpenRouteService, or OpenStreetMap's Nominatim) together with a
+position rounded to about a kilometre, so that nearby results rank first. Your IP
+address is not sent — the request comes from our server, not your browser — and the
+text is not stored by us.
 
 **Changes and law.** These terms may change and the service may be modified or
 withdrawn at any time, including because OASA asks us to stop. Greek law applies;

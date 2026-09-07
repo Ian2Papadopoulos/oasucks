@@ -97,7 +97,7 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **Language:** ☰ menu → Γλώσσα / Language.
 - **☰ menu:** find a line and preview its route, live bus map, language, about, and
   **Terms & privacy** (`/legal.html`).
-- **Live reports:** tap the **red dot** — the map shows only what's currently flagged (buses
+- **Live reports:** tap the **orange dot** — the map shows only what's currently flagged (buses
   and metro stations), red for issues and blue for operational, and **New report**
   underneath lets you file one. Test it
   from a bus: pick *On a bus*, give it ~15 s (it watches your GPS, then samples vehicle
@@ -118,6 +118,17 @@ npx wrangler secret put ORS_KEY     # free key from openrouteservice.org
 Unlike the tile key this one is a **secret**: it stays in the Worker and never reaches a
 browser. Without it nothing breaks, the app just says walking times are estimated.
 
+The same key also powers **address search**. With it, typing a destination into the
+journey planner matches partial words, ranks what is near you first, and finds street
+addresses down to the house number. Without it the app falls back to OpenStreetMap's
+Nominatim, which needs a more complete query and cannot be steered — usable, but
+noticeably worse. One key, both features, no extra setup.
+
+**Budget.** Address search is the heavier of the two: one request per search that gets
+past the 260 ms debounce and three characters, cached at the edge for 24 hours. Journey
+planning spends at most four. If you approach the daily quota, raise `JPQ.debounceMs`
+in `public/index.html` before you touch anything else.
+
 ### The map is covered in "API KEY REQUIRED"
 
 CARTO started requiring a key for their basemaps in August 2026. Get a free one at
@@ -133,7 +144,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v33"` to `v34` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v34"` to `v35` in `public/sw.js` and redeploy to force an update.
 
 ---
 

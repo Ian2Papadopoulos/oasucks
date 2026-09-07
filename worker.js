@@ -24,7 +24,7 @@
  *  GET  /alerts/windows         → when alerts need the cron (admin)
  *  POST /admin/reports/purge    → wipe reports / history rows (admin)
  *  POST /stops/dead             → verify+record a stop that has no lines
- *  GET  /reports?by=ID          → active user reports (inspector/issue flags)
+ *  GET  /reports?by=ID          → active community flags on buses and stations
  *  POST /reports                → file (or renew) a report
  *  POST /reports/delete         → withdraw a report (reporter-only)
  *  GET  /metro                  → static Athens metro station list
@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v43";
+const APP_VERSION = "v44";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -234,16 +234,145 @@ function nominatimSearchUrl(q, lang) {
   return n.toString();
 }
 
-async function handleGeocode(url) {
+/* ------------------------- address search --------------------------- *
+ * Two geocoders, tried in this order:
+ *
+ *   1. OpenRouteService (Pelias) /geocode/autocomplete — built for
+ *      type-ahead. It matches PARTIAL tokens, so "synt" already finds
+ *      Syntagma; it takes a focus point, so what is near you sorts to
+ *      the top; and it carries Greek street addresses down to the house
+ *      number. Needs ORS_KEY, the same secret the walking router uses.
+ *   2. Nominatim /search — no key, but it wants a near-complete query
+ *      and ranks by nothing you can steer. This stays the fallback, and
+ *      is what an install without a key still gets.
+ *
+ * Both are flattened into the same rows so the app never learns which
+ * one answered: { lat, lon, display_name, address, matched, source }.
+ * The `address` shape is Nominatim's, because the app's label builder
+ * was written against it — Pelias fields are mapped onto it below.
+ * ------------------------------------------------------------------- */
+const ORS_GEO = "https://api.openrouteservice.org/geocode/autocomplete";
+/* Same window as VIEWBOX, spelled out because Pelias wants corners
+ * rather than Nominatim's left,top,right,bottom string. */
+const ATTICA = { minLon: 23.40, minLat: 37.70, maxLon: 24.10, maxLat: 38.40 };
+/* Everything a rider might name as an origin or a destination. Left
+ * unrestricted, Pelias also returns regions and countries, which are
+ * useless here — you cannot walk to "Greece". */
+const ORS_LAYERS = "address,venue,street,neighbourhood,borough,locality,localadmin";
+
+function orsGeoUrl(q, lang, focus) {
+  const u = new URL(ORS_GEO);
+  u.searchParams.set("text", q);
+  u.searchParams.set("size", "8");
+  u.searchParams.set("lang", lang === "en" ? "en" : "el");
+  u.searchParams.set("layers", ORS_LAYERS);
+  u.searchParams.set("boundary.country", "GRC");
+  u.searchParams.set("boundary.rect.min_lon", String(ATTICA.minLon));
+  u.searchParams.set("boundary.rect.min_lat", String(ATTICA.minLat));
+  u.searchParams.set("boundary.rect.max_lon", String(ATTICA.maxLon));
+  u.searchParams.set("boundary.rect.max_lat", String(ATTICA.maxLat));
+  /* Two decimals — about a kilometre. This only nudges the ranking, so
+   * more precision buys nothing and costs cache hits: everyone searching
+   * from the same neighbourhood should share one cached answer. */
+  if (focus) {
+    u.searchParams.set("focus.point.lat", focus.lat.toFixed(2));
+    u.searchParams.set("focus.point.lon", focus.lng.toFixed(2));
+  }
+  return u.toString();
+}
+
+/* Pelias → the app's rows. `name` on an address layer already reads
+ * "Φιλοτίμου 12", so prefer it over the bare street: losing the house
+ * number is exactly what made the old labels useless. */
+function orsRow(f) {
+  const p = (f && f.properties) || {};
+  const c = (f && f.geometry && f.geometry.coordinates) || [];
+  const lon = Number(c[0]), lat = Number(c[1]);
+  if (!isFinite(lat) || !isFinite(lon)) return null;
+  const road = p.layer === "address" && p.name ? p.name : (p.street || null);
+  return {
+    lat: String(lat), lon: String(lon),
+    display_name: p.label || p.name || "",
+    address: {
+      road,
+      neighbourhood: p.neighbourhood || null,
+      suburb: p.borough || null,
+      city: p.locality || p.localadmin || null,
+      amenity: p.layer === "venue" ? (p.name || null) : null,
+    },
+    source: "ors",
+  };
+}
+
+/* The key goes in a header, not the query, so the URL stays safe to use
+ * as a cache key — otherwise the secret would end up inside Cloudflare's
+ * cache index for every search anyone ever runs. */
+async function orsGeocode(q, lang, focus, env) {
+  const key = env && env.ORS_KEY;
+  if (!key) return null;
+  const target = orsGeoUrl(q, lang, focus);
+  const cache = caches.default;
+  const ck = new Request(target, { method: "GET" });
+  const hit = await cache.match(ck);
+  if (hit) { try { return await hit.json(); } catch (_) { /* fall through */ } }
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  let rows = null;
+  try {
+    const res = await fetch(target, {
+      headers: { "Authorization": key, "Accept": "application/json", "User-Agent": UA },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const j = await res.json();
+    const feats = j && Array.isArray(j.features) ? j.features : [];
+    rows = feats.map(orsRow).filter(Boolean);
+  } catch (_) {
+    clearTimeout(timer);
+    return null;
+  }
+  if (rows && rows.length) {
+    await cache.put(ck, new Response(JSON.stringify(rows), {
+      headers: { "Content-Type": "application/json; charset=utf-8",
+                 "Cache-Control": `public, max-age=${GEO_CACHE}` },
+    }));
+  }
+  return rows;
+}
+
+async function handleGeocode(url, env) {
   const q = (url.searchParams.get("q") || "").trim();
   if (!q) return json({ error: "q required" }, 400);
   const lang = url.searchParams.get("lang") || "el";
+  /* Read as strings first: Number(null) is 0, and a missing position
+   * would otherwise focus the search on the Gulf of Guinea. */
+  const slat = url.searchParams.get("lat"), slng = url.searchParams.get("lng");
+  const flat = Number(slat), flng = Number(slng);
+  const focus = (slat && slng && isFinite(flat) && isFinite(flng))
+    ? { lat: flat, lng: flng } : null;
+
+  /* Latin input is ambiguous against a Greek gazetteer, so we try the
+   * query as typed first — Pelias does index the English names — and
+   * only then the transliteration. Two shots, not four: every miss is
+   * a request off the daily quota. */
+  if (env && env.ORS_KEY) {
+    const tries = isLatin(q) ? [q, toGreek(q)] : [q];
+    for (const cand of tries) {
+      const rows = await orsGeocode(cand, lang, focus, env);
+      if (rows && rows.length) {
+        return json(rows.map(r => ({ ...r, matched: cand })));
+      }
+    }
+  }
+
   for (const cand of geocodeCandidates(q)) {
     const data = await getJSON(nominatimSearchUrl(cand, lang), GEO_CACHE);
     if (Array.isArray(data) && data.length) {
       return json(data.map(d => ({
         lat: d.lat, lon: d.lon, display_name: d.display_name,
-        address: d.address || null, matched: cand,
+        address: d.address || null, matched: cand, source: "osm",
       })));
     }
   }
@@ -596,7 +725,7 @@ async function initSchema(env) {
     `CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)`,
     // Append-only history of every community report ever filed (the KV
     // side only keeps ACTIVE flags). This is what future statistics —
-    // "which line gets the most inspector reports" — will read from.
+    // "which line gets the most breakdown reports" — will read from.
     `CREATE TABLE IF NOT EXISTS report_log(id INTEGER PRIMARY KEY AUTOINCREMENT,
        ts INTEGER, kind TEXT, type TEXT, target_id TEXT, target_name TEXT,
        line_id TEXT, route_code TEXT, renewed INTEGER)`,
@@ -1140,36 +1269,41 @@ async function farFavourites(codes, stops, lat, lng) {
  * read with a plain get and pruned on every touch — zero list ops.
  * ------------------------------------------------------------------ */
 const REPORTS_KEY = "reports:index";
-/* What may be flagged, and with what. A rider reports from inside a bus
- * or standing at a metro station — those are the two TARGET kinds — and
- * within each, a report falls into one of two CATEGORIES:
+/* What may be flagged, and with what. A rider reports from inside a
+ * surface vehicle — bus or trolley, both the "bus" kind here — or
+ * standing at a metro station. Those are the two TARGET kinds.
  *
- *   issue (red)   — something is wrong with the vehicle or the station
- *   ops   (blue)  — who is present and what is happening operationally
+ * There is no category split. Every flag is one colour and reads as one
+ * thing: something a rider on the network would want to know before they
+ * get there. Sorting them into "problems" and "operational" made people
+ * decode a palette before reading a word that was already on the screen.
  *
- * The ops category is deliberately neutral, factual and staff-agnostic:
- * "fare inspection is happening on this line" is service information of
- * the same kind as "this bus has no air conditioning". The app reports
- * situations, not people — there is no free text, no photo, no
- * description, and nothing that identifies an individual. */
+ * Entries stay factual and staff-agnostic. "OASA staff on this line" is
+ * service information of the same kind as "this bus has no air
+ * conditioning". The app reports situations, not people — there is no
+ * free text, no photo, no description, and nothing identifying an
+ * individual. Mirrored in the app's TYPES_BY_KIND; keep the two in sync. */
 const REPORT_TYPES = {
-  bus:   new Set(["breakdown", "crowded", "noac", "fare", "security", "staff"]),
-  metro: new Set(["lift", "fare", "security", "staff"]),
-};
-const CATEGORY = {
-  breakdown: "issue", crowded: "issue", noac: "issue", lift: "issue",
-  fare: "ops", security: "ops", staff: "ops",
+  bus:   new Set(["breakdown", "crowded", "noac", "security", "staff"]),
+  metro: new Set(["lift", "escalator", "nowheel", "crowded", "security", "staff"]),
 };
 
 /* How long a flag lives, in seconds, by target kind and type. The split
- * is about how fast the thing stops being true: staff of any sort ride a
- * few stops on a bus but work a station for hours; a broken air-con or
- * lift lasts the whole trip or the whole day. Documented in
- * PARAMETERS.md. */
+ * is about how fast the thing stops being true: staff ride a few stops on
+ * a bus but work a station for hours; a crowded platform clears in
+ * minutes while a crowded bus stays crowded for its whole run; a broken
+ * lift or escalator lasts the day, and a station with no step-free route
+ * is a fact about the building, not about this morning. Documented in
+ * PARAMETERS.md.
+ *
+ * Types retired in v44 (`fare`, and `inspector` before it) are absent on
+ * purpose: rows already in KV fall through to DEFAULT_TTL and age out
+ * within the hour, and no new one can be filed. */
 const TTL = {
   bus:   { breakdown: 3600, crowded: 3600, noac: 3600,
-           fare: 900, security: 1800, staff: 1800 },
-  metro: { lift: 7200, fare: 7200, security: 7200, staff: 7200 },
+           security: 1800, staff: 1800 },
+  metro: { lift: 7200, escalator: 7200, nowheel: 10800, crowded: 1800,
+           security: 7200, staff: 7200 },
 };
 const DEFAULT_TTL = 3600;
 const MAX_ACTIVE_PER_REPORTER = 2;
@@ -2611,7 +2745,13 @@ export default {
 
     if (p.endsWith("/nearby")) return handleNearby(url, env, ctx);
 
-    if (p.endsWith("/geocode")) return handleGeocode(url);
+    /* Type-ahead fires on almost every keystroke, so the ceiling here is
+     * about the ORS daily quota rather than about OASA. The 24h edge
+     * cache absorbs the repeats; this caps a single abusive client. */
+    if (p.endsWith("/geocode")) {
+      if (!rateLimit(ip, "geocode", 40, 60)) return tooMany();
+      return handleGeocode(url, env);
+    }
 
     if (p.endsWith("/reverse")) {
       const lat = url.searchParams.get("lat"), lon = url.searchParams.get("lon");
@@ -2660,13 +2800,13 @@ export default {
 
     // Aggregated history: which buses/lines/stations collect the most
     // reports. Feeds any future public statistics page.
-    //   /reports/toplist?days=30&type=inspector&kind=metro
+    //   /reports/toplist?days=30&type=breakdown&kind=bus
     if (p.endsWith("/reports/toplist")) {
       if (!dbReady(env)) return json({ error: "stats not configured" }, 501);
       await initSchema(env);
       const days = Math.min(365, Math.max(1, +(url.searchParams.get("days") || 30)));
       const since = Math.floor(Date.now() / 1000) - days * 86400;
-      const type = url.searchParams.get("type");   // e.g. inspector; omit = all
+      const type = url.searchParams.get("type");   // e.g. breakdown; omit = all
       const kind = url.searchParams.get("kind");   // bus | metro; omit = both
       const cond = ["ts>?"], args = [since];
       if (type) { cond.push("type=?"); args.push(type); }
@@ -2778,8 +2918,9 @@ export default {
       if (env.ALERTS) {
         try {
           const active = await readReports(env, nowS);
-          out.reports = { activeNow: active.length,
-            red: active.filter(r => r.type === "inspector").length };
+          const byType = {};
+          for (const r of active) byType[r.type] = (byType[r.type] || 0) + 1;
+          out.reports = { activeNow: active.length, byType };
         } catch (_) { }
         try {
           const rules = (await readRules(env)).filter(r => r && r.enabled !== false);

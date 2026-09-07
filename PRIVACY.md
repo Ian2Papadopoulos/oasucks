@@ -23,7 +23,7 @@ There is no way to enter such information.
 
 ## Retention
 
-- Active reports: until they expire (15 minutes to 2 hours), then deleted with
+- Active reports: until they expire (30 minutes to 3 hours), then deleted with
   their coordinates.
 - Anonymous history log (time, line, station, report type — **no coordinates, no
   reporter id**): 90 days.
@@ -34,8 +34,11 @@ There is no way to enter such information.
 
 Cloudflare (hosting; our processor under Art. 28, possibly outside the EEA under
 Standard Contractual Clauses); OASA (receives our server's requests, not yours);
-OpenStreetMap / CARTO (your browser fetches map tiles, so they see your IP address).
-Nothing is sold or shared otherwise.
+OpenStreetMap / CARTO (your browser fetches map tiles, so they see your IP address);
+a geocoding service — OpenRouteService, or OpenStreetMap's Nominatim — which receives
+the text you type into address search and a position rounded to about a kilometre.
+That request comes from our server, not your browser, so the geocoder never sees your
+IP address, and we do not store the text. Nothing is sold or shared otherwise.
 
 ## Your rights
 

@@ -32,6 +32,9 @@
     --rule:#D9D9D4; --rule2:#ECECE8;
     --marker:#FFE24A; --marker2:#F0C93F;
     --red:#C42B1C; --blue:#1F5FA8;
+    /* Community flags, all of them. One colour, dark enough that white
+       sits on it at 5:1 and it still reads against paper at the same. */
+    --flag:#B2540A;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
@@ -408,18 +411,17 @@
   /* Drawn, not typed. ◉ and friends have patchy font coverage — on
      Android they landed as a hollow ring or a tofu box. Two nested
      circles always render the same everywhere. */
-  .livedot{width:15px;height:15px;border-radius:50%;border:2px solid var(--red);
+  .livedot{width:15px;height:15px;border-radius:50%;border:2px solid var(--flag);
     display:grid;place-items:center;flex:none}
-  .livedot::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--red)}
+  .livedot::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--flag)}
   .rp-tile .livedot{border-color:var(--paper)}
   .rp-tile .livedot::after{background:var(--paper)}
   #repmap{flex:1;min-height:190px;position:relative;z-index:0;background:#EDEDEA}
-  /* Two categories, two colours. Red = something is wrong. Blue = who is
-     present / what is operationally happening. The colour carries the
-     category and nothing else — severity is not encoded anywhere. */
-  .flag{width:15px;height:15px;border-radius:50%;background:#fff;border:3px solid var(--ink3)}
-  .flag.issue{border-color:var(--red);background:var(--red)}
-  .flag.ops{border-color:var(--blue);background:var(--blue)}
+  /* One colour for every flag. The SHAPE still carries information —
+     square for a vehicle, diamond for a station — but nothing about the
+     colour needs decoding, and severity is not encoded anywhere. */
+  .flag{width:15px;height:15px;border-radius:50%;
+    background:var(--flag);border:3px solid var(--flag)}
   .flag.bus{border-radius:3px;width:17px;height:17px}
   .flag.metro{border-radius:2px;width:15px;height:15px;transform:rotate(45deg)}
   .flag{position:relative}
@@ -431,22 +433,17 @@
   /* the label above each pin: says WHAT is wrong without a tap. Hidden
      below REPMAP.labelZoom, where a dozen of them would overlap. */
   .nolabels .leaflet-tooltip.flaglabel{display:none}
-  .leaflet-tooltip.flaglabel{background:var(--red);color:#fff;border:none;border-radius:2px;
+  .leaflet-tooltip.flaglabel{background:var(--flag);color:#fff;border:none;border-radius:2px;
     font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.04em;
     padding:2px 5px;white-space:nowrap;box-shadow:1px 1px 0 rgba(23,23,26,.25)}
-  .leaflet-tooltip.flaglabel::before{border-top-color:var(--red)}
-  .leaflet-tooltip.flaglabel.ops{background:var(--blue)}
-  .leaflet-tooltip.flaglabel.ops::before{border-top-color:var(--blue)}
+  .leaflet-tooltip.flaglabel::before{border-top-color:var(--flag)}
   .repitem{display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px dashed var(--rule)}
   .repitem:first-of-type{border-top:none}
-  .repitem .rb{width:4px;align-self:stretch;background:var(--ink3);flex:none}
-  .repitem .rb.issue{background:var(--red)}
-  .repitem .rb.ops{background:var(--blue)}
+  .repitem .rb{width:4px;align-self:stretch;background:var(--flag);flex:none}
   .repitem .ri{flex:1;min-width:0}
   .repitem .rt{font-weight:700;font-size:12px}
-  .repitem .rn{display:inline-block;margin-left:6px;background:var(--red);color:#fff;
+  .repitem .rn{display:inline-block;margin-left:6px;background:var(--flag);color:#fff;
     padding:0 5px;border-radius:2px;font-size:9.5px;letter-spacing:.04em;vertical-align:1px}
-  .repitem .rn.ops{background:var(--blue)}
   /* ------------------------------ onboarding ---------------------------- */
   .tour{position:fixed;inset:0;z-index:4000;background:rgba(23,23,26,.55);
     display:grid;place-items:center;padding:20px}
@@ -485,18 +482,11 @@
     background:var(--toner);transition:left .12s}
   .sw.on{background:var(--marker)}
   .sw.on::after{left:17px}
-  .rep-legend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:9px;
-    color:var(--ink3);font-size:9.5px;text-transform:uppercase;letter-spacing:.1em}
-  .rep-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px;
-    vertical-align:-1px}
-  .rep-legend i.issue{background:var(--red)}
-  .rep-legend i.ops{background:var(--blue)}
   .repitem .rs{color:var(--ink3);font-size:10.5px;margin-top:2px;line-height:1.45}
   .repitem .rx{background:var(--card);border:1px solid var(--rule);color:var(--ink3);
     width:26px;height:26px;cursor:pointer;flex:none;font-family:var(--mono);border-radius:2px}
-  .flagline{font-size:10.5px;font-weight:700;margin-top:3px;letter-spacing:.02em}
-  .flagline.issue{color:var(--red)}
-  .flagline.ops{color:var(--blue)}
+  .flagline{font-size:10.5px;font-weight:700;margin-top:3px;letter-spacing:.02em;
+    color:var(--flag)}
   /* candidate pickers: "which bus are you on / which station" */
   .cands{display:flex;flex-direction:column;gap:5px}
   .cand{display:flex;align-items:center;gap:9px;width:100%;text-align:left;
@@ -616,10 +606,9 @@
     padding:7px 10px;font-size:11px;font-weight:700;cursor:pointer;min-width:36px;
     font-family:var(--mono);border-radius:2px}
   .chip.on{background:var(--marker);border-color:var(--toner);color:var(--toner)}
-  /* a selected type wears its category's colour, so the split is legible
-     at the moment of choosing, not just afterwards on the map */
-  .chip.issue.on{background:var(--red);border-color:var(--red);color:#fff}
-  .chip.ops.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  /* a selected report type wears the flag colour, so the chip you picked
+     matches the pin you are about to put on the map */
+  #rf-type .chip.on{background:var(--flag);border-color:var(--flag);color:#fff}
   .primary{width:100%;margin-top:14px;background:var(--toner);color:var(--paper);border:none;
     padding:12px;font-weight:700;font-size:11.5px;cursor:pointer;font-family:var(--mono);
     text-transform:uppercase;letter-spacing:.12em;border-radius:2px}
@@ -702,7 +691,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v43</span></div>
+  <div class="foot"><span class="ver">v44</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -892,15 +881,30 @@ async function oasa(a,p1,p2,fresh){
   throw e2||new Error("proxy failed");
 }
 function safeJson(t){ try{ return JSON.parse(t); }catch{ return null; } }
-async function geocode(q){
+/* `opts.focus` biases results towards a point — the Worker forwards it to
+   the autocomplete geocoder so the Φιλοτίμου two streets away outranks
+   the one in Piraeus. `opts.signal` lets a newer keystroke cancel this
+   one; without it, a slow early response lands after a fast later one
+   and the list flickers back to the wrong answer. */
+async function geocode(q,opts){
   await ensureMode();
-  const url=hasBackend()?`${base()}/geocode?q=${encodeURIComponent(q)}&lang=${LANG}`
-    :`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=gr&limit=6&accept-language=${LANG}&q=${encodeURIComponent(q)}`;
-  const j=await (await fetch(url,{cache:"no-store"})).json(); return Array.isArray(j)?j:[];
+  const o=opts||{};
+  let url;
+  if(hasBackend()){
+    url=`${base()}/geocode?q=${encodeURIComponent(q)}&lang=${LANG}`;
+    if(o.focus&&isFinite(o.focus.lat)&&isFinite(o.focus.lng))
+      url+=`&lat=${o.focus.lat.toFixed(4)}&lng=${o.focus.lng.toFixed(4)}`;
+  } else {
+    url=`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=gr&limit=6&accept-language=${LANG}&q=${encodeURIComponent(q)}`;
+  }
+  const j=await (await fetch(url,{cache:"no-store",signal:o.signal||null})).json();
+  return Array.isArray(j)?j:[];
 }
 /* Nominatim's display_name usually begins with a house number, so
    "12, Φιλοτίμου, Αθήνα…" used to render as just "12". Build the label
-   from the address parts instead, with sensible fallbacks. */
+   from the address parts instead, with sensible fallbacks. The
+   autocomplete geocoder is mapped onto the same field names server-side,
+   so this reads both without knowing which answered. */
 function placeLabel(j){
   const a=(j&&j.address)||{};
   const road=a.road||a.pedestrian||a.footway||a.path||a.square;
@@ -945,8 +949,7 @@ const T={
   onBus:"Σε λεωφορείο", atStop:"Σε στάση", atMetro:"Σε μετρό",
   whichLine:"Ποια γραμμή;", whichStop:"Ποια στάση;", whichStation:"Ποιος σταθμός;",
   issueType:"Τι συμβαίνει;", noteOpt:"Σχόλιο (προαιρετικό)", send:"Αποστολή",
-  catIssue:"Πρόβλημα", catOps:"Λειτουργικά",
-  legIssue:"προβλήματα", legOps:"λειτουργικά",
+  catWhat:"Τι συμβαίνει;",
   noReports:"Καμία ενεργή αναφορά.", agoShort:"πριν", mineOnly:"Μόνο εσύ μπορείς να τη σβήσεις",
   confirmBus:"Σε ποιο λεωφορείο είσαι;", scanBus:"Εντοπισμός λεωφορείων γύρω σου…",
   scanRefine:"Έλεγχος ποιο κινείται μαζί σου…", withYou:"κινείται μαζί σου",
@@ -992,8 +995,8 @@ const T={
   mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις", setTour:"Οδηγός χρήσης",
   tourNext:"Επόμενο", tourGo:"Ξεκίνα", tourSkip:"Παράλειψη",
   tour1h:"Ζωντανές αναφορές",
-  tour1p:"Το κόκκινο κουμπί δείχνει τι συμβαίνει τώρα στο δίκτυο: βλάβες και υπερπλήρη οχήματα "+
-    "με κόκκινο, έλεγχο εισιτηρίων και προσωπικό με μπλε. Από εκεί κάνεις και τη δική σου αναφορά.",
+  tour1p:"Το πορτοκαλί κουμπί δείχνει τι συμβαίνει τώρα στο δίκτυο: βλάβες, υπερπλήρη οχήματα, "+
+    "ασανσέρ και κυλιόμενες εκτός λειτουργίας, προσωπικό. Από εκεί κάνεις και τη δική σου αναφορά.",
   tour2h:"Αγαπημένες στάσεις",
   tour2p:"Διπλό πάτημα σε μια στάση, στη λίστα ή στον χάρτη, για να την καρφιτσώσεις. Μένει πάντα "+
     "στην κορυφή, ακόμη κι αν είσαι αλλού. Διπλό πάτημα ξανά για αφαίρεση.",
@@ -1024,14 +1027,19 @@ const T={
   aboutBody:`<p><b>OASAx</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
     γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
     <p><b>Ζωντανές αναφορές.</b> Μια κοινή εικόνα του τι συμβαίνει τώρα στο δίκτυο, από τους
-    ίδιους τους επιβάτες. Δύο κατηγορίες:</p>
-    <p><b style="color:var(--red)">■ Προβλήματα</b>: βλάβη, υπερπλήρες ή χωρίς A/C στα
-    λεωφορεία, ασανσέρ εκτός λειτουργίας στο μετρό.<br>
-    <b style="color:var(--blue)">■ Λειτουργικά</b>: έλεγχος εισιτηρίων, παρουσία ασφάλειας,
-    προσωπικό εξυπηρέτησης.</p>
-    <p>Αναφέρεις το λεωφορείο στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι σημάνσεις σβήνουν
-    μόνες τους, από 15′ ως 2 ώρες. Καταγράφονται καταστάσεις, όχι πρόσωπα. Δεν υπάρχει ελεύθερο
+    ίδιους τους επιβάτες. Όλες οι σημάνσεις έχουν το ίδιο χρώμα
+    <b style="color:var(--flag)">■</b> — δεν υπάρχουν κατηγορίες να αποκωδικοποιήσεις, μόνο η
+    λέξη που γράφει η καθεμία.</p>
+    <p>Σε λεωφορείο ή τρόλεϊ: βλάβη, υπερπλήρες, χωρίς A/C, παρουσία ασφάλειας, προσωπικό
+    ΟΑΣΑ.<br>Σε σταθμό: ασανσέρ ή κυλιόμενη εκτός λειτουργίας, χωρίς πρόσβαση ΑμεΑ,
+    υπερπλήρες, παρουσία ασφάλειας, προσωπικό ΟΑΣΑ.</p>
+    <p>Αναφέρεις το όχημα στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι σημάνσεις σβήνουν
+    μόνες τους, από 30′ ως 3 ώρες. Καταγράφονται καταστάσεις, όχι πρόσωπα. Δεν υπάρχει ελεύθερο
     κείμενο ούτε φωτογραφίες.</p>
+    <p><b>Προσβασιμότητα.</b> Μια σήμανση για ασανσέρ, κυλιόμενη ή πρόσβαση ΑμεΑ είναι η
+    παρατήρηση ενός επιβάτη μια δεδομένη στιγμή, όχι επίσημη καταγραφή — ένας σταθμός χωρίς
+    σήμανση μπορεί κάλλιστα να μην είναι προσβάσιμος. Μη σχεδιάζεις διαδρομή χωρίς σκαλιά
+    βασιζόμενος σε αυτό.</p>
     <p><b>Πόσοι το είπαν.</b> Κάθε αναφορά μετράει το ίδιο. Όταν περισσότεροι αναφέρουν το ίδιο
     πράγμα για το ίδιο όχημα ή σταθμό, μπαίνουν σε μία σήμανση με τον αριθμό τους. Οι «3 αναφορές»
     βαραίνουν περισσότερο από τη μία.</p>
@@ -1043,9 +1051,13 @@ const T={
     διαδρομής. Κράτα πατημένη μια στάση στον χάρτη για να δεις πού πάνε τα λεωφορεία της.</p>`,
   ti_breakdown:"Βλάβη", ti_crowded:"Υπερπλήρες", ti_noac:"Χωρίς A/C",
   ti_lift:"Ασανσέρ εκτός λειτουργίας",
-  ti_fare:"Έλεγχος εισιτηρίων", ti_security:"Παρουσία ασφάλειας",
-  ti_staff:"Προσωπικό εξυπηρέτησης",
-  ti_inspector:"Έλεγχος εισιτηρίων",
+  ti_escalator:"Κυλιόμενη εκτός λειτουργίας",
+  ti_nowheel:"Χωρίς πρόσβαση ΑμεΑ",
+  ti_security:"Παρουσία ασφάλειας",
+  ti_staff:"Προσωπικό ΟΑΣΑ",
+  /* Retired in v44. Kept only so flags already in KV read sensibly for
+     the hour or two they have left; nothing can file one any more. */
+  ti_fare:"Προσωπικό ΟΑΣΑ", ti_inspector:"Προσωπικό ΟΑΣΑ",
   ti_delay:"Καθυστέρηση", ti_incident:"Επεισόδιο", ti_no_show:"Δεν πέρασε",
   ti_detour:"Παράκαμψη", ti_other:"Άλλο", reportSent:"Καταχωρήθηκε ✓",
   needLoc:"Χρειάζεται τοποθεσία.", repOff:"Οι αναφορές δεν έχουν ρυθμιστεί.",
@@ -1076,8 +1088,7 @@ const T={
   onBus:"On a bus", atStop:"At a stop", atMetro:"At a metro station",
   whichLine:"Which line?", whichStop:"Which stop?", whichStation:"Which station?",
   issueType:"What's happening?", noteOpt:"Note (optional)", send:"Send",
-  catIssue:"Issue", catOps:"Operational",
-  legIssue:"issues", legOps:"operational",
+  catWhat:"What's happening?",
   noReports:"No active reports.", agoShort:"ago", mineOnly:"Only you can clear it",
   confirmBus:"Which bus are you on?", scanBus:"Finding buses around you…",
   scanRefine:"Checking which one moves with you…", withYou:"moving with you",
@@ -1123,8 +1134,8 @@ const T={
   mSettings:"Settings", setH:"Settings", setTour:"How it works",
   tourNext:"Next", tourGo:"Start", tourSkip:"Skip",
   tour1h:"Live reports",
-  tour1p:"The red button shows what is happening on the network right now: breakdowns and "+
-    "crowding in red, fare inspection and staff in blue. File your own from the same screen.",
+  tour1p:"The orange button shows what is happening on the network right now: breakdowns, "+
+    "crowding, elevators and escalators out of order, staff. File your own from the same screen.",
   tour2h:"Favourite stops",
   tour2p:"Double-tap a stop, in the list or on the map, to pin it. It stays at the top even when "+
     "you are somewhere else. Double-tap again to unpin.",
@@ -1155,14 +1166,17 @@ const T={
   aboutBody:`<p><b>OASAx</b> shows live bus and trolley arrivals for the stops around you,
     using the unofficial OASA telematics API.</p>
     <p><b>Live reports.</b> A shared picture of what's happening on the network right now, from
-    the people on it. Two categories:</p>
-    <p><b style="color:var(--red)">■ Issues</b>: breakdown, overcrowding or no A/C on a bus, a
-    broken lift at a station.<br>
-    <b style="color:var(--blue)">■ Operational</b>: fare inspection, security presence,
-    customer service staff.</p>
-    <p>You flag the bus you are riding, or a metro station within 600 m. Flags expire on their
-    own, 15 min to 2 hours. Reports describe situations, not people. There is no free text and
-    no photos.</p>
+    the people on it. Every flag is the same colour <b style="color:var(--flag)">■</b> — there
+    are no categories to decode, only the word each one carries.</p>
+    <p>On a bus or trolley: breakdown, overcrowded, no A/C, security presence, OASA staff.<br>
+    At a station: elevator or escalator out of order, no wheelchair access, overcrowded,
+    security presence, OASA staff.</p>
+    <p>You flag the vehicle you are riding, or a metro station within 600 m. Flags expire on
+    their own, 30 min to 3 hours. Reports describe situations, not people. There is no free text
+    and no photos.</p>
+    <p><b>Accessibility.</b> A lift, escalator or step-free flag is one passenger's
+    observation at one moment, not an accessibility record — a station with no flag may
+    still be unusable. Don't plan a step-free journey on it.</p>
     <p><b>How many said it.</b> Every report counts the same. When several people report the
     same thing about the same vehicle or station they collapse into one flag carrying the
     number, so "3 reports" reads heavier than one.</p>
@@ -1174,9 +1188,13 @@ const T={
     Long-press a stop on the map to see where its buses go.</p>`,
   ti_breakdown:"Breakdown", ti_crowded:"Overcrowded", ti_noac:"No A/C",
   ti_lift:"Elevator not working",
-  ti_fare:"Fare inspection", ti_security:"Security presence",
-  ti_staff:"Customer service staff",
-  ti_inspector:"Fare inspection",
+  ti_escalator:"Escalator out of order",
+  ti_nowheel:"No wheelchair access",
+  ti_security:"Security presence",
+  ti_staff:"OASA staff",
+  /* Retired in v44. Kept only so flags already in KV read sensibly for
+     the hour or two they have left; nothing can file one any more. */
+  ti_fare:"OASA staff", ti_inspector:"OASA staff",
   ti_delay:"Delayed", ti_incident:"Incident", ti_no_show:"Never arrived",
   ti_detour:"Detour", ti_other:"Other", reportSent:"Reported ✓",
   needLoc:"Location needed.", repOff:"Reports aren't configured.",
@@ -2412,7 +2430,7 @@ async function doSearch(){
   const q=$("#addr").value.trim(); if(!q) return;
   const box=$("#results"); box.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
   try{
-    const items=await geocode(q);
+    const items=await geocode(q,{focus:(here&&isFinite(here.lat))?here:null});
     if(!items.length){
       box.innerHTML=`<div class="res-msg">${esc(emptyMsg(false,"noResults"))}</div>`; return; }
     box.innerHTML="";
@@ -2429,7 +2447,8 @@ function openPicker(){
   $("#picker").classList.add("on");
   if(!pmap){
     pmap=L.map("pickmapEl",{zoomControl:false,attributionControl:false}).setView([here.lat,here.lng],16);
-    L.tileLayer(tileUrl(),{subdomains:"abcd",maxZoom:20,detectRetina:true}).addTo(pmap);
+    addTiles(pmap);                  // the one place tile options are decided
+
     pmap.on("moveend",()=>{ clearTimeout(revTimer); revTimer=setTimeout(updatePickLabel,400); });
   } else pmap.setView([here.lat,here.lng],16);
   setTimeout(()=>{ pmap.invalidateSize(); updatePickLabel(); },80);
@@ -2639,22 +2658,16 @@ function clearRoute(restore){
  * stops but work a station for hours, and a broken lift outlasts both.
  * Reports clear themselves when they expire; only the person who filed
  * one can remove it early. */
-/* What can be reported, per target kind — and which of the two
-   CATEGORIES each type belongs to:
-     issue (red)  something is wrong with the vehicle or station
-     ops   (blue) who is present and what is operationally happening
-   Ops entries are factual and staff-agnostic on purpose: "fare
-   inspection on this line" is service information, like "no A/C". The
-   app reports situations, never people. Mirrored server-side in
-   REPORT_TYPES/CATEGORY — keep the two in sync. */
-const TYPES_BY_KIND={ bus:["breakdown","crowded","noac","fare","security","staff"],
-                      metro:["lift","fare","security","staff"] };
-const CATEGORY={ breakdown:"issue",crowded:"issue",noac:"issue",lift:"issue",
-                 fare:"ops",security:"ops",staff:"ops" };
-/* Records filed before v32 carry the old `inspector` type; map it so
-   they render sensibly for the couple of hours until they expire. */
-function catOf(ty){ return CATEGORY[ty]||(ty==="inspector"?"ops":"issue"); }
-const CAT_ORDER=["issue","ops"];
+/* What can be reported, per target kind. "bus" covers every surface
+   vehicle — bus and trolley alike — and "metro" covers stations.
+
+   There are no categories any more. One flag, one colour, one label you
+   read instead of decode. Entries stay factual and staff-agnostic: "OASA
+   staff on this line" is service information of the same kind as "no
+   A/C". The app reports situations, never people. Mirrored server-side
+   in REPORT_TYPES — keep the two in sync. */
+const TYPES_BY_KIND={ bus:["breakdown","crowded","noac","security","staff"],
+                      metro:["lift","escalator","nowheel","crowded","security","staff"] };
 /* You may only flag the vehicle you are inside, or a station you are
    standing at — these numbers are what "inside" and "at" mean.
 
@@ -2735,7 +2748,7 @@ function flagLine(r){
   if(!r) return "";
   const ago=agoTxt(Date.now()/1000-r.at);
   const n=r.count>1?` · ${esc(t("nReports")(r.count))}`:"";
-  return `<div class="flagline ${catOf(r.type)}">${esc(issueLabel(r.type))}${n} · ${ago}</div>`;
+  return `<div class="flagline">${esc(issueLabel(r.type))}${n} · ${ago}</div>`;
 }
 
 let repmap=null, replayer=null;
@@ -2767,12 +2780,12 @@ async function loadMetro(){
   catch{ state.metro=[]; }
   return state.metro;
 }
-function flagIcon(kind,count,cat){
+function flagIcon(kind,count){
   // the head count rides on the pin, so a busy flag reads as busy even
   // when its label is hidden at low zoom
   const badge=count>1?`<span class="flag-n">${count>9?"9+":count}</span>`:"";
   return L.divIcon({className:"",
-    html:`<div class="flag ${cat} ${kind}">${badge}</div>`,
+    html:`<div class="flag ${kind}">${badge}</div>`,
     iconSize:[17,17],iconAnchor:[8,8],popupAnchor:[0,-10]});
 }
 /* A flagged bus keeps driving after it was reported, so the pin has to
@@ -2821,15 +2834,14 @@ function drawReportMap(){
     // Leaflet renders tooltip strings as HTML, so escape before interpolating.
     const who=r.kind==="bus"?`🚌 ${esc(r.lineId||"")}`:`Ⓜ ${esc(r.targetName||"")}`;
     const n=r.count>1?` · ${esc(t("nReports")(r.count))}`:"";
-    const cat=catOf(r.type);
-    const m=L.marker([la,ln],{icon:flagIcon(r.kind,r.count,cat),zIndexOffset:600}).addTo(replayer);
+    const m=L.marker([la,ln],{icon:flagIcon(r.kind,r.count),zIndexOffset:600}).addTo(replayer);
     /* The label sits ON the map above the pin, because the whole point of
        this screen is "what is wrong and where" and a pin you must tap to
        identify answers only half of that. Below REPMAP.labelZoom they are
        hidden — at city scale a dozen of them overlap into noise — and the
        popup carries the same words on tap instead. */
     m.bindTooltip(esc(issueLabel(r.type))+(r.count>1?` ×${r.count}`:""),
-      {permanent:true,direction:"top",offset:[0,-9],className:"flaglabel "+cat});
+      {permanent:true,direction:"top",offset:[0,-9],className:"flaglabel"});
     m.bindPopup(`${who} · ${esc(issueLabel(r.type))}${n} · ${esc(agoTxt(Date.now()/1000-r.at))}`);
     b.extend([la,ln]);
   });
@@ -2847,17 +2859,14 @@ function renderReportList(){
     const tags=[agoTxt(Date.now()/1000-r.at)];
     if(r.mine) tags.push(t("mineOnly"));
     // the head count IS the credibility signal now — give it its own chip
-    const n=r.count>1?`<span class="rn ${catOf(r.type)}">${esc(t("nReports")(r.count))}</span>`:"";
-    const cat=catOf(r.type);
-    return `<div class="repitem"><div class="rb ${cat}"></div><div class="ri">
+    const n=r.count>1?`<span class="rn">${esc(t("nReports")(r.count))}</span>`:"";
+    return `<div class="repitem"><div class="rb"></div><div class="ri">
       <div class="rt">${esc(issueLabel(r.type))}${r.lineId?" · "+esc(r.lineId):""}${n}</div>
       <div class="rs">${esc(where)}<br>${esc(tags.join(" · "))}</div>
       </div>${r.mine?`<button class="rx" data-id="${r.mineId}">✕</button>`:""}</div>`;
   }).join(""):`<div class="note">${t("noReports")}</div>`;
-  const legend=`<div class="rep-legend">
-    <span><i class="issue"></i>${t("legIssue")}</span>
-    <span><i class="ops"></i>${t("legOps")}</span></div>`;
-  box.innerHTML=`<button class="rep-cta" id="rep-new">${t("reportCta")}</button>${legend}${items}`;
+  // No legend: with a single colour there is nothing left to decode.
+  box.innerHTML=`<button class="rep-cta" id="rep-new">${t("reportCta")}</button>${items}`;
   $("#rep-new").onclick=openReportForm;
   box.querySelectorAll(".rx").forEach(btn=>{
     btn.onclick=async()=>{
@@ -3386,25 +3395,21 @@ function reportFormBody(){
     });
   }
 
-  /* ---- step 2: what's happening? Types are grouped under their two
-     categories, each chip carrying its category's colour, so the split
-     is obvious before you pick rather than only afterwards on the map. */
+  /* ---- step 2: what's happening? One flat row of chips in the order
+     TYPES_BY_KIND lists them — the things that stop you travelling come
+     before the things that merely tell you what to expect. */
   function step2(){
     const types=TYPES_BY_KIND[kind]||[];
     if(!types.includes(type)) type=types[0];
-    const group=cat=>{
-      const list=types.filter(x=>catOf(x)===cat);
-      if(!list.length) return "";
-      return `<div class="field"><label>${cat==="issue"?t("catIssue"):t("catOps")}</label>
-        <div class="chips">${list.map(x=>
-          `<button class="chip ${cat}${x===type?" on":""}" data-t="${x}">${esc(issueLabel(x))}</button>`
-        ).join("")}</div></div>`;
-    };
+    const chips=types.map(x=>
+      `<button class="chip${x===type?" on":""}" data-t="${x}">${esc(issueLabel(x))}</button>`
+    ).join("");
     box.innerHTML=`
       <div class="field"><label>${kind==="bus"?t("onBus"):t("atMetro")}</label>
         <div class="picked"><span class="cand-tile num">${esc(target.lineId||"Ⓜ")}</span>
           <span class="cand-dest">${esc(target.name||target.id)}</span></div></div>
-      <div id="rf-type">${CAT_ORDER.map(group).join("")}</div>
+      <div id="rf-type"><div class="field"><label>${t("catWhat")}</label>
+        <div class="chips">${chips}</div></div></div>
       <button class="rep-cta" id="rf-send" style="margin-top:14px">${t("send")}</button>
       <button class="ghost" id="rf-back">${t("back")}</button>
       <div class="note" id="rf-msg" style="display:none"></div>`;
@@ -3827,6 +3832,14 @@ function openJourney() {
 }
 function closeJourney() { $("#jp").classList.remove("on"); }
 
+/* Type-ahead pacing. The geocoder behind /geocode matches partial words,
+   so three characters is already a useful query — but every miss costs a
+   request against a daily quota, hence the debounce. Stops, favourites
+   and metro stations are matched locally and appear with no delay at all,
+   from the first character. Documented in PARAMETERS.md. */
+const JPQ = { minChars: 3, debounceMs: 260, minGapMs: 700, memo: 40 };
+const jpq = { seq: 0, ctrl: null, last: 0, seen: new Map() };
+
 /* Both ends are picked the same way, and from everything the app already
    knows how to name: where you are, your favourites, the stops around you,
    every metro station, and failing all that the geocoder. */
@@ -3839,7 +3852,11 @@ function openJourneyPick(which) {
   $("#jppick").classList.add("on");
   setTimeout(() => $("#jpp-q").focus(), 80);
 }
-function closeJourneyPick() { $("#jppick").classList.remove("on"); jp.picking = null; }
+function closeJourneyPick() {
+  $("#jppick").classList.remove("on"); jp.picking = null;
+  jpq.seq++;                                    // orphan anything still in flight
+  if (jpq.ctrl) { jpq.ctrl.abort(); jpq.ctrl = null; }
+}
 function jpChoose(place) {
   if (jp.picking === "to") jp.to = place; else jp.from = place;
   closeJourneyPick(); paintJourneyForm();
@@ -3875,25 +3892,72 @@ async function jpPickResults(q) {
   localStopMatches(query).slice(0, 4).forEach(s2 => add("🚏 " + stopName(s2),
     { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) }));
 
-  if (query.length < 3) return;
-  const msg = document.createElement("div");
-  msg.className = "res-msg"; msg.textContent = t("searching"); box.appendChild(msg);
-  let items = [], failed = false;
-  try { items = await geocode(q); } catch (_) { failed = true; }
-  msg.remove();
-  items.slice(0, 6).forEach(it => {
+  /* "nothing found" only when nothing at all is on screen — a local stop
+     match still counts, even if the geocoder came back empty. */
+  const noneMsg = failed => {
+    if (box.children.length) return;
+    const m = document.createElement("div");
+    m.className = "res-msg";
+    m.textContent = navigator.onLine === false ? t("offline")
+      : failed ? t("netErr") : t("noResults");
+    box.appendChild(m);
+  };
+  // geocoder rows, under whatever the local matches already put up
+  const addAddrs = rows => (rows || []).slice(0, 6).forEach(it => {
     const lab = placeLabel(it);
     const la = Number(it.lat), ln = Number(it.lon != null ? it.lon : it.lng);
     if (!lab || !isFinite(la) || !isFinite(ln)) return;
-    add(lab, { kind: "addr", lat: la, lng: ln, label: lab });
+    add("📍 " + lab, { kind: "addr", lat: la, lng: ln, label: lab });
   });
-  if (!box.children.length) {
-    const m2 = document.createElement("div");
-    m2.className = "res-msg";
-    m2.textContent = navigator.onLine === false ? t("offline")
-      : failed ? t("netErr") : t("noResults");
-    box.appendChild(m2);
+
+  if (query.length < JPQ.minChars) return;
+
+  /* One address request may be in flight at a time. A newer keystroke
+     aborts the older one, and the seq check throws away anything that
+     still lands late — otherwise a slow "syn" overwrites a fast
+     "syntagma" and the list argues with what you just typed. */
+  const seq = ++jpq.seq;
+  if (jpq.ctrl) jpq.ctrl.abort();
+  jpq.ctrl = ("AbortController" in window) ? new AbortController() : null;
+
+  /* Backspacing is the commonest thing anyone does in a search box, and it
+     walks back through queries this session already has answers for. Serve
+     those from memory: no request, no wait, no quota. */
+  if (jpq.seen.has(query)) { addAddrs(jpq.seen.get(query)); noneMsg(false); return; }
+
+  /* A floor between address requests, on top of the debounce. Someone
+     typing steadily at just over debounceMs fires one per keystroke
+     otherwise — measured at seven for a nine-letter street. Waiting out
+     the remainder of the gap gives the next keystroke a chance to
+     supersede this request before it is ever sent. */
+  const gap = JPQ.minGapMs - (Date.now() - jpq.last);
+  if (gap > 0) {
+    await new Promise(r => setTimeout(r, gap));
+    if (seq !== jpq.seq) return;          // a newer keystroke won; never sent
   }
+  jpq.last = Date.now();
+
+  const msg = document.createElement("div");
+  msg.className = "res-msg"; msg.textContent = t("searching"); box.appendChild(msg);
+  let items = [], failed = false;
+  try {
+    items = await geocode(q, {
+      focus: (here && isFinite(here.lat)) ? here : null,
+      signal: jpq.ctrl ? jpq.ctrl.signal : null,
+    });
+  } catch (e) {
+    if (e && e.name === "AbortError") return;   // superseded, leave the DOM alone
+    failed = true;
+  }
+  if (seq !== jpq.seq) return;
+  msg.remove();
+  if (!failed) {
+    jpq.seen.set(query, items);
+    // oldest first in a Map, so this drops the least recently asked
+    while (jpq.seen.size > JPQ.memo) jpq.seen.delete(jpq.seen.keys().next().value);
+  }
+  addAddrs(items);
+  noneMsg(failed);
 }
 
 async function runJourney() {
@@ -4046,7 +4110,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v43</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v44</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -4454,7 +4518,7 @@ $("#jpp-q").addEventListener("keydown",e=>{ if(e.key==="Enter") jpPickResults($(
 {
   let qt=null;
   $("#jpp-q").addEventListener("input",()=>{ clearTimeout(qt);
-    qt=setTimeout(()=>jpPickResults($("#jpp-q").value),320); });
+    qt=setTimeout(()=>jpPickResults($("#jpp-q").value),JPQ.debounceMs); });
 }
 $$("#seg button").forEach(b=>b.onclick=()=>setView(b.dataset.v));
 
