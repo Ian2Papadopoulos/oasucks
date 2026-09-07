@@ -94,12 +94,13 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **Location:** if the board shows Syntagma instead of where you are, location was
   blocked — tap **Αλλαγή / Change** and allow location, or in Chrome: site settings →
   Location → Allow.
-- **Language:** ☰ menu → Γλώσσα / Language.
+- **Language:** ☰ menu → Γλώσσα / Language. About *and* Terms & privacy both follow it —
+  check `/legal.html` in both settings.
 - **☰ menu:** find a line and preview its route, live bus map, language, about, and
   **Terms & privacy** (`/legal.html`).
-- **Live reports:** tap the **orange dot** — the map shows only what's currently flagged (buses
-  and metro stations), red for issues and blue for operational, and **New report**
-  underneath lets you file one. Test it
+- **Live reports:** tap the **orange dot** — the map shows only what's currently flagged
+  (buses and metro stations), every flag one colour with its label above it, and
+  **New report** underneath lets you file one. Test it
   from a bus: pick *On a bus*, give it ~15 s (it watches your GPS, then samples vehicle
   positions three times), then confirm your vehicle from the ranked list. One marked
   **✓ moving with you** is a confirmed report; picking a dashed one files an
@@ -124,10 +125,15 @@ addresses down to the house number. Without it the app falls back to OpenStreetM
 Nominatim, which needs a more complete query and cannot be steered — usable, but
 noticeably worse. One key, both features, no extra setup.
 
+Type a street with a number — `Φιλοτίμου 12`, or `filotimou 12` — and it resolves to the
+building, not the middle of the street: a query that looks like a complete address is sent
+to Pelias's address parser rather than its prefix matcher.
+
 **Budget.** Address search is the heavier of the two: one request per search that gets
-past the 260 ms debounce and three characters, cached at the edge for 24 hours. Journey
-planning spends at most four. If you approach the daily quota, raise `JPQ.debounceMs`
-in `public/index.html` before you touch anything else.
+past the 260 ms debounce, the 700 ms floor and three characters, cached at the edge for
+24 hours and remembered in the page for the session. Journey planning spends at most four.
+If you approach the daily quota, raise `JPQ.debounceMs` and `JPQ.minGapMs` in
+`public/index.html` before you touch anything else.
 
 ### The map is covered in "API KEY REQUIRED"
 
@@ -144,7 +150,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v34"` to `v35` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v35"` to `v36` in `public/sw.js` and redeploy to force an update.
 
 ---
 

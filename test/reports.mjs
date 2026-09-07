@@ -183,16 +183,20 @@ console.log("\n— what the user is told —");
     /escalator out of order/i.test(html) && /no wheelchair access/i.test(html));
   ok("el: About lists them too",
     /κυλιόμενη εκτός λειτουργίας/i.test(html) && /χωρίς πρόσβαση ΑμεΑ/i.test(html));
-  ok("en: About says the flags are one colour, not two categories",
-    /Every flag is the same colour/.test(html) && !/Two categories/.test(html));
-  ok("el: same", /Όλες οι σημάνσεις έχουν το ίδιο χρώμα/.test(html) &&
-    !/Δύο κατηγορίες/.test(html));
+  ok("en: About has no category language left",
+    !/Two categories/.test(html) && !/Operational<\/b>/.test(html));
+  ok("el: same", !/Δύο κατηγορίες/.test(html) && !/Λειτουργικά<\/b>/.test(html));
+  ok("en: About names the reports as unverified",
+    /Reports are <b>unverified<\/b>/.test(html));
+  ok("el: same", /Οι αναφορές είναι <b>ανεπιβεβαίωτες<\/b>/.test(html));
   ok("the tour no longer promises a red button",
     !/red button/i.test(html) && !/κόκκινο κουμπί/i.test(html));
   ok("...and names the colour it now is",
     /orange button/i.test(html) && /πορτοκαλί κουμπί/i.test(html));
   ok("About's stated expiry window matches the TTL table",
-    /30 min to 3 hours/.test(html) && /30′ ως 3 ώρες/.test(html));
+    /30 minutes to\s+3 hours/.test(html) && /30 λεπτά έως\s+3 ώρες/.test(html),
+    `TTL runs ${Math.min(...[...Object.values(TTL.bus), ...Object.values(TTL.metro)]) / 60}–` +
+    `${Math.max(...[...Object.values(TTL.bus), ...Object.values(TTL.metro)]) / 3600}h`);
   ok("no user-facing string coaches anyone around a fare",
     !/valid ticket|έγκυρο εισιτήριο/i.test(html),
     "that line belongs in the terms, and only there");

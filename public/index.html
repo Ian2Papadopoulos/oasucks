@@ -691,7 +691,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v44</span></div>
+  <div class="foot"><span class="ver">v45</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -978,6 +978,16 @@ const T={
   jpNone:"Δεν βρέθηκε διαδρομή με λεωφορείο, τρόλεϊ, τραμ ή μετρό.",
   jpClosed:"Αυτή την ώρα δεν κυκλοφορούν λεωφορεία ούτε συρμοί.",
   jpClose:"Η αφετηρία και ο προορισμός είναι σχεδόν στο ίδιο σημείο.",
+  jpNoStopsFrom:"Καμία στάση σε απόσταση περπατήματος από την αφετηρία.",
+  jpNoStopsTo:"Καμία στάση σε απόσταση περπατήματος από τον προορισμό.",
+  jpNoConn:"Βρέθηκαν στάσεις και στα δύο άκρα, αλλά καμία σύνδεση μεταξύ τους — "+
+    "είτε δεν υπάρχει γραμμή, είτε χρειάζεται περισσότερες μετεπιβιβάσεις από όσες ψάχνει ο σχεδιαστής.",
+  /* Γιατί προτείνεται περπάτημα. Χωρίς αυτό, το «περπάτησε 34′» δεν
+     ξεχωρίζει από αποτυχία του αλγορίθμου. */
+  jpWhyClosed:"Δεν κυκλοφορεί τίποτα αυτή την ώρα.",
+  jpWhyBeatsLine:(line,wait,via)=>`Πιο γρήγορο από το ${line}: ${wait}′ αναμονή, ${via}′ συνολικά.`,
+  jpWhyBeats:v=>`Πιο γρήγορο από κάθε διαδρομή που βρέθηκε (${v}′).`,
+  jpWhyAlso:v=>`Πιο αργό από το να πάρεις όχημα (${v}′), αλλά γίνεται με τα πόδια.`,
   jpPickH:"Επίλεξε σημείο", jpPickPh:"Διεύθυνση, στάση ή σταθμός…",
   jpWalkAll:"Με τα πόδια", jpWalk:"Περπάτημα", jpTo2:"προς",
   jpMin:"λεπτά", jpChanges:n=>n===0?"χωρίς αλλαγή":(n===1?"1 αλλαγή":`${n} αλλαγές`),
@@ -992,6 +1002,7 @@ const T={
   jpDisclaim:"Ενδεικτικοί χρόνοι. Η κίνηση και η πραγματική συχνότητα αλλάζουν το αποτέλεσμα.",
   jpMyLocErr:"Δεν ξέρω πού είσαι. Πάτα «Αλλαγή» για να ορίσεις τοποθεσία.",
   jpFast:"Ταχύτερη", jpFewer:"Λιγότερες αλλαγές", jpMetro:"Με μετρό",
+  jpByVehicle:"Με όχημα",
   mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις", setTour:"Οδηγός χρήσης",
   tourNext:"Επόμενο", tourGo:"Ξεκίνα", tourSkip:"Παράλειψη",
   tour1h:"Ζωντανές αναφορές",
@@ -1024,29 +1035,26 @@ const T={
   liveCount:n=>`${n} λεωφορεία σε κίνηση`, liveNone:"Κανένα λεωφορείο σε κίνηση εδώ.",
   liveHint:"Δείχνει τα λεωφορεία των γραμμών γύρω από το κέντρο του χάρτη. Μετακίνησε τον χάρτη και πάτα ↻.",
   aboutH:"Σχετικά", srcLink:"Πηγαίος κώδικας (AGPL v3): διατίθεται κατόπιν αιτήματος",
-  aboutBody:`<p><b>OASAx</b> δείχνει ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις
-    γύρω σου, με δεδομένα από το ανεπίσημο API τηλεματικής του ΟΑΣΑ.</p>
-    <p><b>Ζωντανές αναφορές.</b> Μια κοινή εικόνα του τι συμβαίνει τώρα στο δίκτυο, από τους
-    ίδιους τους επιβάτες. Όλες οι σημάνσεις έχουν το ίδιο χρώμα
-    <b style="color:var(--flag)">■</b> — δεν υπάρχουν κατηγορίες να αποκωδικοποιήσεις, μόνο η
-    λέξη που γράφει η καθεμία.</p>
-    <p>Σε λεωφορείο ή τρόλεϊ: βλάβη, υπερπλήρες, χωρίς A/C, παρουσία ασφάλειας, προσωπικό
-    ΟΑΣΑ.<br>Σε σταθμό: ασανσέρ ή κυλιόμενη εκτός λειτουργίας, χωρίς πρόσβαση ΑμεΑ,
-    υπερπλήρες, παρουσία ασφάλειας, προσωπικό ΟΑΣΑ.</p>
-    <p>Αναφέρεις το όχημα στο οποίο βρίσκεσαι ή σταθμό μετρό σε 600 μ. Οι σημάνσεις σβήνουν
-    μόνες τους, από 30′ ως 3 ώρες. Καταγράφονται καταστάσεις, όχι πρόσωπα. Δεν υπάρχει ελεύθερο
-    κείμενο ούτε φωτογραφίες.</p>
-    <p><b>Προσβασιμότητα.</b> Μια σήμανση για ασανσέρ, κυλιόμενη ή πρόσβαση ΑμεΑ είναι η
-    παρατήρηση ενός επιβάτη μια δεδομένη στιγμή, όχι επίσημη καταγραφή — ένας σταθμός χωρίς
-    σήμανση μπορεί κάλλιστα να μην είναι προσβάσιμος. Μη σχεδιάζεις διαδρομή χωρίς σκαλιά
-    βασιζόμενος σε αυτό.</p>
-    <p><b>Πόσοι το είπαν.</b> Κάθε αναφορά μετράει το ίδιο. Όταν περισσότεροι αναφέρουν το ίδιο
-    πράγμα για το ίδιο όχημα ή σταθμό, μπαίνουν σε μία σήμανση με τον αριθμό τους. Οι «3 αναφορές»
-    βαραίνουν περισσότερο από τη μία.</p>
-    <p><b>Ιδιωτικότητα.</b> Χωρίς λογαριασμό, διαφημίσεις ή στατιστικά. Η τοποθεσία σου δεν
-    αποθηκεύεται ποτέ.</p>
-    <p><b>Τα δεδομένα.</b> Ανεπίσημα, από τον ΟΑΣΑ. Οι χρόνοι είναι δικές τους εκτιμήσεις και
-    πέφτουν έξω. Χάρτες © OpenStreetMap, © CARTO.</p>`,
+  mapsAttr:"Χάρτες © OpenStreetMap contributors · Πλακίδια © CARTO",
+  aboutBody:`<p><b>OASAx</b> — ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις γύρω
+    σου, με δεδομένα από την τηλεματική του ΟΑΣΑ.</p>
+    <div class="sec-label">Ζωντανές αναφορές</div>
+    <p>Οι επιβάτες αναφέρουν τι συμβαίνει τώρα σε ένα όχημα ή σε κοντινό σταθμό:
+    <b>βλάβη, υπερπλήρες, χωρίς A/C, ασφάλεια, προσωπικό ΟΑΣΑ</b>, καθώς και προβλήματα με
+    <b>ασανσέρ, κυλιόμενες ή πρόσβαση ΑμεΑ</b>.</p>
+    <p>Οι αναφορές είναι <b>ανεπιβεβαίωτες</b> και λήγουν αυτόματα μετά από <b>30 λεπτά έως
+    3 ώρες</b>. Περισσότερες ίδιες αναφορές εμφανίζονται μαζί, με τον αριθμό τους.</p>
+    <p>Δεν υπάρχει ελεύθερο κείμενο ή δυνατότητα προσθήκης φωτογραφιών.</p>
+    <div class="sec-label">Προσβασιμότητα</div>
+    <p>Οι σχετικές σημάνσεις είναι παρατηρήσεις επιβατών και <b>δεν αποτελούν επίσημη
+    ενημέρωση προσβασιμότητας</b>.</p>
+    <p><b>Μην βασίζεσαι στο OASAx για να σχεδιάσεις διαδρομή χωρίς σκαλιά.</b></p>
+    <div class="sec-label">Ιδιωτικότητα</div>
+    <p><b>Χωρίς λογαριασμό, διαφημίσεις ή analytics. Η τοποθεσία σου δεν αποθηκεύεται.</b></p>
+    <div class="sec-label">Τα δεδομένα</div>
+    <p>Οι χρόνοι άφιξης και οι θέσεις οχημάτων προέρχονται από τον ΟΑΣΑ και μπορεί να είναι
+    καθυστερημένοι ή λανθασμένοι.</p>
+    <p><b>Μην βασίζεσαι στο OASAx για κάτι σημαντικό ή χρονικά κρίσιμο.</b></p>`,
   aboutTip:"Μικρά κόλπα", aboutTips:`<p>Κράτα πατημένη μια γραμμή στη λίστα για προεπισκόπηση
     διαδρομής. Κράτα πατημένη μια στάση στον χάρτη για να δεις πού πάνε τα λεωφορεία της.</p>`,
   ti_breakdown:"Βλάβη", ti_crowded:"Υπερπλήρες", ti_noac:"Χωρίς A/C",
@@ -1117,6 +1125,16 @@ const T={
   jpNone:"No route by bus, trolley, tram or metro.",
   jpClosed:"Neither buses nor trains are running at this hour.",
   jpClose:"Start and destination are almost the same place.",
+  jpNoStopsFrom:"No stop within walking distance of your starting point.",
+  jpNoStopsTo:"No stop within walking distance of your destination.",
+  jpNoConn:"Stops at both ends, but nothing connecting them — either no line runs "+
+    "between them, or it needs more changes than the planner searches.",
+  /* Why walking was offered. Without this, "walk 34′" is indistinguishable
+     from the planner having failed. */
+  jpWhyClosed:"Nothing is running at this hour.",
+  jpWhyBeatsLine:(line,wait,via)=>`Quicker than the ${line}: ${wait}′ waiting, ${via}′ in all.`,
+  jpWhyBeats:v=>`Quicker than any route we found (${v}′).`,
+  jpWhyAlso:v=>`Slower than riding (${v}′), but you can walk it.`,
   jpPickH:"Pick a place", jpPickPh:"Address, stop or station…",
   jpWalkAll:"Walk", jpWalk:"Walk", jpTo2:"to",
   jpMin:"min", jpChanges:n=>n===0?"no changes":(n===1?"1 change":`${n} changes`),
@@ -1131,6 +1149,7 @@ const T={
   jpDisclaim:"Indicative times. Traffic and real frequencies will move them.",
   jpMyLocErr:"I do not know where you are. Tap Change to set a location.",
   jpFast:"Fastest", jpFewer:"Fewer changes", jpMetro:"By metro",
+  jpByVehicle:"By vehicle",
   mSettings:"Settings", setH:"Settings", setTour:"How it works",
   tourNext:"Next", tourGo:"Start", tourSkip:"Skip",
   tour1h:"Live reports",
@@ -1163,27 +1182,25 @@ const T={
   liveCount:n=>`${n} buses running`, liveNone:"No buses running here.",
   liveHint:"Shows buses on the lines around the centre of the map. Pan the map and tap ↻.",
   aboutH:"About", srcLink:"Source code (AGPL v3): free on request",
-  aboutBody:`<p><b>OASAx</b> shows live bus and trolley arrivals for the stops around you,
-    using the unofficial OASA telematics API.</p>
-    <p><b>Live reports.</b> A shared picture of what's happening on the network right now, from
-    the people on it. Every flag is the same colour <b style="color:var(--flag)">■</b> — there
-    are no categories to decode, only the word each one carries.</p>
-    <p>On a bus or trolley: breakdown, overcrowded, no A/C, security presence, OASA staff.<br>
-    At a station: elevator or escalator out of order, no wheelchair access, overcrowded,
-    security presence, OASA staff.</p>
-    <p>You flag the vehicle you are riding, or a metro station within 600 m. Flags expire on
-    their own, 30 min to 3 hours. Reports describe situations, not people. There is no free text
-    and no photos.</p>
-    <p><b>Accessibility.</b> A lift, escalator or step-free flag is one passenger's
-    observation at one moment, not an accessibility record — a station with no flag may
-    still be unusable. Don't plan a step-free journey on it.</p>
-    <p><b>How many said it.</b> Every report counts the same. When several people report the
-    same thing about the same vehicle or station they collapse into one flag carrying the
-    number, so "3 reports" reads heavier than one.</p>
-    <p><b>Privacy.</b> No account, no advertising, no analytics. Your location is never
-    stored.</p>
-    <p><b>The data.</b> Unofficial, from OASA. The times are their own estimates and they are
-    often wrong. Maps © OpenStreetMap, © CARTO.</p>`,
+  mapsAttr:"Map data © OpenStreetMap contributors · Tiles © CARTO",
+  aboutBody:`<p><b>OASAx</b> — live bus and trolley arrivals for the stops around you, from
+    OASA's telematics service.</p>
+    <div class="sec-label">Live reports</div>
+    <p>Passengers report what is happening right now on a vehicle or at a nearby station:
+    <b>breakdown, overcrowded, no A/C, security, OASA staff</b>, and problems with
+    <b>lifts, escalators or step-free access</b>.</p>
+    <p>Reports are <b>unverified</b> and expire on their own after <b>30 minutes to
+    3 hours</b>. Several reports of the same thing appear together, carrying the count.</p>
+    <p>There is no free text and no way to add photos.</p>
+    <div class="sec-label">Accessibility</div>
+    <p>Those flags are passenger observations and <b>are not official accessibility
+    information</b>.</p>
+    <p><b>Don't use OASAx to plan a step-free journey.</b></p>
+    <div class="sec-label">Privacy</div>
+    <p><b>No account, no advertising, no analytics. Your location is never stored.</b></p>
+    <div class="sec-label">The data</div>
+    <p>Arrival times and vehicle positions come from OASA and can be delayed or wrong.</p>
+    <p><b>Don't rely on OASAx for anything important or time-critical.</b></p>`,
   aboutTip:"Hidden bits", aboutTips:`<p>Long-press a line in the list to preview its route.
     Long-press a stop on the map to see where its buses go.</p>`,
   ti_breakdown:"Breakdown", ti_crowded:"Overcrowded", ti_noac:"No A/C",
@@ -3985,26 +4002,56 @@ function modeName(m) {
   return m === "metro" ? t("jpModeMetro") : m === "tram" ? t("jpModeTram")
     : m === "trolley" ? t("jpModeTrolley") : t("jpModeBus");
 }
+/* Why there is nothing to show. "No route" covers four quite different
+   situations and only one of them is the rider's fault to fix, so say
+   which — a missing stop at one end is something you can walk out of. */
+function emptyPlanMsg(reason) {
+  return reason === "closed" ? t("jpClosed")
+    : reason === "tooclose" ? t("jpClose")
+    : reason === "nostopsfrom" ? t("jpNoStopsFrom")
+    : reason === "nostopsto" ? t("jpNoStopsTo")
+    : reason === "noconnection" ? t("jpNoConn")
+    : t("jpNone");
+}
+
+/* The line under a walk-only option. Everything else on the card is a
+   number; this is the sentence that stops "walk 34′" from reading as the
+   planner giving up. */
+function whyWalk(it) {
+  const w = it && it.why;
+  if (!w) return "";
+  if (w.code === "beats") {
+    return (w.line && w.waitMin != null)
+      ? t("jpWhyBeatsLine")(w.line, w.waitMin, w.viaMin)
+      : t("jpWhyBeats")(w.viaMin);
+  }
+  if (w.code === "also") return t("jpWhyAlso")(w.viaMin);
+  if (w.code === "closed") return t("jpWhyClosed");
+  return emptyPlanMsg(w.code);       // nostopsfrom / nostopsto / noconnection
+}
+
 function renderJourney() {
   const out = $("#jp-out"), res = jp.res || {};
   const list = res.itineraries || [];
   if (!list.length) {
-    const why = res.reason === "closed" ? t("jpClosed") : res.reason === "tooclose" ? t("jpClose") : t("jpNone");
-    out.innerHTML = `<div class="res-msg">${esc(why)}</div>`;
+    out.innerHTML = `<div class="res-msg">${esc(emptyPlanMsg(res.reason))}</div>`;
     return;
   }
-  const label = { best: t("jpFast"), fewer: t("jpFewer"), metro: t("jpMetro") };
+  const label = { best: t("jpFast"), fewer: t("jpFewer"), metro: t("jpMetro"), ride: t("jpByVehicle") };
   out.innerHTML =
     `<div class="jp-note">${esc(t("jpDisclaim"))}</div>` +
     list.map((it, i) => {
       const chain = it.legs.map(hopChip).join('<span class="hop-sep">›</span>');
+      const why = whyWalk(it);
+      const meta = it.why ? t("jpWalkAll")
+        : `${label[it.kind] || ""} · ${t("jpChanges")(it.changes)}`;
       return `<button class="itin" data-i="${i}">
         <div class="itin-top">
           <span class="itin-min">${it.totalMin}<small>${esc(t("jpMin"))}</small></span>
-          <span class="itin-meta">${esc(label[it.kind] || "")} · ${esc(t("jpChanges")(it.changes))}</span>
+          <span class="itin-meta">${esc(meta)}</span>
         </div>
         <div class="itin-chain">${chain}</div>
-        <div class="itin-basis">${esc(basisLine(it))}</div>
+        <div class="itin-basis">${esc(why || basisLine(it))}</div>
       </button>`;
     }).join("");
   $$("#jp-out .itin").forEach(b => b.onclick = () => openItinerary(list[+b.dataset.i]));
@@ -4028,6 +4075,9 @@ function openItinerary(it) {
   $("#jpr-sub").textContent = `${t("jpChanges")(it.changes)} · ${basisLine(it)}`;
   $("#jpr").classList.add("on");
   const notes = [];
+  // first, because on a walk-only itinerary it is the whole story
+  const why = whyWalk(it);
+  if (why) notes.push(why);
   if (it.legs.some(l => l.mode !== "walk" && l.basis === "timetable")) notes.push(t("jpNoteSched"));
   if (it.legs.some(l => l.mode !== "walk" && l.basis === "estimated")) notes.push(t("jpNoteEst"));
   if (it.legs.some(l => l.mode === "walk" && l.basis !== "routed")) notes.push(t("jpNoteWalk"));
@@ -4110,7 +4160,8 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v44</p></div>`;
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v45</p>
+    <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }

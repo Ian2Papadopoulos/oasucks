@@ -10,7 +10,7 @@
   :root{
     --paper:#F7F7F5; --card:#FFFFFF;
     --toner:#17171A; --ink2:#55555C; --ink3:#8C8C94;
-    --rule:#D9D9D4; --marker:#FFE24A;
+    --rule:#D9D9D4; --marker:#FFE24A; --flag:#B2540A;
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
@@ -21,14 +21,18 @@
   .wrap{max-width:640px;margin:0 auto;padding:0 18px 70px}
   header{position:sticky;top:0;background:var(--paper);padding:16px 0 10px;
     border-bottom:2px solid var(--toner);margin-bottom:18px;z-index:5}
-  .back{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;
+  .bar{display:flex;align-items:center;gap:10px;justify-content:space-between}
+  .back,.langbtn{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;
     letter-spacing:.1em;text-transform:uppercase;color:var(--toner);text-decoration:none;
-    border:1px solid var(--toner);padding:7px 10px;border-radius:2px}
+    border:1px solid var(--toner);padding:7px 10px;border-radius:2px;
+    background:var(--paper);cursor:pointer}
   h1{font-family:var(--mono);font-size:17px;letter-spacing:.06em;margin:12px 0 4px}
   .sub{font-family:var(--mono);font-size:10px;color:var(--ink3);
     text-transform:uppercase;letter-spacing:.14em}
-  h2{font-family:var(--mono);font-size:14px;letter-spacing:.04em;margin:28px 0 8px;
-    padding-top:14px;border-top:1px dashed var(--rule)}
+  h2{font-family:var(--mono);font-size:14px;letter-spacing:.04em;margin:30px 0 8px;
+    padding-top:14px;border-top:2px solid var(--toner)}
+  h3{font-family:var(--mono);font-size:12px;letter-spacing:.04em;margin:22px 0 6px;
+    text-transform:uppercase;color:var(--toner)}
   p,li{color:var(--ink2);font-size:14px}
   strong{color:var(--toner)}
   ul{padding-left:20px} li{margin:4px 0}
@@ -36,126 +40,355 @@
   .banner{background:var(--marker);border:1px solid var(--toner);padding:11px 13px;
     font-family:var(--mono);font-size:12px;font-weight:700;line-height:1.5;
     color:var(--toner);border-radius:2px;margin-bottom:18px}
+  /* The one thing on this page that must not be skimmed past. */
+  .warn{border-left:3px solid var(--flag);background:var(--card);padding:11px 13px;
+    margin:14px 0;border-radius:2px}
+  .warn strong{color:var(--flag)}
   footer{margin-top:30px;padding-top:14px;border-top:2px solid var(--toner);
     font-family:var(--mono);font-size:10.5px;color:var(--ink3);line-height:1.7}
+  /* Greek is the app's default, so it is what a reader with no JavaScript
+     gets. The toggle and the app's own language setting both work by
+     putting `en` on <html>. */
+  [data-lang="en"]{display:none}
+  html.en [data-lang="en"]{display:revert}
+  html.en [data-lang="el"]{display:none}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <a class="back" href="./">← OASAx</a>
-    <h1>Όροι &amp; απόρρητο · Terms &amp; privacy</h1>
+    <div class="bar">
+      <a class="back" href="./">← OASAx</a>
+      <button class="langbtn" id="lang" type="button"></button>
+    </div>
+    <h1><span data-lang="el">Όροι &amp; απόρρητο</span><span data-lang="en">Terms &amp; privacy</span></h1>
     <div class="sub">07.09.2026</div>
   </header>
 
   <div class="banner">
-    Ανεπίσημη εφαρμογή. Δεν σχετίζεται με ΟΑΣΑ / ΟΣΥ / ΣΤΑΣΥ.<br>
-    Unofficial app. Not affiliated with OASA / OSY / STASY.
+    <span data-lang="el">Ανεπίσημη εφαρμογή. Δεν σχετίζεται με ΟΑΣΑ / ΟΣΥ / ΣΤΑΣΥ.</span>
+    <span data-lang="en">Unofficial app. Not affiliated with OASA / OSY / STASY.</span>
   </div>
 
-  <h2>Terms</h2>
+  <!-- ======================= TERMS ======================= -->
+  <h2 id="terms"><span data-lang="el">Όροι χρήσης</span><span data-lang="en">Terms of use</span></h2>
 
-  <p><strong>Unofficial.</strong> OASAx is a free, non-commercial app. It is not
-  affiliated with, endorsed by or connected to OASA, OSY, STASY or any authority.
-  Trade marks belong to their owners.</p>
+  <div data-lang="el">
+    <h3>Λίγα λόγια πριν χρησιμοποιήσεις το OASAx</h3>
+    <p>Το OASAx είναι <strong>ανεπίσημο</strong>. Είναι μια δωρεάν, μη εμπορική εφαρμογή και
+    δεν σχετίζεται, δεν υποστηρίζεται και δεν συνδέεται με τον ΟΑΣΑ, την ΟΣΥ, τη ΣΤΑΣΥ ή
+    οποιαδήποτε δημόσια αρχή. Όλα τα εμπορικά σήματα ανήκουν στους δικαιούχους τους.</p>
 
-  <p><strong>The data is third-party and often wrong.</strong> Arrival times, positions
-  and routes come from OASA's telematics service. We do not produce or verify them.
-  Vehicle positions are typically 30–60 seconds stale and estimates are regularly out by
-  minutes. <strong>Do not rely on this app for anything that matters.</strong></p>
+    <h3>Μη βασίζεσαι στα δεδομένα για κάτι σημαντικό</h3>
+    <p>Οι χρόνοι άφιξης, οι θέσεις των οχημάτων και οι διαδρομές προέρχονται από την
+    τηλεματική του ΟΑΣΑ. Δεν τα παράγουμε ούτε τα επαληθεύουμε, και μπορεί να είναι
+    λανθασμένα, καθυστερημένα ή να μην είναι διαθέσιμα.</p>
+    <p>Οι θέσεις οχημάτων είναι συνήθως <strong>30–60 δευτερόλεπτα</strong> πίσω από την
+    πραγματικότητα, και οι εκτιμήσεις άφιξης μπορεί να πέφτουν έξω αρκετά λεπτά.</p>
+    <p><strong>Μη βασίζεσαι στο OASAx για οτιδήποτε είναι χρονικά κρίσιμο, κρίσιμο για την
+    ασφάλεια ή απλώς σημαντικό.</strong></p>
 
-  <p><strong>Reports are unverified.</strong> They are submitted by other passengers and
-  describe situations on a line or at a station. We do not check them. A report count
-  means several people said the same thing, not that it is true. The absence of a report
-  means nothing.</p>
+    <h3>Οι αναφορές επιβατών δεν επαληθεύονται</h3>
+    <p>Οι αναφορές υποβάλλονται από άλλους επιβάτες. Δεν ελέγχουμε αν είναι αληθείς ή αν
+    ισχύουν ακόμη.</p>
+    <p>Πολλές αναφορές για το ίδιο πράγμα σημαίνουν απλώς ότι το ανέφεραν πολλοί — δεν
+    αποδεικνύουν ότι ισχύει. Αντίστοιχα, η απουσία αναφορών δεν σημαίνει ότι όλα είναι
+    εντάξει.</p>
 
-  <p><strong>Accessibility reports especially.</strong> Flags such as <em>elevator not
-  working</em>, <em>escalator out of order</em> and <em>no wheelchair access</em> are
-  passenger observations at one moment, not an accessibility record. A station with no
-  flag may still be unusable, and a flagged one may have been fixed since. <strong>Do not
-  plan a step-free journey on this app.</strong> Check with OASA, STASY or the station
-  itself.</p>
+    <div class="warn">
+      <h3>Η προσβασιμότητα θέλει επιπλέον προσοχή</h3>
+      <p>Οι αναφορές τύπου <em>ασανσέρ εκτός λειτουργίας</em>, <em>κυλιόμενη εκτός
+      λειτουργίας</em> ή <em>χωρίς πρόσβαση ΑμεΑ</em> είναι παρατηρήσεις επιβατών σε μια
+      συγκεκριμένη στιγμή. <strong>Δεν αποτελούν επίσημη ενημέρωση προσβασιμότητας.</strong></p>
+      <p>Ένας σταθμός χωρίς αναφορά μπορεί κάλλιστα να μην είναι προσβάσιμος, και ένα
+      πρόβλημα που αναφέρθηκε μπορεί να έχει ήδη αποκατασταθεί.</p>
+      <p><strong>Μη σχεδιάζεις διαδρομή χωρίς σκαλιά — ή οποιαδήποτε διαδρομή κρίσιμη για την
+      προσβασιμότητα — μόνο με το OASAx.</strong> Ρώτα απευθείας τον ΟΑΣΑ, τη ΣΤΑΣΥ ή τον
+      σταθμό.</p>
+    </div>
 
-  <p><strong>Always carry a valid ticket.</strong></p>
+    <p>Να έχεις πάντα μαζί σου έγκυρο εισιτήριο ή δικαίωμα μετακίνησης όπου απαιτείται.</p>
 
-  <p><strong>You must not</strong> file reports you know to be untrue; automate reporting
-  or use multiple identities; use the service to identify, follow or target any
-  individual; or overload this service or OASA's. We may remove any report and block any
-  device without notice.</p>
+    <h3>Υπεύθυνη χρήση</h3>
+    <p>Σε παρακαλούμε να μην:</p>
+    <ul>
+      <li>υποβάλλεις αναφορές που ξέρεις ότι είναι ψευδείς·</li>
+      <li>αυτοματοποιείς αναφορές ή χρησιμοποιείς πολλαπλές ταυτότητες για να τις επηρεάσεις·</li>
+      <li>χρησιμοποιείς το OASAx για να ταυτοποιήσεις, να παρακολουθήσεις ή να στοχοποιήσεις
+      κάποιον·</li>
+      <li>παρεμποδίζεις ή υπερφορτώνεις το OASAx ή τις υπηρεσίες στις οποίες στηρίζεται.</li>
+    </ul>
+    <p>Μπορεί να αφαιρέσουμε αναφορές ή να αποκλείσουμε την πρόσβαση όπου χρειάζεται για την
+    προστασία της υπηρεσίας και των χρηστών της.</p>
+  </div>
 
-  <p><strong>No warranty.</strong> The service is provided "as is" and "as available",
-  without warranty of any kind, including fitness for a particular purpose, availability
-  or accuracy.</p>
+  <div data-lang="en">
+    <h3>A quick note before you use OASAx</h3>
+    <p>OASAx is <strong>unofficial</strong>. It is a free, non-commercial app and is not
+    affiliated with, endorsed by or connected to OASA, OSY, STASY or any public authority.
+    All trademarks belong to their respective owners.</p>
 
-  <p><strong>Liability.</strong> To the fullest extent permitted by law, the operator is
-  not liable for any loss arising from use of the service, including missed journeys,
-  fares, fines or appointments. Nothing here excludes liability that cannot lawfully be
-  excluded, and your mandatory consumer rights are unaffected.</p>
+    <h3>Don't rely on the data for anything important</h3>
+    <p>Arrival times, vehicle positions and routes come from OASA's telematics service. We do
+    not create or verify this information, and it can be wrong, delayed or unavailable.</p>
+    <p>Vehicle positions are usually around <strong>30–60 seconds</strong> behind real time,
+    and arrival estimates can be off by several minutes.</p>
+    <p><strong>Please don't rely on OASAx for anything time-critical, safety-critical or
+    otherwise important.</strong></p>
 
-  <p><strong>Reporting a problem.</strong> To report an abusive or false report, or
-  anything else, contact <a href="mailto:oasax@proton.me">oasax@proton.me</a>.
-  This is our contact point and notice-and-action mechanism under Regulation
-  2022/2065 (DSA). Only the person who filed a report can remove it in the app.</p>
+    <h3>Passenger reports are not verified</h3>
+    <p>Reports are submitted by other passengers. We don't check whether they are true or
+    still current.</p>
+    <p>Several reports about the same thing simply mean that several people reported it — it
+    doesn't prove that the information is correct. Likewise, no reports doesn't mean that
+    everything is fine.</p>
 
-  <p><strong>Changes and law.</strong> These terms may change and the service may be
-  modified or withdrawn at any time. Greek law applies; the courts of Athens have
-  jurisdiction, without prejudice to mandatory consumer rules where you live.</p>
+    <div class="warn">
+      <h3>Accessibility information needs extra care</h3>
+      <p>Reports such as <em>elevator not working</em>, <em>escalator out of order</em> or
+      <em>no wheelchair access</em> are observations made by passengers at a particular time.
+      <strong>They are not official accessibility information.</strong></p>
+      <p>A station without a report may still be inaccessible, and a reported problem may
+      already have been fixed.</p>
+      <p><strong>Please do not plan a step-free or accessibility-critical journey using OASAx
+      alone.</strong> Check directly with OASA, STASY or the station.</p>
+    </div>
 
-  <h2>Privacy</h2>
+    <p>Always carry a valid ticket or travel entitlement where required.</p>
 
-  <p>No account, no advertising, no analytics, no cookies, no third-party scripts. The
-  controller is the operator of this instance:
-  <a href="mailto:oasax@proton.me">oasax@proton.me</a>.</p>
+    <h3>Using OASAx responsibly</h3>
+    <p>Please don't:</p>
+    <ul>
+      <li>submit reports you know to be false;</li>
+      <li>automate reporting or use multiple identities to influence reports;</li>
+      <li>use OASAx to identify, follow or target another person; or</li>
+      <li>interfere with or overload OASAx or the services it relies on.</li>
+    </ul>
+    <p>We may remove reports or block access where necessary to protect the service and its
+    users.</p>
+  </div>
 
-  <p><strong>What is processed</strong></p>
-  <ul>
-    <li><strong>Your location</strong> — to find nearby stops and the vehicle you are on.
-    Sent with a request, <strong>never stored</strong>. Legal basis: consent.</li>
-    <li><strong>IP address</strong> — held in memory up to 60 seconds for rate limiting.
-    Not stored. Legal basis: legitimate interests.</li>
-    <li><strong>An anonymous random id</strong> — generated in your browser so you can
-    withdraw your own reports. Legal basis: legitimate interests.</li>
-    <li><strong>Push subscription</strong> — only if you enable alerts. Legal basis:
-    consent.</li>
-    <li><strong>Report contents</strong> — line or station, and what you selected from a
-    fixed menu. Public while active. Legal basis: consent.</li>
-    <li><strong>Address searches</strong> — the text you type, sent by our server to a
-    geocoding service with a position rounded to about a kilometre. Not stored by us.
-    Legal basis: legitimate interests.</li>
-  </ul>
+  <!-- ====================== PRIVACY ====================== -->
+  <h2 id="privacy"><span data-lang="el">Απόρρητο</span><span data-lang="en">Privacy</span></h2>
 
-  <p>Reports contain <strong>no free text, no photos and nothing identifying any
-  person</strong>. There is no way to enter such information.</p>
+  <div data-lang="el">
+    <p><strong>Χωρίς λογαριασμό. Χωρίς διαφημίσεις. Χωρίς analytics. Χωρίς cookies.</strong></p>
+    <p>Επεξεργαζόμαστε μόνο όσα χρειάζονται για τις λειτουργίες που επιλέγεις να
+    χρησιμοποιήσεις.</p>
 
-  <p><strong>Retention</strong> — active reports until they expire (30 minutes to 3
-  hours), then deleted with their coordinates. An anonymous history log (time, line,
-  station, report type — no coordinates, no reporter id) for 90 days. Push
-  subscriptions until you disable alerts. Local settings until you clear site data.</p>
+    <h3>Η τοποθεσία σου</h3>
+    <p>Αν χρησιμοποιείς λειτουργίες όπως οι κοντινές στάσεις ή η αναγνώριση οχήματος, η
+    τοποθεσία σου στέλνεται μαζί με το σχετικό αίτημα. <strong>Δεν την αποθηκεύουμε.</strong></p>
 
-  <p><strong>Recipients</strong> — Cloudflare (hosting, our processor, possibly outside
-  the EEA under Standard Contractual Clauses); OASA (receives our server's requests, not
-  yours); OpenStreetMap / CARTO (your browser fetches map tiles, so they see your IP);
-  a geocoding service — OpenRouteService, or OpenStreetMap's Nominatim — which receives
-  the text you type into address search and a position rounded to about a kilometre, sent
-  by our server rather than your browser, so it never sees your IP. Nothing is sold or
-  shared otherwise.</p>
+    <h3>Η διεύθυνση IP σου</h3>
+    <p>Η IP σου μπορεί να κρατηθεί προσωρινά στη μνήμη για έως <strong>60 δευτερόλεπτα</strong>,
+    ώστε να προστατεύεται η υπηρεσία από κατάχρηση και υπερβολικά αιτήματα. Δεν αποθηκεύεται
+    μόνιμα.</p>
 
-  <p><strong>Your rights</strong> — access, rectification, erasure, restriction,
-  portability and objection; you may withdraw consent at any time by revoking location
-  or notification permission. Delete a report in the app with ✕; clear everything else
-  by clearing site data. Written requests:
-  <a href="mailto:oasax@proton.me">oasax@proton.me</a>. You may complain to the
-  Hellenic Data Protection Authority (<a href="https://www.dpa.gr">dpa.gr</a>).</p>
+    <h3>Αναφορές</h3>
+    <p>Οι αναφορές περιέχουν μόνο μια γραμμή ή έναν σταθμό και ένα πρόβλημα επιλεγμένο από
+    προκαθορισμένη λίστα. Δεν υπάρχει ελεύθερο κείμενο, δεν υπάρχει ανέβασμα φωτογραφιών και
+    δεν υπάρχει τρόπος να συμπεριληφθούν προσωπικά στοιχεία για κάποιον. Οι αναφορές είναι
+    ορατές στους άλλους χρήστες όσο είναι ενεργές.</p>
 
-  <p><strong>Security</strong> — all traffic is HTTPS. Reports carry no identity beyond a
-  random token, which is never sent to other users' devices.</p>
+    <h3>Το ανώνυμο αναγνωριστικό σου</h3>
+    <p>Ο browser σου δημιουργεί ένα τυχαίο αναγνωριστικό που σου επιτρέπει να αφαιρείς τις
+    δικές σου αναφορές. Αν καθαρίσεις τα δεδομένα του ιστότοπου, αλλάξεις browser ή συσκευή,
+    μπορεί να μην μπορείς πλέον να αφαιρέσεις αναφορές που υποβλήθηκαν με το προηγούμενο
+    αναγνωριστικό.</p>
+
+    <h3>Αναζητήσεις διευθύνσεων</h3>
+    <p>Όταν αναζητάς μια διεύθυνση, το κείμενο που πληκτρολογείς στέλνεται σε μια υπηρεσία
+    γεωκωδικοποίησης για να βρεθεί η τοποθεσία. <strong>Η αναζήτησή σου δεν αποθηκεύεται από
+    εμάς.</strong></p>
+    <p>Η υπηρεσία λαμβάνει μια κατά προσέγγιση τοποθεσία, στρογγυλοποιημένη σε περίπου ένα
+    χιλιόμετρο, για καλύτερα αποτελέσματα — αλλά το αίτημα στέλνεται μέσω του δικού μας
+    διακομιστή, οπότε η υπηρεσία δεν λαμβάνει τη διεύθυνση IP σου μέσα από αυτό.</p>
+
+    <h3>Πόσο κρατιούνται τα δεδομένα</h3>
+    <ul>
+      <li>Οι ενεργές αναφορές διαγράφονται όταν λήξουν, συνήθως μετά από 30 λεπτά έως 3 ώρες.</li>
+      <li>Ένα περιορισμένο ανώνυμο ιστορικό αναφορών κρατείται έως 90 ημέρες, χωρίς
+      συντεταγμένες και χωρίς αναγνωριστικά υποβολής.</li>
+      <li>Οι συνδρομές ειδοποιήσεων παραμένουν μέχρι να τις απενεργοποιήσεις.</li>
+      <li>Οι τοπικές ρυθμίσεις και το ανώνυμο αναγνωριστικό σου παραμένουν στον browser σου
+      μέχρι να καθαρίσεις τα δεδομένα του ιστότοπου.</li>
+    </ul>
+
+    <h3>Ποιοι μας βοηθούν</h3>
+    <p>Χρησιμοποιούμε λίγες υπηρεσίες τρίτων:</p>
+    <ul>
+      <li><strong>Cloudflare</strong> — φιλοξενία και υποδομή·</li>
+      <li><strong>ΟΑΣΑ</strong> — δεδομένα συγκοινωνιών·</li>
+      <li><strong>OpenStreetMap</strong> και <strong>CARTO</strong> — χάρτες·</li>
+      <li><strong>OpenRouteService</strong> ή το <strong>Nominatim</strong> του OpenStreetMap —
+      αναζήτηση διευθύνσεων.</li>
+    </ul>
+    <p>Ορισμένες από αυτές μπορεί να επεξεργάζονται δεδομένα εκτός Ελλάδας ή ΕΟΧ, με τις
+    κατάλληλες εγγυήσεις όπου απαιτείται. <strong>Δεν πουλάμε τα δεδομένα σου και δεν τα
+    χρησιμοποιούμε για διαφήμιση.</strong></p>
+
+    <h3>Οι επιλογές και τα δικαιώματά σου</h3>
+    <p>Μπορείς να ανακαλέσεις ανά πάσα στιγμή την άδεια τοποθεσίας ή ειδοποιήσεων από τις
+    ρυθμίσεις του browser ή της συσκευής σου.</p>
+    <p>Μπορείς να αφαιρέσεις τις δικές σου αναφορές μέσα στην εφαρμογή με το ✕, και τα
+    υπόλοιπα τοπικά δεδομένα καθαρίζοντας τα δεδομένα του ιστότοπου.</p>
+    <p>Ανάλογα με το πού ζεις και το δίκαιο που σε καλύπτει, μπορεί να έχεις και δικαιώματα
+    πρόσβασης, διόρθωσης, διαγραφής και εναντίωσης σε ορισμένες επεξεργασίες.</p>
+    <p>Για ερωτήματα ή αιτήματα απορρήτου:
+    <a href="mailto:oasax@proton.me">oasax@proton.me</a>. Μπορεί επίσης να έχεις δικαίωμα
+    καταγγελίας στην Αρχή Προστασίας Δεδομένων Προσωπικού Χαρακτήρα.</p>
+  </div>
+
+  <div data-lang="en">
+    <p><strong>No account. No advertising. No analytics. No cookies.</strong></p>
+    <p>We only process a small amount of information needed to provide the features you choose
+    to use.</p>
+
+    <h3>Your location</h3>
+    <p>If you use features such as nearby stops or vehicle identification, your location is
+    sent with the relevant request. <strong>We don't store your location.</strong></p>
+
+    <h3>Your IP address</h3>
+    <p>Your IP address may be kept temporarily in memory for up to <strong>60 seconds</strong>
+    to protect the service from abuse and excessive requests. It is not permanently stored.</p>
+
+    <h3>Reports</h3>
+    <p>Reports contain only a line or station and an issue selected from a fixed list. There is
+    no free-text reporting, no photo upload and no way to include personal information about
+    someone. Reports are visible to other users while they are active.</p>
+
+    <h3>Your anonymous report ID</h3>
+    <p>Your browser creates a random ID that lets you remove reports you submitted. If you
+    clear your browser's site data, change browsers or use another device, you may no longer be
+    able to remove reports submitted with your previous ID.</p>
+
+    <h3>Address searches</h3>
+    <p>When you search for an address, the text you enter is sent to a geocoding service so we
+    can find the location. <strong>Your search is not stored by us.</strong></p>
+    <p>The service receives an approximate location rounded to about one kilometre to improve
+    search results, but the request is sent through our server, so the geocoding service does
+    not receive your IP address through the search request.</p>
+
+    <h3>How long information is kept</h3>
+    <ul>
+      <li>Active reports are deleted when they expire, usually after 30 minutes to 3 hours.</li>
+      <li>A limited anonymous history of reports is kept for up to 90 days, without report
+      coordinates or reporter IDs.</li>
+      <li>Push notification subscriptions remain until you disable alerts.</li>
+      <li>Local settings and your anonymous report ID remain in your browser until you clear
+      site data.</li>
+    </ul>
+
+    <h3>Who helps us provide the service?</h3>
+    <p>We use a small number of third-party services:</p>
+    <ul>
+      <li><strong>Cloudflare</strong> for hosting and infrastructure;</li>
+      <li><strong>OASA</strong> for transit information;</li>
+      <li><strong>OpenStreetMap</strong> and <strong>CARTO</strong> for maps;</li>
+      <li><strong>OpenRouteService</strong> or OpenStreetMap's <strong>Nominatim</strong> for
+      address searches.</li>
+    </ul>
+    <p>Some of these services may process information outside Greece or the EEA, subject to
+    appropriate safeguards where required. <strong>We do not sell your data or use it for
+    advertising.</strong></p>
+
+    <h3>Your choices and rights</h3>
+    <p>You can withdraw location or notification permissions at any time through your browser
+    or device settings.</p>
+    <p>You can remove your own reports in the app using ✕ and remove other locally stored
+    information by clearing the site's data.</p>
+    <p>Depending on where you live and the law that applies to you, you may also have rights
+    regarding your personal data, including access, correction, deletion and objection to
+    certain processing.</p>
+    <p>For privacy questions or requests, contact
+    <a href="mailto:oasax@proton.me">oasax@proton.me</a>. You may also have the right to
+    complain to the Hellenic Data Protection Authority.</p>
+  </div>
+
+  <!-- ======================== LEGAL ======================== -->
+  <h2><span data-lang="el">Νομικά</span><span data-lang="en">A few legal points</span></h2>
+
+  <div data-lang="el">
+    <p>Το OASAx παρέχεται «ως έχει» και «όπως είναι διαθέσιμο». Δεν μπορούμε να εγγυηθούμε ότι
+    η υπηρεσία θα είναι πάντα διαθέσιμη ούτε ότι οι πληροφορίες που εμφανίζει θα είναι πάντα
+    ακριβείς.</p>
+    <p>Στον μέγιστο βαθμό που επιτρέπει ο νόμος, ο διαχειριστής δεν ευθύνεται για ζημίες που
+    προκύπτουν από τη χρήση του OASAx, όπως χαμένες μετακινήσεις, κόμιστρα, πρόστιμα ή
+    ραντεβού. Τίποτα σε αυτούς τους όρους δεν καταργεί δικαιώματα ή ευθύνη που δεν μπορούν
+    νόμιμα να αποκλειστούν.</p>
+    <p>Μπορεί να ενημερώσουμε αυτούς τους όρους ή να αλλάξουμε, να αναστείλουμε ή να
+    διακόψουμε το OASAx οποιαδήποτε στιγμή.</p>
+    <p>Εφαρμόζεται το ελληνικό δίκαιο και αρμόδια είναι τα δικαστήρια της Αθήνας, χωρίς να
+    θίγονται τυχόν αναγκαστικού δικαίου δικαιώματα καταναλωτή που ισχύουν εκεί όπου ζεις.</p>
+
+    <h3>Επικοινωνία</h3>
+    <p>Για καταχρηστικές ή ψευδείς αναφορές, ερωτήματα απορρήτου ή οτιδήποτε άλλο:
+    <a href="mailto:oasax@proton.me">oasax@proton.me</a>.</p>
+    <p>Μόνο το άτομο που υπέβαλε μια αναφορά μπορεί να την αφαιρέσει μέσα από την εφαρμογή.</p>
+  </div>
+
+  <div data-lang="en">
+    <p>OASAx is provided "as is" and "as available". We cannot guarantee that the service will
+    always be available or that the information it displays will always be accurate.</p>
+    <p>To the fullest extent permitted by law, the operator is not responsible for losses
+    resulting from the use of OASAx, including missed journeys, fares, fines or appointments.
+    Nothing in these terms removes rights or liability that cannot legally be excluded.</p>
+    <p>We may update these terms or change, suspend or discontinue OASAx at any time.</p>
+    <p>Greek law applies, and the courts of Athens have jurisdiction, without affecting any
+    mandatory consumer rights or protections that apply where you live.</p>
+
+    <h3>Contact</h3>
+    <p>For abusive or false reports, privacy questions or anything else:
+    <a href="mailto:oasax@proton.me">oasax@proton.me</a>.</p>
+    <p>Only the person who submitted a report can remove it through the app.</p>
+  </div>
 
   <footer>
-    OASAx · unofficial · not affiliated with OASA / OSY / STASY<br>
+    OASAx · <span data-lang="el">ανεπίσημο · δεν σχετίζεται με ΟΑΣΑ / ΟΣΥ / ΣΤΑΣΥ</span><span
+    data-lang="en">unofficial · not affiliated with OASA / OSY / STASY</span><br>
     Transit data © OASA · Map data © OpenStreetMap contributors · Tiles © CARTO<br>
-    Source under the <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL v3</a>,
-    free on request: <a href="mailto:oasax@proton.me?subject=Source">oasax@proton.me</a>.
+    <span data-lang="el">Πηγαίος κώδικας υπό την</span><span data-lang="en">Source code licensed under the</span>
+    <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL v3</a><span data-lang="el">, διαθέσιμος δωρεάν
+    κατόπιν αιτήματος:</span><span data-lang="en"> and available free of charge on request:</span>
+    <a href="mailto:oasax@proton.me?subject=Source">oasax@proton.me</a>.
   </footer>
 </div>
+
+<script>
+/* This page follows the app's own language setting — the same localStorage
+   key the app writes — so nobody who set the app to Greek lands on an
+   English wall of terms. ?lang= overrides it, for a link shared with
+   someone whose app is set the other way.
+
+   The button switches this page only and does NOT write the setting back:
+   reading the terms in the other language is not a request to change the
+   language of the whole app. */
+(function () {
+  var LANGS = ["el", "en"];
+  function stored() {
+    try { var v = localStorage.getItem("lang"); return LANGS.indexOf(v) >= 0 ? v : null; }
+    catch (_) { return null; }
+  }
+  var q = new URLSearchParams(location.search).get("lang");
+  var lang = LANGS.indexOf(q) >= 0 ? q : (stored() || "el");
+
+  function apply(l) {
+    lang = l;
+    document.documentElement.classList.toggle("en", l === "en");
+    document.documentElement.lang = l;
+    document.title = l === "en" ? "OASAx · Terms & privacy" : "OASAx · Όροι & απόρρητο";
+    // the button offers the OTHER language, which is what a reader is looking for
+    document.getElementById("lang").textContent = l === "en" ? "Ελληνικά" : "English";
+  }
+  apply(lang);
+  document.getElementById("lang").onclick = function () {
+    apply(lang === "en" ? "el" : "en");
+    // hold the reader's place: the section they were on is the same section
+    var at = location.hash && document.querySelector(location.hash);
+    if (at) at.scrollIntoView();
+  };
+})();
+</script>
 </body>
 </html>

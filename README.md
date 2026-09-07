@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v44.**
+version: v45.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -31,10 +31,10 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/index.html` | The whole app (UI + logic). No build step, no framework. |
 | `worker.js` | Cloudflare Worker — serves the app, proxies the OASA API, stores reports. |
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon-*.png` | PWA install + offline shell. |
-| `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). |
+| `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 265 assertions across six suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the brand, tile and report suites read the source; the tile and journey suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 364 assertions across seven suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the brand and report suites read the source; the tile, journey and legal suites drive a real browser via Playwright. |
 
 ## The one thing you must understand
 
@@ -308,8 +308,15 @@ Either way the answers are flattened to the same rows server-side, so the app ne
 learns which one replied. ORS misses, errors and a rejected key all fall through to
 Nominatim rather than surfacing an error.
 
-Greeklish is handled in front of both — "filotimou" → "φιλοτίμου" — but with different
-budgets. Nominatim gets four candidate spellings because its requests are free; ORS gets
+**House numbers get a different endpoint.** Pelias keeps its address parser out of
+`/autocomplete`, which is tuned for prefixes — ask it for "Φιλοτίμου 12" and the number is
+quietly dropped and you get the middle of the street. So the moment a query *looks* like a
+complete address — a short standalone number next to real words — it goes to
+`/geocode/search` instead, with the layers narrowed to `address,street`. A line number
+("608"), a postcode ("11527") and a half-typed word are all correctly not addresses.
+
+Greeklish is handled in front of both — "filotimou" → "φιλοτίμου", digits left alone — but
+with different budgets. Nominatim gets four candidate spellings because its requests are free; ORS gets
 two, the query as typed and then transliterated, because every miss is a request off a
 daily quota.
 
@@ -317,6 +324,36 @@ Typing fast used to be able to show you the wrong answer: a slow request for "sy
 landing after a fast one for "syntagma" overwrote the better list. Each keystroke now
 aborts the request before it, and anything that still lands late is discarded rather
 than rendered.
+
+### Why it offered you a walk
+
+"Walk 34 minutes" is the one answer a rider cannot check against anything. It can mean the
+network is shut, or that the next bus is half an hour out, or that the planner simply
+failed to find a way to ride — and those deserve very different reactions. So a walk-only
+itinerary now carries the reason it was offered, and the card says it in words:
+
+- **it beat something** — names the line, the wait that lost it, and how long riding would
+  have taken. "Quicker than the 608: 22′ waiting, 31′ in all."
+- **nothing is running** — the hour, not the route.
+- **no stop within walking distance** of the start, or of the destination. The one
+  actionable case: walk two streets and search again.
+- **stops at both ends, nothing connecting them** — said plainly as either a gap in the
+  network *or* more changes than the planner searches, because from here those are
+  genuinely indistinguishable.
+
+Two changes make that note trustworthy. A fourth search runs with the direct walk edge
+removed, purely so the walking option has something honest to be measured against — it
+costs no requests, being Dijkstra again over a graph already in memory, and it doubles as
+the "I'd rather not walk it" option in the list. And forbidding the direct edge is not
+enough on its own: walking to a stop and walking on from it is the same walk with a
+waypoint, so in that run a stop you merely *walked* to cannot be a place you finish on
+foot from.
+
+The reverse case is handled by dropping the option entirely. A 38-minute walk against a
+15-minute ride is not an alternative, it is padding, and it pushes a real second route out
+of the three slots — so a walk more than `PLAN.walkKeepSlackMin` slower than riding is not
+offered. Within that slack it stays, because "riding is a bit quicker but I'd rather walk"
+is a real preference.
 
 ### Modes
 

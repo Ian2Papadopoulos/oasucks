@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v44";
+const APP_VERSION = "v45";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -252,6 +252,23 @@ function nominatimSearchUrl(q, lang) {
  * was written against it — Pelias fields are mapped onto it below.
  * ------------------------------------------------------------------- */
 const ORS_GEO = "https://api.openrouteservice.org/geocode/autocomplete";
+/* Pelias splits the job in two, and using the wrong half is why
+ * "Φιλοτίμου 12" used to come back as the street with no number.
+ * `/autocomplete` is tuned for prefixes and deliberately does not run the
+ * full address parser; `/search` does, and resolves a house number onto
+ * the right point along the street. So: the moment the query looks like a
+ * complete address, switch endpoints. */
+const ORS_GEO_FULL = "https://api.openrouteservice.org/geocode/search";
+/* A house number is a short standalone run of digits, optionally with a
+ * Greek or latin letter suffix (12Α, 12A) or a range (12-14). A postcode
+ * (5 digits) or a bus line ("608") is not one, and neither is a number
+ * that is part of a name — "Πλατεία 25ης Μαρτίου". */
+const HOUSE_NO = /(^|\s)\d{1,3}([\-–]\d{1,3})?[A-Za-zΑ-Ωα-ω]?(\s|$)/;
+function looksAddressed(q) {
+  const s = String(q || "").trim();
+  // a bare number on its own is not an address, it is someone still typing
+  return HOUSE_NO.test(s) && /[A-Za-zΑ-Ωα-ωἀ-῿]{3}/.test(s);
+}
 /* Same window as VIEWBOX, spelled out because Pelias wants corners
  * rather than Nominatim's left,top,right,bottom string. */
 const ATTICA = { minLon: 23.40, minLat: 37.70, maxLon: 24.10, maxLat: 38.40 };
@@ -261,11 +278,15 @@ const ATTICA = { minLon: 23.40, minLat: 37.70, maxLon: 24.10, maxLat: 38.40 };
 const ORS_LAYERS = "address,venue,street,neighbourhood,borough,locality,localadmin";
 
 function orsGeoUrl(q, lang, focus) {
-  const u = new URL(ORS_GEO);
+  const full = looksAddressed(q);
+  const u = new URL(full ? ORS_GEO_FULL : ORS_GEO);
   u.searchParams.set("text", q);
   u.searchParams.set("size", "8");
   u.searchParams.set("lang", lang === "en" ? "en" : "el");
-  u.searchParams.set("layers", ORS_LAYERS);
+  /* With a house number, an exact address is what was asked for — let the
+   * neighbourhood and locality rows fall away rather than pushing the one
+   * useful hit down the list. */
+  u.searchParams.set("layers", full ? "address,street" : ORS_LAYERS);
   u.searchParams.set("boundary.country", "GRC");
   u.searchParams.set("boundary.rect.min_lon", String(ATTICA.minLon));
   u.searchParams.set("boundary.rect.min_lat", String(ATTICA.minLat));
@@ -1629,6 +1650,7 @@ const PLAN = {
   busDwellS: 20,          // per intermediate stop on a bus leg
   roadFactor: 1.25,       // straight line between stops x this = road distance
   walkOnlyMaxMin: 40,     // offer "just walk" up to here
+  walkKeepSlackMin: 10,   // ...but only if riding is not this much quicker
   maxRefine: 3,           // live-ETA lookups spent improving a found itinerary
   maxSchedules: 3,        // timetable fetches per plan (subrequest budget)
   maxWalkRoutes: 4,       // pedestrian routings per plan (subrequest budget)
@@ -1979,7 +2001,7 @@ async function buildGraph(from, to, departMs, budget) {
  * against extra vehicles without pretending they take longer, so the times
  * reported back are always the real ones. */
 function search(g, from, to, opts) {
-  const { changePenalty = 0, allowBus = true, allowMetro = true } = opts || {};
+  const { changePenalty = 0, allowBus = true, allowMetro = true, noDirect = false } = opts || {};
   const departMs = g.departMs;
 
   const stopList = [...g.stops.values()];
@@ -1991,19 +2013,31 @@ function search(g, from, to, opts) {
   const cost = new Map();     // node -> what the search orders by
   const prev = new Map();
   const heap = [];
+  /* Whether the best path to a node has boarded anything yet. Only the
+     `noDirect` run reads it, and only to refuse to finish on foot from a
+     stop it merely walked to — otherwise "forbid the direct walk" is
+     trivially defeated by walking to a stop and walking on from it, which
+     is the same walk with a waypoint. */
+  const rode = new Map([["O", false]]);
+  const boarded = e => !!e && (e.mode === "board" || e.mode === "boardMetro");
   const relax = (u, v, dt, dc, edge) => {
     const nt = time.get(u) + dt, nc = cost.get(u) + (dc == null ? dt : dc);
     if (cost.has(v) && cost.get(v) <= nc) return;
     cost.set(v, nc); time.set(v, nt); prev.set(v, { from: u, edge });
+    rode.set(v, rode.get(u) === true || boarded(edge));
     heapPush(heap, v, nc);
   };
+  const mayFinishOnFoot = u => !noDirect || rode.get(u) === true;
 
   time.set("O", 0); cost.set("O", 0); heapPush(heap, "O", 0);
   const done = new Set();
 
-  // straight there on foot, always an option worth carrying
+  /* Straight there on foot, always an option worth carrying — except in
+     the `noDirect` run, whose whole job is to find the best answer that
+     does NOT involve walking the lot, so the walking one has something
+     honest to be compared against. */
   const directM = hav(from.lat, from.lng, to.lat, to.lng);
-  if (walkMinutes(directM) <= PLAN.walkOnlyMaxMin) {
+  if (!noDirect && walkMinutes(directM) <= PLAN.walkOnlyMaxMin) {
     relax("O", "D", walkMinutes(directM), null, { mode: "walk", metres: directM });
   }
 
@@ -2031,7 +2065,8 @@ function search(g, from, to, opts) {
       if (!s) continue;
       // finish on foot
       const dEnd = hav(s.lat, s.lng, to.lat, to.lng);
-      if (dEnd <= PLAN.maxWalkM) relax(u, "D", walkMinutes(dEnd), null, { mode: "walk", metres: dEnd });
+      if (dEnd <= PLAN.maxWalkM && mayFinishOnFoot(u))
+        relax(u, "D", walkMinutes(dEnd), null, { mode: "walk", metres: dEnd });
       // step across to a neighbouring stop or into a station
       stopGrid.near(s.lat, s.lng, PLAN.transferM).forEach(({ i, d }) => {
         if (stopList[i].code === code) return;
@@ -2058,7 +2093,8 @@ function search(g, from, to, opts) {
       const id = u.slice(2), st = g.stations.find(x => x.id === id);
       if (!st) continue;
       const dEnd = hav(st.lat, st.lng, to.lat, to.lng);
-      if (dEnd <= PLAN.maxWalkM) relax(u, "D", walkMinutes(dEnd), null, { mode: "walk", metres: dEnd });
+      if (dEnd <= PLAN.maxWalkM && mayFinishOnFoot(u))
+        relax(u, "D", walkMinutes(dEnd), null, { mode: "walk", metres: dEnd });
       stopGrid.near(st.lat, st.lng, PLAN.transferM).forEach(({ i, d }) =>
         relax(u, "p:" + stopList[i].code, walkMinutes(d), null,
           { mode: "walk", metres: d, to: stopList[i] }));
@@ -2423,14 +2459,80 @@ function sameShape(a, b) {
   return sig(a) === sig(b);
 }
 
+/* How many boarding points the search actually had within walking distance
+ * of a point. Zero at either end is the difference between "the network
+ * does not go there" and "the planner could not find a way", and it is the
+ * one thing a rider can act on — walk two streets and try again. */
+function reachOf(g, pt) {
+  let n = 0;
+  for (const s of g.stops.values())
+    if (hav(pt.lat, pt.lng, s.lat, s.lng) <= PLAN.maxWalkM) n++;
+  for (const st of g.stations)
+    if (hav(pt.lat, pt.lng, st.lat, st.lng) <= PLAN.maxWalkM) n++;
+  return n;
+}
+
+const isWalkOnly = p => p.legs.length > 0 && p.legs.every(l => l.mode === "walk");
+
+/* There are three slots. A walk-only option earns one when it is close to
+ * competitive; a 38-minute walk against a 15-minute ride is not an
+ * alternative, it is padding, and it pushes a real second route off the
+ * list. Keeping it under walkKeepSlackMin still covers the case a rider
+ * actually wants — "riding is a bit quicker, but I'd rather walk it". */
+function pruneWalk(out) {
+  const i = out.findIndex(isWalkOnly);
+  if (i < 0) return out;
+  const ride = out.find(p => !isWalkOnly(p));
+  if (ride && out[i].totalMin > ride.totalMin + PLAN.walkKeepSlackMin) out.splice(i, 1);
+  return out;
+}
+
+/* "Walk 34 minutes" is the one answer a rider cannot sanity-check. It may
+ * mean the network is shut, or that the next bus is 40 minutes out, or
+ * that the planner simply failed — and those deserve different reactions.
+ * So a walk-only itinerary carries the reason it was offered, and where
+ * the reason is a wait, the wait itself. */
+function explainWalk(out, service, g, from, to) {
+  const walk = out.find(isWalkOnly);
+  if (!walk) return;
+  const ride = out.find(p => !isWalkOnly(p));
+
+  if (ride) {
+    const board = ride.legs.find(l => l.mode !== "walk");
+    walk.why = {
+      code: walk.totalMin <= ride.totalMin ? "beats" : "also",
+      viaMin: ride.totalMin,
+      waitMin: board && isFinite(board.wait) ? Math.round(board.wait) : null,
+      line: board ? String(board.line) : null,
+      mode: board ? board.mode : null,
+    };
+    return;
+  }
+  walk.why = { code: noRideReason(service, g, from, to) };
+}
+
+/* Why no riding option exists — shared by the walk-only note and by the
+ * empty answer, which are the same question asked from two sides. */
+function noRideReason(service, g, from, to) {
+  if (!service.metro && !service.bus) return "closed";
+  if (!reachOf(g, from)) return "nostopsfrom";
+  if (!reachOf(g, to)) return "nostopsto";
+  return "noconnection";
+}
+
 async function planJourney(from, to, departMs, env) {
   const budget = { used: 0 };
   const g = await buildGraph(from, to, departMs, budget);
 
+  /* The fourth run costs no requests — it is Dijkstra again over a graph
+     already in memory — and it earns its place twice over: it is the
+     "I would rather not walk it" option when walking wins, and it is what
+     the walking option gets measured against in the note under it. */
   const runs = [
     { key: "best", opts: {} },
     { key: "fewer", opts: { changePenalty: PLAN.changePenaltyMin } },
     { key: "metro", opts: { allowBus: false } },
+    { key: "ride", opts: { noDirect: true } },
   ];
   const out = [];
   for (const r of runs) {
@@ -2444,13 +2546,18 @@ async function planJourney(from, to, departMs, env) {
   const atNow = clockAt(departMs, 0);
   const service = { metro: metroRunning(atNow), bus: busRunning(atNow) };
   if (!out.length) return { departAt: departMs, itineraries: [], service, subrequests: budget.used,
-    reason: (!service.metro && !service.bus) ? "closed" : "noroute" };
+    reason: noRideReason(service, g, from, to) };
 
   out.sort((a, b) => a.totalMin - b.totalMin);
   // the winner is the only one worth spending requests on
   await refineBoardings(out[0], g, budget);
   await refineWalks(out[0], budget, env);
   out.sort((a, b) => a.totalMin - b.totalMin);
+  /* After refining, not before: a live ETA can turn a 40-minute guessed
+     wait into a 4-minute real one, and the note has to describe the times
+     the rider is actually being shown. */
+  pruneWalk(out);
+  explainWalk(out, service, g, from, to);
 
   return {
     departAt: departMs,

@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v44 defaults** — if you edit the
+breaks if you change it. Values here are the **v45 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -332,6 +332,7 @@ entries and the dots follow. Seen-state is `localStorage.tourSeen`.
 | `busDwellS` | **20 s** | Per intermediate stop on a bus leg. | |
 | `roadFactor` | **1.25** | Straight line between stops × this = road distance. | |
 | `walkOnlyMaxMin` | **40 min** | Longest journey offered on foot alone. | |
+| `walkKeepSlackMin` | **10 min** | How much slower than riding a walk-only option may be and still keep one of the three slots. Beyond it the option is dropped: a 38-minute walk against a 15-minute ride is padding, and it pushes a real second route off the list. | Raise it and walking crowds the list; lower it and "riding is a bit quicker but I'd rather walk" stops being offered. |
 | `maxRefine` | **3** | Live-ETA lookups spent improving the chosen itinerary. **Subrequest budget.** | |
 | `maxSchedules` | **3** | Published-timetable fetches per plan, two subrequests each. **Subrequest budget.** | Lower it and more far connections fall back to `estimated`. |
 | `maxWalkRoutes` | **4** | Pedestrian routings per plan, one each, and only when `ORS_KEY` is set. **Subrequest budget.** | Lower it and the later walking legs stay estimated. |
@@ -366,12 +367,19 @@ line that "owns" each station — so the interchanges sit in someone else's bloc
 | `ATTICA` | 23.40–24.10 E, 37.70–38.40 N | Bounding box on results. Same window as `VIEWBOX`, spelled as corners because Pelias wants corners. | |
 | focus rounding | **2 dp** (~1 km) | Precision of the position sent as `focus.point`. | It only nudges the ranking, so more precision buys nothing and costs cache hits. |
 | `GEO_CACHE` | **86 400 s** (24 h) | Edge-cache lifetime for a geocode answer, ORS and Nominatim alike. | |
+| `HOUSE_NO` | `\d{1,3}` + optional range/letter, standalone | What makes a query "an address" rather than a name, which decides `/geocode/search` over `/geocode/autocomplete`. Also requires three letters somewhere, so a line number is not an address. | Widen it and postcodes start routing to the address parser, which answers worse for them. |
 
 Two geocoders sit behind `/geocode`. **OpenRouteService (Pelias) autocomplete**
 when `ORS_KEY` is set — it matches partial tokens, takes a focus point, and
 carries house numbers. **Nominatim** when it is not, and whenever ORS misses,
 errors or rejects the key. Both are flattened to the same rows, so the app never
 learns which answered; only the `source` field says.
+
+**Two Pelias endpoints, not one.** `/autocomplete` is tuned for prefixes and deliberately
+skips the full address parser, so it drops house numbers; `/search` runs the parser and
+resolves a number onto the right point along the street. `looksAddressed()` decides which,
+and narrows `layers` to `address,street` when it is the latter — with a number given, the
+neighbourhood rows are noise.
 
 A latin query gets **two** shots at ORS — as typed, then transliterated — rather
 than the four spellings Nominatim gets, because every ORS miss is a request off a

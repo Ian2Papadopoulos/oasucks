@@ -2,66 +2,93 @@
 
 **Last updated: 7 September 2026**
 
-> Not legal advice. This mirrors the in-app text at `public/legal.html` — change
-> both together.
+> Not legal advice. This mirrors the in-app text at `public/legal.html`, which is
+> served in both Greek and English — change all of them together. `test/legal.mjs`
+> checks that the page and this file still agree.
 
-By using OASAx you agree to the following.
+## A quick note before you use OASAx
 
-**Unofficial.** OASAx is a free, non-commercial app. It is not affiliated with,
-endorsed by or connected to OASA, OSY, STASY or any authority. Trade marks belong
-to their owners.
+OASAx is **unofficial**. It is a free, non-commercial app and is not affiliated
+with, endorsed by or connected to OASA, OSY, STASY or any public authority. All
+trademarks belong to their respective owners.
 
-**The data is third-party and often wrong.** Arrival times, positions and routes
-come from OASA's telematics service. We do not produce or verify them. Vehicle
-positions are typically 30–60 seconds stale and estimates are regularly out by
-minutes. **Do not rely on this app for anything that matters.**
+## Don't rely on the data for anything important
 
-**Reports are unverified.** They are submitted by other passengers and describe
-situations on a line or at a station. We do not check them. A report count means
-several people said the same thing, not that it is true. The absence of a report
-means nothing.
+Arrival times, vehicle positions and routes come from OASA's telematics service.
+We do not create or verify this information, and it can be wrong, delayed or
+unavailable.
 
-**Accessibility reports especially.** Flags such as *elevator not working*,
-*escalator out of order* and *no wheelchair access* are passenger observations at
-one moment, not an accessibility record. A station with no flag may still be
-unusable, and a flagged one may have been fixed since. **Do not plan a step-free
-journey on this app.** Check with OASA, STASY or the station itself.
+Vehicle positions are usually around **30–60 seconds** behind real time, and
+arrival estimates can be off by several minutes.
 
-**Always carry a valid ticket.**
+**Please don't rely on OASAx for anything time-critical, safety-critical or
+otherwise important.**
 
-**You must not** file reports you know to be untrue; automate reporting or use
-multiple identities; use the service to identify, follow or target any individual;
-or overload this service or OASA's. We may remove any report and block any device
-without notice.
+## Passenger reports are not verified
 
-**No warranty.** The service is provided "as is" and "as available", without
-warranty of any kind, including fitness for a particular purpose, availability or
-accuracy.
+Reports are submitted by other passengers. We don't check whether they are true
+or still current.
 
-**Liability.** To the fullest extent permitted by law, the operator is not liable
-for any loss arising from use of the service, including missed journeys, fares,
-fines or appointments. Nothing here excludes liability that cannot lawfully be
-excluded, and your mandatory consumer rights are unaffected.
+Several reports about the same thing simply mean that several people reported it
+— it doesn't prove that the information is correct. Likewise, no reports doesn't
+mean that everything is fine.
 
-**Reporting a problem.** To report an abusive or false report, or anything else,
-contact **oasax@proton.me**. This is our contact point and notice-and-action
-mechanism under Regulation 2022/2065 (DSA). Only the person who filed a report can
-remove it in the app.
+## Accessibility information needs extra care
 
-**Licence.** The source code is licensed under the GNU Affero General Public License v3
-(see `LICENSE`). The complete corresponding source of the version running here is free
-on request: oasax@proton.me.
-That covers the code only; it does not license OASA's data, OpenStreetMap's, or any
-other third party's. By filing a report you allow us to display it while active and
-to keep an anonymous, coordinate-free record for up to 90 days.
+Reports such as *elevator not working*, *escalator out of order* or *no wheelchair
+access* are observations made by passengers at a particular time. **They are not
+official accessibility information.**
 
-**Address search.** Typing a place name sends that text from our server to a
-geocoding service (OpenRouteService, or OpenStreetMap's Nominatim) together with a
-position rounded to about a kilometre, so that nearby results rank first. Your IP
-address is not sent — the request comes from our server, not your browser — and the
-text is not stored by us.
+A station without a report may still be inaccessible, and a reported problem may
+already have been fixed.
 
-**Changes and law.** These terms may change and the service may be modified or
-withdrawn at any time, including because OASA asks us to stop. Greek law applies;
-the courts of Athens have jurisdiction, without prejudice to mandatory consumer
-rules where you live.
+**Please do not plan a step-free or accessibility-critical journey using OASAx
+alone.** Check directly with OASA, STASY or the station.
+
+Always carry a valid ticket or travel entitlement where required.
+
+## Using OASAx responsibly
+
+Please don't:
+
+- submit reports you know to be false;
+- automate reporting or use multiple identities to influence reports;
+- use OASAx to identify, follow or target another person; or
+- interfere with or overload OASAx or the services it relies on.
+
+We may remove reports or block access where necessary to protect the service and
+its users.
+
+## A few legal points
+
+OASAx is provided "as is" and "as available". We cannot guarantee that the service
+will always be available or that the information it displays will always be
+accurate.
+
+To the fullest extent permitted by law, the operator is not responsible for losses
+resulting from the use of OASAx, including missed journeys, fares, fines or
+appointments. Nothing in these terms removes rights or liability that cannot
+legally be excluded.
+
+We may update these terms or change, suspend or discontinue OASAx at any time.
+
+Greek law applies, and the courts of Athens have jurisdiction, without affecting
+any mandatory consumer rights or protections that apply where you live.
+
+## Contact
+
+For abusive or false reports, privacy questions or anything else:
+**oasax@proton.me**. This is our contact point and notice-and-action mechanism
+under Regulation 2022/2065 (DSA).
+
+Only the person who submitted a report can remove it through the app.
+
+## Licence
+
+The source code is licensed under the GNU Affero General Public License v3 (see
+`LICENSE`). The complete corresponding source of the version running here is free
+on request: oasax@proton.me. That covers the code only; it does not license OASA's
+data, OpenStreetMap's, or any other third party's.
+
+By filing a report you allow us to display it while active and to keep an
+anonymous, coordinate-free record for up to 90 days.

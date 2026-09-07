@@ -1,52 +1,81 @@
-# Privacy policy
+# Privacy
 
-**Last updated: 4 August 2026**
+**Last updated: 7 September 2026**
 
-> Not legal advice. This mirrors the in-app text at `public/legal.html` — change
-> both together.
+> Not legal advice. This mirrors the in-app text at `public/legal.html`, which is
+> served in both Greek and English — change all of them together. `test/legal.mjs`
+> checks that the page and this file still agree.
 
-No account, no advertising, no analytics, no cookies, no third-party scripts. The
-controller is the operator of this instance: **oasax@proton.me**.
+**No account. No advertising. No analytics. No cookies.**
+
+We only process a small amount of information needed to provide the features you
+choose to use.
 
 ## What is processed
 
-| Data | Why | Legal basis | Stored? |
-|---|---|---|---|
-| **Your location** | Find nearby stops and the vehicle you are on | Consent | **Never stored** |
-| **IP address** | Rate limiting | Legitimate interests | In memory, ≤60 s |
-| **Anonymous random id** | So you can withdraw your own reports | Legitimate interests | With an active report |
-| **Push subscription** | Only if you enable alerts | Consent | Until you disable alerts |
-| **Report contents** | Line or station + a fixed-menu selection | Consent | Public while active |
+**Your location.** If you use features such as nearby stops or vehicle
+identification, your location is sent with the relevant request. We don't store
+your location. Legal basis: consent.
 
-Reports contain **no free text, no photos and nothing identifying any person**.
-There is no way to enter such information.
+**Your IP address.** Kept temporarily in memory for up to **60 seconds** to
+protect the service from abuse and excessive requests. It is not permanently
+stored. Legal basis: legitimate interests.
 
-## Retention
+**Reports.** A line or station and an issue selected from a fixed list. There is
+no free-text reporting, no photo upload and no way to include personal
+information about someone. Reports are visible to other users while they are
+active. Legal basis: consent.
 
-- Active reports: until they expire (30 minutes to 3 hours), then deleted with
-  their coordinates.
-- Anonymous history log (time, line, station, report type — **no coordinates, no
-  reporter id**): 90 days.
-- Push subscriptions: until you disable alerts.
-- Local settings (`localStorage`): until you clear site data.
+**Your anonymous report ID.** Your browser creates a random ID that lets you
+remove reports you submitted. If you clear your browser's site data, change
+browsers or use another device, you may no longer be able to remove reports
+submitted with your previous ID. Legal basis: legitimate interests.
 
-## Recipients
+**Address searches.** The text you enter is sent to a geocoding service so we can
+find the location. Your search is not stored by us. The service receives an
+approximate location rounded to about **one kilometre** to improve results, but
+the request is sent through our server, so the geocoding service does not receive
+your IP address through the search request. Legal basis: legitimate interests.
 
-Cloudflare (hosting; our processor under Art. 28, possibly outside the EEA under
-Standard Contractual Clauses); OASA (receives our server's requests, not yours);
-OpenStreetMap / CARTO (your browser fetches map tiles, so they see your IP address);
-a geocoding service — OpenRouteService, or OpenStreetMap's Nominatim — which receives
-the text you type into address search and a position rounded to about a kilometre.
-That request comes from our server, not your browser, so the geocoder never sees your
-IP address, and we do not store the text. Nothing is sold or shared otherwise.
+**Push subscription.** Only if you enable alerts. Legal basis: consent.
 
-## Your rights
+## How long information is kept
 
-Access, rectification, erasure, restriction, portability and objection. You may
-withdraw consent at any time by revoking location or notification permission.
-Delete a report in the app with ✕; clear everything else by clearing site data.
-Written requests: **oasax@proton.me**. You may complain to the Hellenic Data
-Protection Authority (<https://www.dpa.gr>).
+- Active reports are deleted when they expire, usually after **30 minutes to
+  3 hours**, along with their coordinates.
+- A limited anonymous history of reports (time, line, station, type) is kept for
+  up to **90 days**, without report coordinates or reporter IDs.
+- Push notification subscriptions remain until you disable alerts.
+- Local settings and your anonymous report ID remain in your browser until you
+  clear site data.
+
+## Who helps us provide the service
+
+- **Cloudflare** for hosting and infrastructure (our processor under Art. 28);
+- **OASA** for transit information (it receives our server's requests, not yours);
+- **OpenStreetMap** and **CARTO** for maps (your browser fetches map tiles, so
+  they see your IP address);
+- **OpenRouteService** or OpenStreetMap's **Nominatim** for address searches.
+
+Some of these services may process information outside Greece or the EEA, subject
+to appropriate safeguards where required, such as Standard Contractual Clauses.
+
+**We do not sell your data or use it for advertising.**
+
+## Your choices and rights
+
+You can withdraw location or notification permissions at any time through your
+browser or device settings.
+
+You can remove your own reports in the app using ✕ and remove other locally stored
+information by clearing the site's data.
+
+Depending on where you live and the law that applies to you, you may also have
+rights regarding your personal data, including access, correction, deletion,
+restriction, portability and objection to certain processing.
+
+For privacy questions or requests: **oasax@proton.me**. You may also have the
+right to complain to the Hellenic Data Protection Authority (dpa.gr).
 
 ## Security
 

@@ -397,5 +397,87 @@ console.log("\n— every leg carries what the UI needs —");
      best.changes === best.legs.filter(l => l.mode !== "walk").length - 1);
 }
 
+/* "Walk 34 minutes" is the one answer a rider cannot check against
+   anything. It has to say whether it won because the next bus is 40
+   minutes away, because nothing is running, or because the planner found
+   no way to ride — those call for three different reactions. */
+console.log("\n— a walking option says why it is there —");
+const walkOf = p => p.itineraries.find(i => i.legs.every(l => l.mode === "walk"));
+{
+  // 1.2 km — a 15-ish minute walk — against a bus that is 28 minutes out
+  ARRIVALS = { A0: [{ route: "R-A", min: 28 }] };
+  const p = await plan({ lat: LAT0, lng: LNG0 }, { lat: LAT0 + 3 * STEP, lng: LNG0 }, WED_0900);
+  const w = walkOf(p);
+  ok("walking wins when the bus is half an hour out", !!w, p.itineraries.map(legTypes).join(" | "));
+  ok("...and says it beat something", w && w.why && w.why.code === "beats",
+     JSON.stringify(w && w.why));
+  ok("...naming the line it beat", w && w.why.line === "608", w && w.why.line);
+  /* The note must describe the option actually on screen, not the stop the
+     test had in mind: the search is free to board somewhere else. */
+  const alt = p.itineraries.find(i => i.legs.some(l => l.mode !== "walk"));
+  const board = alt && alt.legs.find(l => l.mode !== "walk");
+  ok("...and the wait that lost it, as shown on that very option",
+     w && board && Math.round(board.wait) === w.why.waitMin,
+     `note says ${w && w.why.waitMin}′, the option says ${board && Math.round(board.wait)}′`);
+  ok("...and its total, likewise", w && alt && w.why.viaMin === alt.totalMin,
+     `${w && w.why.viaMin}′ vs ${alt && alt.totalMin}′`);
+  ok("...which is slower than walking, or it would not have lost",
+     w && w.why.viaMin >= w.totalMin,
+     `${w && w.why.viaMin}′ by bus vs ${w && w.totalMin}′ on foot`);
+  ok("the option it beat is still offered, for anyone who cannot walk it",
+     p.itineraries.some(i => i.legs.some(l => l.mode !== "walk")),
+     p.itineraries.map(i => i.kind + ":" + legTypes(i)).join(" | "));
+  ok("...and that one costs no extra requests", p.subrequests <= 40, String(p.subrequests));
+}
+{
+  // 2 km — around 25 minutes on foot — against a bus that is due now
+  ARRIVALS = { A0: [{ route: "R-A", min: 1 }] };
+  const p = await plan({ lat: LAT0, lng: LNG0 }, { lat: LAT0 + 5 * STEP, lng: LNG0 }, WED_0900);
+  const w = walkOf(p), best = p.itineraries[0];
+  ok("riding wins when the bus is due", best.legs.some(l => l.mode !== "walk"), legTypes(best));
+  ok("a walk far slower than riding is not offered as an alternative", !w,
+     "three slots, and padding one of them pushes a real route off the list");
+}
+{
+  // riding only a little quicker: walking is a genuine choice, so keep it
+  ARRIVALS = { A0: [{ route: "R-A", min: 8 }] };
+  const p = await plan({ lat: LAT0, lng: LNG0 }, { lat: LAT0 + 2 * STEP, lng: LNG0 }, WED_0900);
+  const w = walkOf(p);
+  ok("a walk within a few minutes of riding is kept", !!w,
+     p.itineraries.map(i => `${i.kind}:${i.totalMin}′`).join(" | "));
+  ok("...and admits it is the slower one when it is",
+     !w || !w.why || ["beats", "also"].includes(w.why.code), JSON.stringify(w && w.why));
+}
+{
+  ARRIVALS = {};
+  const p = await plan({ lat: LAT0, lng: LNG0 }, { lat: LAT0 + 2 * STEP, lng: LNG0 }, WED_0300);
+  const w = walkOf(p);
+  ok("at 03:00 the walk is offered because nothing is running",
+     w && w.why && w.why.code === "closed", JSON.stringify(w && w.why));
+}
+{
+  // a kilometre out into the fields: nothing within walking distance
+  ARRIVALS = {};
+  const p = await plan({ lat: LAT0 - 0.05, lng: LNG0 - 0.05 },
+                       { lat: LAT0 - 0.05, lng: LNG0 - 0.047 }, WED_0900);
+  const w = walkOf(p);
+  ok("with no stop near the start, the walk says so rather than nothing",
+     w && w.why && w.why.code === "nostopsfrom", JSON.stringify(w && w.why));
+}
+{
+  ARRIVALS = {};
+  const p = await plan({ lat: LAT0 - 0.4, lng: LNG0 - 0.4 },
+                       { lat: LAT0 - 0.4, lng: LNG0 + 0.4 }, WED_0900);
+  ok("an empty answer distinguishes 'no stop here' from 'no route'",
+     ["nostopsfrom", "nostopsto", "noconnection", "closed"].includes(p.reason),
+     p.reason);
+}
+{
+  ARRIVALS = { A0: [{ route: "R-A", min: 3 }] };
+  const p = await plan({ lat: LAT0, lng: LNG0 }, { lat: LAT0 + 9 * STEP, lng: LNG0 }, WED_0900);
+  ok("a riding itinerary carries no walking excuse", p.itineraries.every(i => !i.why),
+     "the note belongs on the walk-only option and nowhere else");
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

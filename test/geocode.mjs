@@ -118,6 +118,54 @@ console.log("\n— the request that goes out —");
     new URL(orsCalls()[0].url).searchParams.get("lang") === "en");
 }
 
+/* Pelias splits address parsing out of /autocomplete, so a query with a
+   house number has to go to /search or the number is quietly dropped and
+   you get the middle of the street. */
+console.log("\n— house numbers —");
+{
+  const endpointFor = async q => {
+    orsReply = fc(feature());
+    await body(await geocode("q=" + encodeURIComponent(q), KEY));
+    return new URL(orsCalls()[0].url).pathname;
+  };
+  const addressed = ["Φιλοτίμου 12", "filotimou 12", "Λεωφόρος Αλεξάνδρας 45",
+                     "Ερμού 12Α", "Πατησίων 12-14", "12 Φιλοτίμου"];
+  for (const q of addressed) {
+    ok(`"${q}" goes to the full address parser`,
+      (await endpointFor(q)) === "/geocode/search");
+  }
+  const notAddressed = ["Σύνταγμα", "syntagma", "608", "11527",
+                        "Πλατεία Αμερικής", "φιλ"];
+  for (const q of notAddressed) {
+    ok(`"${q}" stays on autocomplete`,
+      (await endpointFor(q)) === "/geocode/autocomplete",
+      "a line number, a postcode and a half-typed word are not addresses");
+  }
+}
+{
+  orsReply = fc(feature());
+  await body(await geocode("q=" + encodeURIComponent("Φιλοτίμου 12"), KEY));
+  const q = new URL(orsCalls()[0].url).searchParams;
+  ok("an addressed query narrows the layers to the one thing asked for",
+    q.get("layers") === "address,street", q.get("layers"));
+  ok("...and keeps the Attica box", q.get("boundary.rect.min_lon") === "23.4");
+}
+{
+  orsReply = fc(feature());
+  await body(await geocode("q=filotimou%2012", KEY));
+  ok("a latin numbered address is tried as typed first",
+    new URL(orsCalls()[0].url).searchParams.get("text") === "filotimou 12");
+}
+{
+  let n = 0;
+  ctx.__ors = () => (++n === 1 ? fc() : fc(feature()));
+  await body(await geocode("q=filotimou%2012", KEY));
+  ok("...then transliterated with the number left alone",
+    new URL(orsCalls()[1].url).searchParams.get("text") === "φιλοτιμου 12",
+    new URL(orsCalls()[1].url).searchParams.get("text"));
+  ctx.__ors = () => orsReply;
+}
+
 console.log("\n— what comes back —");
 {
   orsReply = fc(feature());
