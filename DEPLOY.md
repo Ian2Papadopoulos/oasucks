@@ -137,6 +137,40 @@ If it persists, check in this order:
 refuse plain HTTP by itself. That does nothing for a *first* visit, which is why the
 redirect above is the actual fix and HSTS is only the reinforcement.
 
+**On Full (strict).** Worth setting, but understand what it is: that mode governs how
+Cloudflare talks to *your origin server*, and a Worker custom domain has no origin — the
+code runs on the edge. It changes nothing about the padlock. It only starts to matter if
+you later point a subdomain at a real server.
+
+### HSTS at the edge — worth it, with two switches left off
+
+SSL/TLS → Edge Certificates → **HTTP Strict Transport Security**. Enabling it here is
+broader than `public/_headers`, which only covers the static files: the dashboard setting
+applies to every response through the edge, the Worker's JSON endpoints included. Keep
+both — the file travels with the repo if this is ever deployed elsewhere.
+
+| Setting | Value |
+|---|---|
+| Enable HSTS | **On** |
+| Max-Age | **6 months** to start |
+| Apply HSTS to subdomains | **Off** |
+| Preload | **Off** |
+| No-Sniff header | On |
+
+**`includeSubDomains` is unnecessary here.** `www` serves its own HSTS header on its own
+first visit, so it is covered independently. Switching it on would force HTTPS onto every
+future subdomain, including one set up later on something not ready for it.
+
+**Preload is a one-way door.** It bakes the domain into the HTTPS-only lists compiled
+into Chrome, Firefox and Safari. Undoing it means a removal request and then waiting for
+browser *releases* — months, with nothing you can do in the meantime. The benefit is
+negligible at this scale.
+
+**Order matters, and this part is not reversible by flipping the switch back.** HSTS
+tells browsers "never speak HTTP to this host again, for six months". Enable it while
+something is misconfigured and visitors are locked into the broken state for that whole
+period. So: Always Use HTTPS on → confirm the site loads over https → *then* HSTS.
+
 ### Walking times say "estimated"
 
 The planner routes walking legs for real when a key is configured, and falls back to a
