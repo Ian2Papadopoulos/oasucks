@@ -141,6 +141,65 @@ past the 260 ms debounce, the 700 ms floor and three characters, cached at the e
 If you approach the daily quota, raise `JPQ.debounceMs` and `JPQ.minGapMs` in
 `public/index.html` before you touch anything else.
 
+## Putting it on your own domain
+
+The app is **origin-relative throughout** — `start_url` and `scope` are `.`, the backend
+is same-origin, no page link names a host — so moving it needs no code change at all.
+What it needs is DNS.
+
+**1. Point the domain at Cloudflare.** In the Cloudflare dashboard: **Add a site** →
+type `oasax.com` → Free plan. Cloudflare shows you two nameservers, something like
+`xxx.ns.cloudflare.com`. Go to whoever you bought the domain from, find **Nameservers**,
+and replace what is there with those two. This is the step that takes time — usually
+minutes, sometimes a few hours.
+
+Check it landed:
+```powershell
+nslookup -type=NS oasax.com
+```
+You want Cloudflare's nameservers back, not your registrar's. While it still answers with
+the registrar's, everything below will fail and that is expected, not broken.
+
+**2. Attach the domain to the Worker.** Workers & Pages → your Worker → **Settings** →
+**Domains & Routes** → **Add** → **Custom domain** → `oasax.com`. Add `www.oasax.com` the
+same way if you want it. Cloudflare creates the DNS record and the certificate itself;
+there is nothing to configure and no certificate to buy.
+
+**3. Confirm it is really your Worker answering.**
+```powershell
+curl https://oasax.com/health
+```
+You want `{"ok":true,"version":"v48",...}` — the same version your Worker reports. A
+registrar parking page or a certificate error means step 1 or 2 has not finished yet.
+Then open `https://oasax.com` on your phone and check the board fills.
+
+**4. Leave the old URL alone.** Both addresses now serve the same Worker. Anyone who
+installed from `…workers.dev` keeps working exactly as before, because nothing moved.
+
+**5. Only then, tell the old address it has moved.** In `public/index.html`:
+
+```js
+const MOVED_TO="https://oasax.com";
+```
+
+and redeploy. The `workers.dev` origin — and only that one — grows a dismissible line
+saying where the app lives now, with a link. The new domain says nothing, because it is
+the new home. Set this **after** step 3 passes: a banner pointing at a domain that does
+not answer yet is worse than no banner.
+
+**What does not follow anyone to the new address**, whatever you do:
+
+- **Favourites, settings and the anonymous report id.** Browsers keep stored data per
+  origin. Someone opening the new domain starts fresh and can no longer withdraw reports
+  filed under the old id.
+- **Push subscriptions.** Anyone with alerts set has to re-enable them. The VAPID keys
+  can stay; the subscription cannot.
+- **The install itself.** The home-screen icon still points at the old origin. That is
+  what the banner in step 5 is for.
+
+None of this is recoverable by any means, which is why the honest move is to keep both
+origins alive indefinitely rather than to migrate anybody.
+
 ### How many people are using it?
 
 ```powershell
@@ -184,7 +243,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v37"` to `v38` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v38"` to `v39` in `public/sw.js` and redeploy to force an update.
 
 ---
 

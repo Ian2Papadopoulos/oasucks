@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v47.**
+version: v48.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -34,7 +34,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 453 assertions across nine suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install and usage suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 482 assertions across ten suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage and origin suites drive a real browser via Playwright. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The one thing you must understand
@@ -170,8 +170,33 @@ Two caveats even on the good path:
   the new origin. The VAPID keys can stay the same; the subscription cannot.
 
 The cheapest time to do this is **now, before there is a userbase**. If you are already
-past that, add the domain, keep both alive, and consider a one-line banner on the old
-origin pointing people at the new one — say the word and I will build it.
+past that, add the domain, keep both alive, and turn on the notice below.
+
+### Telling the old address it has moved
+
+`MOVED_TO` near the top of the script block in `public/index.html`:
+
+```js
+const MOVED_TO="https://oasax.com";     // "" = say nothing, anywhere
+```
+
+Set it and the **old** origin grows a dismissible line naming the new host, warning that
+favourites and alerts do not travel, and linking to the same page on the new domain.
+The new origin stays silent — the check is against the live host, not a build flag, so
+the same deploy behaves correctly on both.
+
+Dismissal is remembered per host, so it appears once. It ships empty on purpose: turn it
+on only once `https://<newdomain>/health` answers with your Worker's version, because a
+banner pointing at a domain that does not resolve yet is worse than no banner — the
+people who follow it are the ones who trust you. Step-by-step in
+[DEPLOY.md](DEPLOY.md#putting-it-on-your-own-domain).
+
+### Nothing else needs changing
+
+`start_url` and `scope` are `.`, `id` is `/`, `CONFIG.proxyBase` is empty (same-origin),
+the service worker caches relative paths, and no link in the page names a host.
+`test/origin.mjs` asserts all of that, so a hardcoded URL cannot creep in and quietly tie
+the app to one domain.
 
 ### The icons
 

@@ -4,6 +4,7 @@
   "description": "Live OASA bus and trolley arrivals for stops near you.",
   "start_url": ".",
   "scope": ".",
+  "id": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#F7F7F5",

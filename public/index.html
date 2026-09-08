@@ -2,11 +2,19 @@
 <!-- OASAx · Copyright (C) 2026 OASAx contributors
      SPDX-License-Identifier: AGPL-3.0-or-later
      Complete source available on request: oasax@proton.me -->
-<html lang="el">
+<html lang="el" translate="no">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#F7F7F5" />
+<!-- The app has its own language switch (☰ → Settings), and it swaps real
+     translations rather than machine ones. Chrome's offer to translate the
+     page is therefore a worse version of a feature that already exists, and
+     it wrecks the typography on the way: a machine translation reflows a
+     board of tabular mono numbers and turns line names like "Α1" into
+     words. `notranslate` withdraws the offer; `translate="no"` also stops a
+     translation started from the right-click menu. -->
+<meta name="google" content="notranslate" />
 <title>OASAx · Live arrivals</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <!-- iOS reads these, not (only) the manifest -->
@@ -668,15 +676,39 @@
     letter-spacing:.06em;text-transform:uppercase;border-top:1px solid var(--rule);padding-top:14px}
   .ver{opacity:.6}
 
+  /* "We have moved" — the marker yellow, because it has to be read once
+     and then never again, not because it is an error. */
+  .moved{position:sticky;top:0;z-index:900;display:flex;align-items:center;gap:10px;
+    background:var(--marker);border-bottom:2px solid var(--toner);
+    padding:10px 14px;font-family:var(--mono);font-size:11px;line-height:1.5}
+  .moved[hidden]{display:none}
+  .moved-t{flex:1;color:var(--toner)}
+  .moved-go{color:var(--toner);font-weight:700;text-decoration:underline;white-space:nowrap}
+  .moved-x{background:none;border:none;color:var(--toner);font-family:var(--mono);
+    font-size:13px;cursor:pointer;padding:2px 4px;flex:none}
+
   /* ------------------------------- splash ------------------------------- */
   /* Two rules keep this from being an annoyance rather than a moment:
      it never outstays SPLASH.maxMs even if the network hangs, and it never
      flashes for less than SPLASH.minMs, which is what makes a fast load
      look deliberate instead of broken. */
+  /* Only one splash, ever. An installed app already gets one painted by the
+     launcher from the manifest icon, so ours would be a second in a row —
+     the app appearing to open twice. Suppressed in CSS rather than by
+     script so an installed launch never paints it even for a frame; in a
+     browser tab there is no native splash and ours is the only one. */
+  @media (display-mode:standalone),(display-mode:fullscreen),
+         (display-mode:minimal-ui),(display-mode:window-controls-overlay){
+    .splash{display:none}
+  }
   .splash{position:fixed;inset:0;z-index:5000;background:var(--paper);
     display:grid;place-items:center;
     transition:opacity .28s ease-out,visibility 0s linear .28s}
   .splash.gone{opacity:0;visibility:hidden;pointer-events:none}
+  /* Not "fade it away" but "it was never here" — for the installed case,
+     where fading out a splash the launcher already showed is still a
+     second splash, just a politer one. */
+  .splash.off{display:none}
   .splash .mark{font-size:34px;padding:14px 20px 28px;letter-spacing:.1em;
     animation:splashin .32s ease-out}
   .splash .mark::after{font-size:54px;-webkit-text-stroke-width:7px}
@@ -693,6 +725,12 @@
      look at yet. Painted from markup rather than added by script so it is
      up in the first frame, before any JavaScript has run. -->
 <div class="splash" id="splash"><div class="mark">OASA</div></div>
+<!-- Only ever shown on the origin the app has moved away from; see MOVED_TO. -->
+<div class="moved" id="moved" hidden>
+  <div class="moved-t" id="moved-t"></div>
+  <a class="moved-go" id="moved-go" href="#"></a>
+  <button class="moved-x" id="moved-x" aria-label="dismiss">✕</button>
+</div>
 <div class="wrap">
   <header>
     <div class="brand">
@@ -739,7 +777,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v47</span></div>
+  <div class="foot"><span class="ver">v48</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -998,6 +1036,11 @@ const T={
   whichLine:"Ποια γραμμή;", whichStop:"Ποια στάση;", whichStation:"Ποιος σταθμός;",
   issueType:"Τι συμβαίνει;", noteOpt:"Σχόλιο (προαιρετικό)", send:"Αποστολή",
   catWhat:"Τι συμβαίνει;",
+  /* Μόνο στην παλιά διεύθυνση. Λέει πού πήγε η εφαρμογή και ότι θέλει νέα
+     εγκατάσταση — τα αγαπημένα δεν μεταφέρονται, γιατί ο browser κρατά τα
+     δεδομένα ανά διεύθυνση. */
+  movedTxt:h=>`Η εφαρμογή μετακόμισε στο ${h}. Άνοιξέ την εκεί και πρόσθεσέ την ξανά στην αρχική οθόνη — τα αγαπημένα και οι ειδοποιήσεις δεν μεταφέρονται.`,
+  movedGo:"Άνοιγμα →",
   noReports:"Καμία ενεργή αναφορά.", agoShort:"πριν", mineOnly:"Μόνο εσύ μπορείς να τη σβήσεις",
   confirmBus:"Σε ποιο λεωφορείο είσαι;", scanBus:"Εντοπισμός λεωφορείων γύρω σου…",
   scanRefine:"Έλεγχος ποιο κινείται μαζί σου…", withYou:"κινείται μαζί σου",
@@ -1164,6 +1207,11 @@ const T={
   whichLine:"Which line?", whichStop:"Which stop?", whichStation:"Which station?",
   issueType:"What's happening?", noteOpt:"Note (optional)", send:"Send",
   catWhat:"What's happening?",
+  /* Shown on the old address only. Says where the app went and that it
+     needs installing again — favourites do not travel, because browsers
+     keep stored data per address. */
+  movedTxt:h=>`OASAx has moved to ${h}. Open it there and add it to your home screen again — favourites and alerts do not travel.`,
+  movedGo:"Open →",
   noReports:"No active reports.", agoShort:"ago", mineOnly:"Only you can clear it",
   confirmBus:"Which bus are you on?", scanBus:"Finding buses around you…",
   scanRefine:"Checking which one moves with you…", withYou:"moving with you",
@@ -1646,8 +1694,39 @@ function splashReady(){
   const waited=Date.now()-splashAt;
   setTimeout(hideSplash,Math.max(0,SPLASH.minMs-waited));
 }
+/* An installed launch already had a splash, painted by the launcher from
+   the manifest icon; ours would be a second one in a row and the app would
+   look like it opened twice. The CSS above keeps it from painting at all
+   wherever display-mode is reported — this covers iOS home-screen apps,
+   which signal the same thing only through navigator.standalone, and it
+   also releases the first-run carousel, which waits on splashDone. */
+if(isStandalone()){
+  splashDone=true;
+  const el0=$("#splash"); if(el0) el0.classList.add("off");
+}
 
 function renderView(){ state.view==="map"?renderMap():renderList(); splashReady(); }
+
+/* ---------------------- moving to a new address --------------------- */
+const MOVED_KEY="movedSeen";
+function movedHome(){
+  try{ return MOVED_TO ? new URL(MOVED_TO) : null; }catch(_){ return null; }
+}
+function showMovedNotice(){
+  const home=movedHome();
+  // nothing set, or this IS the new home: say nothing
+  if(!home || home.host===location.host) return;
+  try{ if(localStorage.getItem(MOVED_KEY)===home.host) return; }catch(_){}
+  const bar=$("#moved");
+  $("#moved-t").textContent=t("movedTxt")(home.host);
+  const go=$("#moved-go");
+  go.textContent=t("movedGo"); go.href=home.origin+location.pathname+location.search;
+  $("#moved-x").onclick=()=>{
+    bar.hidden=true;
+    try{ localStorage.setItem(MOVED_KEY,home.host); }catch(_){}
+  };
+  bar.hidden=false;
+}
 
 /* The list refreshes every 30 s, and it used to throw away every card and
    rebuild it — ~70 elements and as many event listeners, each time. That
@@ -1804,6 +1883,23 @@ function byCode(code){
  * CARTO are also retiring these raster PNG endpoints in favour of vector
  * tiles, so a key buys time rather than settling the question for good.
  */
+/* ---------------------- moving to a new address --------------------- *
+ * A PWA install, its service worker, its localStorage and its push
+ * subscription are all bound to the ORIGIN. Adding a custom domain to the
+ * Worker does not move anybody: whoever installed from the old URL keeps
+ * loading the old URL, forever, and will never find out there is a better
+ * one unless the old one tells them.
+ *
+ * So set this to the new home and the old origin — and only the old
+ * origin — grows a dismissible line saying where the app lives now.
+ * Leave it empty and nothing happens anywhere.
+ *
+ * ORDER MATTERS: set it only once the new domain actually serves the app.
+ * A banner pointing at a domain that does not answer yet is worse than no
+ * banner, because the people who follow it are the ones who trust you.
+ * ------------------------------------------------------------------- */
+const MOVED_TO="";              // e.g. "https://oasax.com"
+
 const TILE_KEY="cb1_2zw8_1_69e54b3a1b17086aafdedb75";
 const CARTO_LIGHT="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
 const CARTO_DARK="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
@@ -4338,7 +4434,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v47</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v48</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -4781,6 +4877,7 @@ $("#locwhere").textContent=here.label;
 updateRadiusLabel();
 startRefresh();
 dismissSplash();
+showMovedNotice();
 maybeTour();
 pulse();
 useGPS();
