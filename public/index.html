@@ -499,6 +499,24 @@
   .tourinstall:disabled{opacity:.5}
   .inst-other{margin-top:9px;color:var(--ink3);font-size:10.5px;line-height:1.5}
 
+  /* Location blocked. Amber rather than red: nothing has gone wrong, a
+     permission is simply switched off, and it is fixable in four taps. */
+  .geoblock{border:1px solid var(--toner);border-left:4px solid var(--marker2);
+    background:var(--card);border-radius:2px;padding:12px 13px;margin:10px 0 14px}
+  .geoblock[hidden]{display:none}
+  .geoblock.pulse{animation:gbpulse .5s ease-out}
+  @keyframes gbpulse{0%{background:var(--marker)}100%{background:var(--card)}}
+  @media (prefers-reduced-motion:reduce){.geoblock.pulse{animation:none}}
+  .gb-h{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase}
+  .gb-p{margin:6px 0 0;font-size:12px;line-height:1.5;color:var(--ink2)}
+  .gb-steps{margin:8px 0 0;padding-left:18px;font-size:12px;line-height:1.6;color:var(--ink2)}
+  .gb-steps b{color:var(--toner)}
+  .gb-retry{margin-top:11px;width:100%;background:var(--toner);color:var(--paper);border:none;
+    padding:10px;font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;
+    border-radius:2px;letter-spacing:.1em;text-transform:uppercase}
+  .gb-retry:active{opacity:.85}
+
   /* ------------------------------ settings ------------------------------ */
   .setrow{display:flex;align-items:center;gap:10px;width:100%;background:var(--card);
     border:1px solid var(--rule);color:var(--toner);font-family:var(--mono);font-size:12px;
@@ -777,11 +795,20 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v48</span></div>
+  <div class="foot"><span class="ver">v49</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
   <h3 id="s-h">Τοποθεσία</h3><p id="s-p">…</p>
+  <!-- Only shown once the browser has actually refused. Everything above
+       and below still works without location; this explains the one thing
+       that does not, and how to get it back. -->
+  <div class="geoblock" id="geoblock" hidden>
+    <div class="gb-h" id="gb-h"></div>
+    <p class="gb-p" id="gb-p"></p>
+    <ol class="gb-steps" id="gb-steps"></ol>
+    <button class="gb-retry" id="gb-retry"></button>
+  </div>
   <div class="search"><input id="addr" autocomplete="off" /><button id="addrgo">→</button></div>
   <div class="shint" id="s-hint"></div>
   <div class="results" id="results"></div>
@@ -993,7 +1020,15 @@ async function geocode(q,opts){
    so this reads both without knowing which answered. */
 function placeLabel(j){
   const a=(j&&j.address)||{};
-  const road=a.road||a.pedestrian||a.footway||a.path||a.square;
+  /* The house number is a FIELD OF ITS OWN in Nominatim's address, not part
+     of `road` — so building the label from `road` alone silently threw it
+     away and every numbered address came back as the bare street. That is
+     why "Φιλοτίμου 12" looked like it had not been understood: it had,
+     and then the label dropped the half that mattered. The autocomplete
+     geocoder folds the number into `road` itself, so this handles both. */
+  const num=a.house_number||a.housenumber||null;
+  const street=a.road||a.pedestrian||a.footway||a.path||a.square;
+  const road=street&&num&&!String(street).includes(num) ? `${street} ${num}` : street;
   const area=a.neighbourhood||a.suburb||a.quarter||a.city_district
            ||a.town||a.village||a.municipality||a.city;
   const poi=a.amenity||a.building||a.shop||a.tourism||a.station||a.public_transport;
@@ -1027,6 +1062,21 @@ const T={
  el:{change:"Αλλαγή",nobus:"Καμία άφιξη τα επόμενα λεπτά",
   now:"τώρα",min:"λεπτά",to:"προς",err:"Δεν φορτώθηκαν δεδομένα.",retry:"Δοκίμασε ξανά",
   locating:"Εντοπισμός τοποθεσίας…",denied:"Δεν δόθηκε πρόσβαση στην τοποθεσία.",sheetH:"Τοποθεσία",
+  /* Ο browser ρωτάει μία φορά. Μετά το «όχι», η εφαρμογή ΔΕΝ μπορεί να
+     ξαναρωτήσει — μόνο ο χρήστης, από τις ρυθμίσεις. Άρα το κείμενο εδώ
+     πρέπει να λέει ακριβώς πού να πατήσει. */
+  gbH:"Η τοποθεσία είναι φραγμένη",
+  gbP:"Ο browser σου έχει μπλοκάρει την τοποθεσία για αυτή τη σελίδα. Η εφαρμογή δεν "+
+    "μπορεί να ξαναζητήσει άδεια — πρέπει να την ξεμπλοκάρεις εσύ. Στο μεταξύ, διάλεξε "+
+    "σημείο από την αναζήτηση ή τον χάρτη παρακάτω.",
+  gbSteps:"<li>Πάτα το εικονίδιο <b>🔒</b> ή <b>ⓘ</b> δίπλα στη διεύθυνση, πάνω.</li>"+
+    "<li>Άνοιξε <b>Ρυθμίσεις ιστότοπου</b> ή <b>Άδειες</b>.</li>"+
+    "<li>Βάλε την <b>Τοποθεσία</b> σε <b>Ερώτηση</b> ή <b>Να επιτρέπεται</b>.</li>"+
+    "<li>Γύρνα εδώ και πάτα «Δοκίμασε ξανά».</li>",
+  gbRetry:"Δοκίμασε ξανά",
+  gbOk:"Η τοποθεσία ενεργοποιήθηκε ✓",
+  gbStill:"Ακόμη φραγμένη — άλλαξέ το πρώτα στις ρυθμίσεις του browser.",
+  gbNoFix:"Δεν βρέθηκε στίγμα. Δοκίμασε σε ανοιχτό χώρο ή διάλεξε σημείο.",
   sheetP:"Ψάξε διεύθυνση, διάλεξε στον χάρτη, ή χρησιμοποίησε το GPS σου.",gps:"Χρήση της τοποθεσίας μου",
   you:"Η τοποθεσία σου",vlist:"Λίστα",vmap:"Χάρτης",searchPh:"Διεύθυνση ή τοποθεσία…",
   pick:"Επιλογή στον χάρτη",quick:"Γρήγορη επιλογή",use:"Χρήση",searching:"Αναζήτηση…",
@@ -1198,6 +1248,21 @@ const T={
  en:{change:"Change",nobus:"No arrivals in the next few minutes",
   now:"now",min:"min",to:"to",err:"Couldn't load data.",retry:"Try again",
   locating:"Getting your location…",denied:"Location access was blocked.",sheetH:"Location",
+  /* The browser asks once. After a "no", the app CANNOT ask again — only
+     the person can, in site settings. So this text has to say exactly
+     where to tap. */
+  gbH:"Location is blocked",
+  gbP:"Your browser has blocked location for this page. The app can't ask for permission "+
+    "again — you have to unblock it. In the meantime, pick a place by search or on the "+
+    "map below.",
+  gbSteps:"<li>Tap the <b>🔒</b> or <b>ⓘ</b> icon next to the address, at the top.</li>"+
+    "<li>Open <b>Site settings</b> or <b>Permissions</b>.</li>"+
+    "<li>Set <b>Location</b> to <b>Ask</b> or <b>Allow</b>.</li>"+
+    "<li>Come back and tap Try again.</li>",
+  gbRetry:"Try again",
+  gbOk:"Location is on ✓",
+  gbStill:"Still blocked — change it in your browser's settings first.",
+  gbNoFix:"No fix yet. Try outdoors, or pick a place instead.",
   sheetP:"Search an address, pick on the map, or use your GPS.",gps:"Use my location",
   you:"Your location",vlist:"List",vmap:"Map",searchPh:"Address or place…",
   pick:"Pick on map",quick:"Quick pick",use:"Use",searching:"Searching…",
@@ -2626,21 +2691,61 @@ function rememberPos(p){
   try{ localStorage.setItem("lastPos",JSON.stringify({
     lat:p.coords.latitude,lng:p.coords.longitude,ts:Date.now()})); }catch(_){}
 }
+/* ---------------------- when location is blocked --------------------- *
+ * A browser asks for location permission once. Say no, and every later
+ * getCurrentPosition fails instantly and silently — which is what made
+ * this look broken: the sheet opened, "use my location" did nothing at
+ * all, and there was nothing on screen saying why or what to do.
+ *
+ * Nothing the page can call will re-prompt. Only the person can, in the
+ * browser's own site settings. So the app's job here is exactly three
+ * things: say plainly that it was blocked, say where to unblock it, and
+ * notice by itself the moment they have. */
+function geoBlocked(){
+  const box=$("#geoblock");
+  $("#s-p").textContent=t("denied");
+  $("#gb-h").textContent=t("gbH");
+  $("#gb-p").textContent=t("gbP");
+  $("#gb-steps").innerHTML=t("gbSteps");
+  $("#gb-retry").textContent=t("gbRetry");
+  box.hidden=false;
+  openSheet();
+  // the sheet may already be open, so give the eye something that moved
+  box.classList.remove("pulse"); void box.offsetWidth; box.classList.add("pulse");
+  $("#locwhere").textContent=here.label||PRESETS[0].el;
+}
+function geoUnblocked(){ const b=$("#geoblock"); if(b) b.hidden=true; }
+
+/* If they change the setting in another tab or in site settings, this
+   fires without a reload — so the app fixes itself rather than waiting to
+   be restarted, which nobody would think to do. */
+function watchGeoPermission(){
+  if(!(navigator.permissions&&navigator.permissions.query)) return;
+  navigator.permissions.query({name:"geolocation"}).then(st=>{
+    st.onchange=()=>{
+      if(st.state==="granted"){ geoUnblocked(); toast(t("gbOk")); useGPS(); }
+      else if(st.state==="denied") geoBlocked();
+    };
+  }).catch(()=>{});
+}
+
 function useGPS(){
   $("#locwhere").textContent=t("locating");
   if(!navigator.geolocation){ openSheet(); return; }
   const go=timeout=>navigator.geolocation.getCurrentPosition(
-    p=>{ rememberPos(p); setLocation(p.coords.latitude,p.coords.longitude,t("you"),true,true); },
+    p=>{ geoUnblocked(); rememberPos(p);
+      setLocation(p.coords.latitude,p.coords.longitude,t("you"),true,true); },
     err=>{
-      if(err&&err.code===1){ $("#s-p").textContent=t("denied"); openSheet(); }
-      else if(!here.gps) openSheet();          // no fix and no cached one — ask
+      if(err&&err.code===1){ geoBlocked(); return; }
+      // not blocked, just no fix: a timeout or the phone's radio being cold
+      if(!here.gps){ openSheet(); toast(t("gbNoFix")); }
       $("#locwhere").textContent=here.label||PRESETS[0].el;
     },
     {enableHighAccuracy:true,timeout,maximumAge:30000});
   if(navigator.permissions&&navigator.permissions.query){
     navigator.permissions.query({name:"geolocation"}).then(st=>{
-      if(st.state==="denied"){ $("#s-p").textContent=t("denied"); openSheet();
-        $("#locwhere").textContent=here.label||PRESETS[0].el; return; }
+      if(st.state==="denied"){ geoBlocked(); return; }
+      geoUnblocked();
       go(st.state==="granted"?12000:45000);
     }).catch(()=>go(25000));
   } else go(25000);
@@ -4128,6 +4233,10 @@ function closeJourney() { $("#jp").classList.remove("on"); }
    request against a daily quota, hence the debounce. Stops, favourites
    and metro stations are matched locally and appear with no delay at all,
    from the first character. Documented in PARAMETERS.md. */
+/* Walking legs routed when an itinerary is opened. Matches the server's
+   own per-plan ceiling, so looking at every option costs no more than
+   planning would have. */
+const JP_WALK_MAX = 4;
 const JPQ = { minChars: 3, debounceMs: 260, minGapMs: 700, memo: 40 };
 const jpq = { seq: 0, ctrl: null, last: 0, seen: new Map() };
 
@@ -4374,6 +4483,38 @@ function openItinerary(it) {
   }).join("");
   $("#jpr-strip").innerHTML = notes.map(n => `<div class="jp-note">${esc(n)}</div>`).join("") + rows;
   drawItinerary(it);
+  fillWalkPaths(it);
+}
+
+/* The planner routes the walking legs of the itinerary it ranks first,
+   because before anyone has chosen that is the only one worth spending
+   requests on. Open the second option, though, and its walking legs were
+   still the straight line the search used for ranking — a line drawn
+   across the blocks, which reads as a route and is not one.
+
+   So: when a rider actually opens an itinerary, ask for the real shape of
+   whatever it is still guessing at. Idempotent by construction — the legs
+   come back `routed`, so the repaint below finds nothing left to do. */
+async function fillWalkPaths(it) {
+  if (!(jp.res && jp.res.walkRouting)) return;      // no router configured
+  const todo = it.legs.filter(l => l.mode === "walk" && l.basis !== "routed"
+    && Array.isArray(l.path) && l.path.length >= 2);
+  if (!todo.length) return;
+  let changed = false;
+  for (const l of todo.slice(0, JP_WALK_MAX)) {
+    const a = l.path[0], b = l.path[l.path.length - 1];
+    try {
+      const r = await fetch(`${base()}/walk?from=${a[0]},${a[1]}&to=${b[0]},${b[1]}`,
+        { cache: "no-store" });
+      if (!r.ok) return;                            // 501/502: stop asking
+      const j = await r.json();
+      if (!Array.isArray(j.path) || j.path.length < 2) continue;
+      l.path = j.path; l.metres = j.metres; l.min = j.min; l.basis = "routed";
+      changed = true;
+    } catch (_) { return; }
+  }
+  // still the itinerary on screen? then show what we learned
+  if (changed && jp.current === it && $("#jpr").classList.contains("on")) openItinerary(it);
 }
 function closeItinerary() { $("#jpr").classList.remove("on"); }
 
@@ -4434,7 +4575,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v48</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v49</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -4815,6 +4956,20 @@ onDoubleTap($("#sc-hd"),()=>{ if(cardStop) toggleFav(cardStop); });
 $("#live-r").onclick=loadLive;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;
+/* Retry re-checks the permission rather than calling getCurrentPosition
+   blind: a still-denied call fails so fast that the button looks dead,
+   which is the bug this whole panel exists to fix. */
+$("#gb-retry").onclick=async()=>{
+  const btn=$("#gb-retry"); btn.disabled=true;
+  try{
+    let st=null;
+    if(navigator.permissions&&navigator.permissions.query){
+      try{ st=await navigator.permissions.query({name:"geolocation"}); }catch(_){}
+    }
+    if(st&&st.state==="denied") toast(t("gbStill"));
+    else { geoUnblocked(); useGPS(); }
+  } finally { btn.disabled=false; }
+};
 $("#addrgo").onclick=doSearch;
 $("#addr").addEventListener("keydown",e=>{ if(e.key==="Enter") doSearch(); });
 $("#pickmap").onclick=()=>{ closeSheet(); openPicker(); };
@@ -4879,6 +5034,7 @@ startRefresh();
 dismissSplash();
 showMovedNotice();
 maybeTour();
+watchGeoPermission();
 pulse();
 useGPS();
 initSwipes();

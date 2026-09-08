@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v48";
+const APP_VERSION = "v49";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1755,6 +1755,7 @@ function vehicleMode(info) {
 }
 
 const WALK_ROUTER = "https://api.openrouteservice.org/v2/directions/foot-walking/geojson";
+const WALK_CACHE = 7 * 86400;   // a pavement is not news
 function detourFor(metres) {
   const m = Math.max(0, Number(metres) || 0);
   if (m <= 150) return 1.65;
@@ -3098,6 +3099,41 @@ export default {
       return json(u || { error: "no database configured" }, u ? 200 : 501);
     }
 
+    /* GET /walk?from=lat,lng&to=lat,lng — one pedestrian route, on demand.
+     *
+     * planJourney routes only the itinerary it ranks first, because before
+     * anyone has chosen, that is the only one worth spending requests on.
+     * The cost of that is that opening the second or third option drew a
+     * straight line across the blocks — an answer that looks like a route
+     * and is not one. This fills the geometry in at the moment a rider
+     * actually looks at a leg, which is both cheaper and better timed.
+     *
+     * Cached hard: the pavement between two fixed points does not change,
+     * so the second person to open the same leg costs nothing. */
+    if (p.endsWith("/walk")) {
+      if (!rateLimit(ip, "walk", 30, 60)) return tooMany();
+      const pt = v => {
+        const m = String(v || "").split(",").map(Number);
+        return (m.length === 2 && isFinite(m[0]) && isFinite(m[1])) ? { lat: m[0], lng: m[1] } : null;
+      };
+      const a = pt(url.searchParams.get("from")), b = pt(url.searchParams.get("to"));
+      if (!a || !b) return json({ error: "from/to required" }, 400);
+      if (!(env && env.ORS_KEY)) return json({ error: "no walking router configured" }, 501);
+      // five decimals ≈ 1 m: enough to be the same doorway, coarse enough to share
+      const ck = new Request(`https://walk/?a=${a.lat.toFixed(5)},${a.lng.toFixed(5)}` +
+        `&b=${b.lat.toFixed(5)},${b.lng.toFixed(5)}`);
+      const cache = caches.default;
+      const hit = await cache.match(ck);
+      if (hit) return withCors(hit);
+      const r = await routeWalk(a, b, env);
+      if (!r) return json({ error: "router unavailable" }, 502);
+      const out = json({ min: Math.round(r.min * 10) / 10,
+        metres: Math.round(r.metres), path: r.path, basis: "routed" });
+      out.headers.set("Cache-Control", `public, max-age=${WALK_CACHE}`);
+      ctx.waitUntil(cache.put(ck, out.clone()));
+      return out;
+    }
+
     if (p.endsWith("/health")) {
       const full = adminOK(req, env);
       const nowS = Math.floor(Date.now() / 1000);
@@ -3105,6 +3141,10 @@ export default {
       if (!full) return json(out);
 
       out.bindings = { kv: !!env.ALERTS, d1: !!env.DB,
+        // ORS drives BOTH the walking geometry and the address autocomplete,
+        // so "why is the walk a straight line" and "why are house numbers
+        // missing" are usually the same question, answered here.
+        ors: !!env.ORS_KEY,
         push: pushReady(env), admin: true, selfTuneCron: !!(env.CF_API_TOKEN && env.CF_ACCOUNT_ID) };
 
       if (env.ALERTS) {

@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v48.**
+version: v49.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
@@ -34,7 +34,8 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 482 assertions across ten suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage and origin suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 523 assertions across eleven suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin and fixes suites drive a real browser via Playwright. |
+| `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The one thing you must understand
@@ -453,6 +454,24 @@ Typing fast used to be able to show you the wrong answer: a slow request for "sy
 landing after a fast one for "syntagma" overwrote the better list. Each keystroke now
 aborts the request before it, and anything that still lands late is discarded rather
 than rendered.
+
+### Walking legs are routed when you look at them
+
+The planner routes the walking legs of the itinerary it ranks first, because before
+anyone has chosen, that is the only one worth spending requests on. The cost of that used
+to be paid by anyone who opened the *second* option: its walking legs were still the
+straight line the search had used for ranking — a line drawn across the blocks, which
+reads as a route and is not one.
+
+Opening an itinerary now fills in whatever it is still guessing at, through
+`GET /walk?from=&to=`. That is better timed as well as cheaper: the request happens when
+a rider actually looks at a leg. The endpoint caches for a week — the pavement between
+two fixed points does not change — so the second person to open the same leg costs
+nothing, and a router that is not configured answers 501 once and is then left alone.
+
+**No key, no real routes.** `ORS_KEY` drives both this and the house numbers in address
+search, so "why is my walk a straight line" and "why can't I type a house number" are
+usually the same question. `GET /health?token=…` answers it: `bindings.ors`.
 
 ### Why it offered you a walk
 

@@ -1,0 +1,22 @@
+# Response headers for the static files, applied by Cloudflare's asset
+# server. This file is configuration, not content — it is not served.
+#
+# NOTE: this is the belt, not the braces. What actually stops a phone
+# showing "not secure" is the edge redirecting http:// to https://, which
+# is a dashboard setting (SSL/TLS → Edge Certificates → Always Use HTTPS).
+# HSTS below only helps on the SECOND and later visits, because the first
+# one is what teaches the browser the rule.
+
+/*
+  # One year. No includeSubDomains and no preload on purpose: both are
+  # very hard to undo, and a subdomain added later without TLS would
+  # simply stop working with no obvious cause.
+  Strict-Transport-Security: max-age=31536000
+  # Don't let a browser guess a type we didn't send.
+  X-Content-Type-Options: nosniff
+  # Nothing here should ever be framed by another site.
+  X-Frame-Options: DENY
+  # Send the origin to third parties (tiles, geocoders), never the path.
+  Referrer-Policy: strict-origin-when-cross-origin
+  # The app asks for location itself; nothing embedded in it should.
+  Permissions-Policy: geolocation=(self), camera=(), microphone=(), payment=()

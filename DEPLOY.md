@@ -113,6 +113,30 @@ https://oasa-stop.<your-subdomain>.workers.dev
   *unconfirmed* flag that shows hollow for 5 minutes until someone agrees. Withdraw your
   own from the list under the map. A station must be within 600 m.
 
+### The padlock says the site is insecure
+
+Almost always this is not the app — it is the edge serving plain HTTP. Typing a bare
+`oasax.com` on a phone goes to `http://` first, and Cloudflare does **not** redirect to
+HTTPS by default.
+
+**Fix:** Cloudflare dashboard → your domain → **SSL/TLS → Edge Certificates** →
+turn on **Always Use HTTPS**. While you are there, set **SSL/TLS encryption mode** to
+**Full (strict)**.
+
+If it persists, check in this order:
+
+1. **Certificate still issuing.** Under Edge Certificates, the Universal certificate
+   should say *Active*. It usually takes minutes; allow up to 24 hours.
+2. **Mixed content.** Open the page on a desktop, F12 → Console, and look for "blocked
+   mixed content". `npm test` fails if anything in the app fetches over `http://`, so
+   this should never be the cause — but a stale cached page can be.
+3. **A stale service worker** serving an old shell. Hard-refresh, or bump `SHELL` in
+   `public/sw.js`.
+
+`public/_headers` adds HSTS on top, so a browser that has been to the site once will
+refuse plain HTTP by itself. That does nothing for a *first* visit, which is why the
+redirect above is the actual fix and HSTS is only the reinforcement.
+
 ### Walking times say "estimated"
 
 The planner routes walking legs for real when a key is configured, and falls back to a
@@ -124,6 +148,18 @@ npx wrangler secret put ORS_KEY     # free key from openrouteservice.org
 
 Unlike the tile key this one is a **secret**: it stays in the Worker and never reaches a
 browser. Without it nothing breaks, the app just says walking times are estimated.
+
+**Check whether it is actually set:**
+```powershell
+curl.exe "https://oasax.com/health?token=$env:ADMIN_TOKEN"
+```
+Look for `"ors": true` under `bindings`. If it is `false`, walking legs will be drawn as
+straight lines and house numbers will not resolve — the two symptoms have one cause.
+
+> **PowerShell note.** `curl` there is an alias for `Invoke-WebRequest`, which parses the
+> response and warns about script execution. Use **`curl.exe`** (the real one, shipped
+> with Windows 10+) for anything that should just print the body, or
+> `Invoke-RestMethod` if you want PowerShell to parse the JSON for you.
 
 The same key also powers **address search**. With it, typing a destination into the
 journey planner matches partial words, ranks what is near you first, and finds street
@@ -169,7 +205,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v48",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v49",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -243,7 +279,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v38"` to `v39` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v39"` to `v40` in `public/sw.js` and redeploy to force an update.
 
 ---
 
