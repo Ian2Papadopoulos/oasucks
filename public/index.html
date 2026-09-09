@@ -825,8 +825,6 @@
         <span class="bars"><i></i><i></i><i></i></span></button>
     </div>
     <nav class="menu" id="menu" hidden>
-      <button class="menu-item" id="m-plan"><span class="mi">⇢</span>
-        <span class="mtxt"><b id="m-plan-t"></b><i id="m-plan-s"></i></span></button>
       <button class="menu-item" id="m-line"><span class="mi">⌕</span>
         <span class="mtxt"><b id="m-line-t"></b><i id="m-line-s"></i></span></button>
       <!-- Live buses: retired from the menu, code kept intact (openLiveMap,
@@ -840,9 +838,15 @@
       <span class="fresh" id="fresh"></span>
       <button id="change">Αλλαγή</button>
     </div>
+    <!-- Journey sits with List and Map because it is a third thing the app
+         does, not a preference. Two taps behind a hamburger is where a
+         feature goes to be undiscovered. It does not stay selected: the
+         board underneath is still list or map, and the segment returns to
+         whichever it was when the journey panel closes. -->
     <div class="seg" id="seg">
       <button data-v="list" class="on" id="t-vlist">Λίστα</button>
       <button data-v="map" id="t-vmap">Χάρτης</button>
+      <button data-v="journey" id="t-vplan">Διαδρομή</button>
     </div>
   </header>
 
@@ -858,7 +862,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v50</span></div>
+  <div class="foot"><span class="ver">v51</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1081,6 +1085,16 @@ async function geocode(q,opts){
    from the address parts instead, with sensible fallbacks. The
    autocomplete geocoder is mapped onto the same field names server-side,
    so this reads both without knowing which answered. */
+/* Fold a name down to what it IS, past how it was typed: case, accents,
+   and Greek's two sigmas. "ΦΙΛΟΤΙΜΟΥ" and "Φιλοτίμου" are one street that
+   two different OpenStreetMap editors capitalised differently, and a
+   comparison that cannot see that shows the road twice. */
+function fold(s){
+  return String(s||"").toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g,"")   // ί → ι
+    .replace(/ς/g,"σ")                                  // final sigma
+    .replace(/[^\p{L}\p{N}]+/gu,"");
+}
 function placeLabel(j){
   const a=(j&&j.address)||{};
   /* The house number is a FIELD OF ITS OWN in Nominatim's address, not part
@@ -1196,6 +1210,7 @@ const T={
   jpWhyBeats:v=>`Πιο γρήγορο από κάθε διαδρομή που βρέθηκε (${v}′).`,
   jpWhyAlso:v=>`Πιο αργό από το να πάρεις όχημα (${v}′), αλλά γίνεται με τα πόδια.`,
   jpPickH:"Επίλεξε σημείο", jpPickPh:"Διεύθυνση, στάση ή σταθμός…",
+  addrStreetOnly:"όλος ο δρόμος — δεν βρέθηκε ο αριθμός",
   slotHome:"Σπίτι", slotWork:"Δουλειά",
   slotSetHome:"Όρισε το σπίτι", slotSetWork:"Όρισε τη δουλειά",
   slotPick:n=>`Διάλεξε: ${n}`,
@@ -1450,6 +1465,7 @@ const T={
   jpWhyBeats:v=>`Quicker than any route we found (${v}′).`,
   jpWhyAlso:v=>`Slower than riding (${v}′), but you can walk it.`,
   jpPickH:"Pick a place", jpPickPh:"Address, stop or station…",
+  addrStreetOnly:"whole street — that number isn't mapped",
   slotHome:"Home", slotWork:"Work",
   slotSetHome:"Set home", slotSetWork:"Set work",
   slotPick:n=>`Choose your ${n.toLowerCase()}`,
@@ -1753,10 +1769,8 @@ function onDoubleTap(el,fn){
 function applyStatics(){
   document.documentElement.lang=LANG;
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
-  $("#m-plan-t").textContent=t("mPlan");
   $("#m-line-t").textContent=t("mLine"); $("#m-live-t").textContent=t("mLive");
   $("#m-settings-t").textContent=t("mSettings");
-  $("#m-plan-s").textContent=t("mPlanS");
   $("#m-line-s").textContent=t("mLineS");
   $("#m-settings-s").textContent=t("mSettingsS");
   renderSettings();
@@ -1766,6 +1780,7 @@ function applyStatics(){
   $("#s-quick").textContent=t("quick");
   $("#addr").placeholder=t("searchPh"); $("#pickok").textContent=t("use");
   $("#t-vlist").textContent=t("vlist"); $("#t-vmap").textContent=t("vmap");
+  $("#t-vplan").textContent=t("mPlan");
   $("#a-h").textContent=t("alertsH"); $("#a-p").textContent=t("alertsP");
   $("#t-rad").textContent=t("radius");
   $("#locwhere").textContent=here.label||(here.gps?t("you"):"…");
@@ -1826,7 +1841,7 @@ function setView(v,dir){
   $("#mapwrap").style.display=v==="map"?"":"none";
   $("#radwrap").style.display=v==="map"?"":"none";
   $("#list").style.display=v==="list"?"":"none";
-  $$("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+  paintSeg();
   // The two tabs are different heights, so a leftover scroll offset from
   // one makes the other land mid-page with the scrollbar flashing. Pin to
   // the top on every switch — the map has nothing to scroll anyway, and a
@@ -4451,9 +4466,18 @@ function openJourney() {
   if (!jp.from && here && isFinite(here.lat)) jp.from = { kind: "me", lat: here.lat, lng: here.lng };
   paintJourneyForm();
   $("#jp").classList.add("on");
+  paintSeg();                       // after the class, or it paints the old state
   loadMetro().catch(() => {});      // so stations are searchable in the picker
 }
-function closeJourney() { $("#jp").classList.remove("on"); }
+function closeJourney() { $("#jp").classList.remove("on"); paintSeg(); }
+/* The segment reflects what is actually in front of you: the journey
+   panel while it is open, otherwise the board's own view. */
+function paintSeg() {
+  const onPlan = $("#jp") && $("#jp").classList.contains("on");
+  $("#t-vplan").classList.toggle("on", onPlan);
+  $("#t-vlist").classList.toggle("on", !onPlan && state.view === "list");
+  $("#t-vmap").classList.toggle("on", !onPlan && state.view === "map");
+}
 
 /* ------------------------- home and work ---------------------------- *
  * Two slots, because two of them cover almost every journey anyone plans
@@ -4561,19 +4585,27 @@ async function jpPickResults(q) {
      share a name on opposite sides of a road, and those are not the same
      place to walk to. */
   const seen = new Set();
-  /* Keyed on WHERE, not on what it is called. The three sources name one
-     corner three ways — the stop list has "ΣΥΝΤΑΓΜΑ", the metro list has
-     "SYNTAGMA", the geocoder has "Σύνταγμα, Αθήνα" — so a name-based key
-     misses exactly the duplicates a rider would notice. Four decimals is
-     about eleven metres: enough to fuse a station with the geocoded point
-     on top of it, fine enough to keep number 12 and number 14 apart.
-     `place` is null on the rows that set something rather than go
-     somewhere, and those fall back to their label. */
-  const key = (label, place) =>
-    place && isFinite(place.lat)
+  /* Two kinds of duplicate, needing two different keys.
+     A POINT reached from several sources — the stop list has "ΣΥΝΤΑΓΜΑ",
+     the metro list has "SYNTAGMA", the geocoder has "Σύνταγμα, Αθήνα" —
+     is one place at one position, so points are keyed on WHERE. Four
+     decimals is about eleven metres: enough to fuse a station with the
+     geocoded point on top of it, fine enough to keep number 12 and number
+     14 apart.
+     A STREET is not a point. OpenStreetMap holds a long road as several
+     ways, each with its own midpoint and — because different people typed
+     them — sometimes its own capitalisation, which is how one road came
+     back as "φιλοτιμου, Πολύγωνο" and "ΦΙΛΟΤΙΜΟΥ, Πολύγωνο". Those are
+     keyed on the NAME instead, folded past case and accents, so the
+     segments merge while Φιλοτίμου in another neighbourhood stays its own
+     row — which is the thing you actually need to choose between. */
+  const key = (label, place, byName) => {
+    if (byName) return "name:" + fold(label);
+    return place && isFinite(place.lat)
       ? place.lat.toFixed(4) + "," + place.lng.toFixed(4)
-      : "label:" + String(label).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-  const add = (label, place, note) => {
+      : "label:" + fold(label);
+  };
+  const add = (label, place, note, byName) => {
     /* Anchors are exempt. "My location", Home and Work are not places the
        search found, they are places you named, and they keep their row
        even when something else sits on the same spot — standing at a stop
@@ -4581,7 +4613,7 @@ async function jpPickResults(q) {
        to. Only discovered rows — stops, stations, geocoder hits — are
        candidates for being the same place twice. */
     const anchor = place && (place.kind === "me" || place.kind === "slot");
-    const k = key(label.replace(/^\S+\s/, ""), place);   // glyph is not part of the name
+    const k = key(label.replace(/^\S+\s/, ""), place, byName);  // glyph is not the name
     if (!anchor) {
       if (seen.has(k)) return;
       seen.add(k);
@@ -4627,11 +4659,21 @@ async function jpPickResults(q) {
     box.appendChild(m);
   };
   // geocoder rows, under whatever the local matches already put up
-  const addAddrs = rows => (rows || []).slice(0, 6).forEach(it => {
+  const addAddrs = rows => (rows || []).slice(0, 8).forEach(it => {
     const lab = placeLabel(it);
     const la = Number(it.lat), ln = Number(it.lon != null ? it.lon : it.lng);
     if (!lab || !isFinite(la) || !isFinite(ln)) return;
-    add("📍 " + lab, { kind: "addr", lat: la, lng: ln, label: lab });
+    /* `precision` comes from the geocoder, not from guessing at fields.
+       A STREET is a whole road — many ways, many midpoints — so its
+       duplicates are found by name; a building or a square is one place
+       at one position. The note fires only when a number was asked for
+       and only the road came back, because "the street, not the number
+       you wanted" is the difference between an answer and a near miss —
+       and OpenStreetMap has no number on a great many Athens roads, so
+       that near miss is common and worth naming rather than hiding. */
+    const isStreet = it.precision === "street";
+    const note = isStreet && it.wantedNumber ? t("addrStreetOnly") : "";
+    add("📍 " + lab, { kind: "addr", lat: la, lng: ln, label: lab }, note, isStreet);
   });
 
   if (query.length < JPQ.minChars) return;
@@ -4922,7 +4964,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v50</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v51</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   const tourBtn=$("#faq-tour");
   if(tourBtn) tourBtn.onclick=()=>{ closeAbout(); openTour("settings"); };
@@ -5335,7 +5377,6 @@ $("#wake").onclick=wake;
 $("#statbg").onclick=e=>{ if(e.target.id==="statbg") closeStats(); };
 $("#rp-x").onclick=closeRP;
 $("#rl-x").onclick=()=>clearRoute(true);
-$("#m-plan").onclick=openJourney;
 $("#jp-x").onclick=closeJourney;
 $("#jp-from").onclick=()=>openJourneyPick("from");
 $("#jp-to").onclick=()=>openJourneyPick("to");
@@ -5350,7 +5391,10 @@ $("#jpp-q").addEventListener("keydown",e=>{ if(e.key==="Enter") jpPickResults($(
   $("#jpp-q").addEventListener("input",()=>{ clearTimeout(qt);
     qt=setTimeout(()=>jpPickResults($("#jpp-q").value),JPQ.debounceMs); });
 }
-$$("#seg button").forEach(b=>b.onclick=()=>setView(b.dataset.v));
+/* Journey is a destination, not a view of the board — it opens the panel
+   and leaves list/map as it was underneath. */
+$$("#seg button").forEach(b=>b.onclick=()=>
+  b.dataset.v==="journey" ? openJourney() : setView(b.dataset.v));
 
 $("#basemap").onclick=()=>{
   state.dark=!state.dark;

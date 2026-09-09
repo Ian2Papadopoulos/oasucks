@@ -33,11 +33,12 @@ const stops = [
    whole point of the dedupe test: three sources, one corner. */
 const GEO = [
   { lat: String(LAT), lon: String(LNG), display_name: "Σύνταγμα, Αθήνα",
-    address: { road: "ΣΥΝΤΑΓΜΑ", city: "Αθήνα" }, source: "ors" },
+    address: { road: "ΣΥΝΤΑΓΜΑ", city: "Αθήνα" }, source: "ors", precision: "point" },
   { lat: String(LAT), lon: String(LNG), display_name: "Σύνταγμα, Αθήνα",
-    address: { road: "ΣΥΝΤΑΓΜΑ", city: "Αθήνα" }, source: "ors" },
+    address: { road: "ΣΥΝΤΑΓΜΑ", city: "Αθήνα" }, source: "ors", precision: "point" },
   { lat: "37.99", lon: "23.74", display_name: "Φιλοτίμου 12",
-    address: { house_number: "12", road: "Φιλοτίμου", suburb: "Αμπελόκηποι" }, source: "ors" },
+    address: { house_number: "12", road: "Φιλοτίμου", suburb: "Αμπελόκηποι" },
+    source: "ors", precision: "address" },
 ];
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
@@ -293,11 +294,31 @@ console.log("\n— the menu says what each entry does —");
   const items = await v.page.evaluate(() =>
     [...document.querySelectorAll("#menu .menu-item")].filter(b => !b.hidden)
       .map(b => b.innerText.replace(/\s+/g, " ").trim()));
-  ok("three entries, not six", items.length === 3, items.join(" | "));
+  /* Journey left the menu in v51 for the segmented control, so what is
+     left is the two things that are genuinely menu-shaped. */
+  ok("two entries, not six", items.length === 2, items.join(" | "));
   ok("each carries a line saying what it is for",
     items.every(x => x.split(" ").length > 2), items.join(" | "));
-  ok("...and the journey one explains itself to a first-timer",
-    /plan a trip/i.test(items.join(" ")), items.join(" | "));
+  ok("the journey is not among them any more",
+    !/journey/i.test(items.join(" ")), items.join(" | "));
+  ok("...it is a top-level control instead",
+    await v.page.evaluate(() => !!document.getElementById("t-vplan")));
+  ok("...which opens the panel without changing the board underneath",
+    await v.page.evaluate(async () => {
+      const before = state.view;
+      document.getElementById("t-vplan").click();
+      await new Promise(r => setTimeout(r, 200));
+      return state.view === before && document.getElementById("jp").classList.contains("on");
+    }));
+  ok("...and shows as selected while it is open",
+    await v.page.evaluate(() => document.getElementById("t-vplan").classList.contains("on")));
+  ok("...handing the highlight back on close",
+    await v.page.evaluate(async () => {
+      closeJourney();
+      await new Promise(r => setTimeout(r, 150));
+      return !document.getElementById("t-vplan").classList.contains("on")
+        && document.getElementById("t-vlist").classList.contains("on");
+    }));
   ok("Settings is set apart from the two that use the app",
     await v.page.evaluate(() => document.getElementById("m-settings").classList.contains("apart")));
   await v.ctx.close();

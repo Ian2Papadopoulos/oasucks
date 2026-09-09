@@ -3,11 +3,12 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v50.**
+version: v51.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
-holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
-to hide stops with nothing coming, and the FAQ).
+holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
+hide stops with nothing coming, and the FAQ). Under it, a three-way control: **List ·
+Map · Journey**.
 
 **Live reports.** The old line-stats button is now the orange live dot. Tap it and a live map of
 Athens opens — only the buses and metro stations that currently carry a flag, each
@@ -34,16 +35,20 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 582 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 586 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The menu, and the FAQ
 
-The ☰ menu is three entries: **Journey**, **Find a line**, **Settings** — each with a
-line under it saying what it does, because "Journey" alone does not tell a first-time
-user whether it plans a trip or shows one route. Settings sits below a rule, since it
-changes the app rather than uses it.
+**Journey sits with List and Map**, in the segmented control under the location bar. It
+is a third thing the app does, not a preference, and two taps behind a hamburger is where
+a feature goes to be undiscovered. It does not stay selected — the board underneath is
+still list or map, and the highlight goes back to whichever it was when the panel closes.
+
+That leaves the ☰ menu as two entries — **Find a line** and **Settings** — each with a
+line under it saying what it does. Settings sits below a rule, since it changes the app
+rather than uses it.
 
 About and Terms & privacy used to be two more entries leading to two long scrolls, and
 almost nobody read either: a wall of prose answers no question in particular, so it
@@ -472,6 +477,12 @@ Either way the answers are flattened to the same rows server-side, so the app ne
 learns which one replied. ORS misses, errors and a rejected key all fall through to
 Nominatim rather than surfacing an error.
 
+**A street beats nothing.** v50 rejected any addressed result that had not resolved to a
+building, which turned "OSM has no number 12 on this road" into an empty list. That was a
+regression: the honest answer is the street, *labelled as the street* — the app now says
+"whole street — that number isn't mapped" on such a row rather than passing it off as the
+address or hiding it.
+
 **Some streets resolved and some didn't**, with nothing obviously different about them.
 The cause was never the street: free-form search treats "Φιλοτίμου 12" as a bag of words
 and will happily rank the street itself, or a café on it, above the address. An addressed
@@ -527,10 +538,21 @@ has "ΣΥΝΤΑΓΜΑ", the metro list has "SYNTAGMA", the geocoder has "Σύν�
 used to be listed three times, which made the list look broken and buried the rows that
 were actually different.
 
-Rows are deduped **by position rather than by name**, since a name-based key misses
-exactly the duplicates a rider notices. Four decimals is about eleven metres: enough to
-fuse a station with the geocoded point on top of it, fine enough to keep number 12 and
-number 14 apart.
+There are **two kinds of duplicate**, and one key cannot catch both.
+
+A **point** reached from several sources is one place at one position, so points are
+deduped by position at four decimals — about eleven metres, enough to fuse a station with
+the geocoded point on top of it, fine enough to keep number 12 and number 14 apart.
+
+A **street is not a point.** OpenStreetMap holds a long road as several ways, each with
+its own midpoint and — because different people typed them — sometimes its own
+capitalisation, which is how one road came back as both "φιλοτιμου, Πολύγωνο" and
+"ΦΙΛΟΤΙΜΟΥ, Πολύγωνο". Streets are deduped by **name**, folded past case, accents and
+Greek's two sigmas, so the segments merge while a same-named road in another
+neighbourhood keeps its own row — which is the thing you actually need to choose between.
+
+Which of the two a row is comes from the geocoder as `precision`, not from guessing at
+the fields: `address`, `street` or `point`.
 
 Anchors are exempt. "My location", Home and Work are places *you* named rather than places
 the search found, so they keep their row even when something else sits on the same spot —

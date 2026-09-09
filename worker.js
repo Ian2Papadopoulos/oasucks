@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v50";
+const APP_VERSION = "v51";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -350,6 +350,12 @@ function orsRow(f) {
   return {
     lat: String(lat), lon: String(lon),
     display_name: p.label || p.name || "",
+    /* What KIND of thing this is, said by the geocoder rather than
+     * guessed from the fields. The app needs it to know whether a row is
+     * a point or a whole road: a road is held in OpenStreetMap as several
+     * ways with several midpoints, so its duplicates have to be found by
+     * name, while everything else is one place at one position. */
+    precision: p.layer === "address" ? "address" : p.layer === "street" ? "street" : "point",
     address: {
       road,
       neighbourhood: p.neighbourhood || null,
@@ -414,49 +420,65 @@ async function handleGeocode(url, env) {
    * query as typed first — Pelias does index the English names — and
    * only then the transliteration. Two shots, not four: every miss is
    * a request off the daily quota. */
-  /* When a house number was asked for, a street is not an answer — it is
-   * the same wrong result the free-form path used to give. So an addressed
-   * query only accepts rows that resolved to a building, and otherwise
-   * falls through to the structured Nominatim lookup below. */
+  /* When a house number was asked for, a building beats a street — but a
+   * street still beats NOTHING, which is what rejecting it outright gave
+   * (v50's regression). OpenStreetMap simply has no `addr:housenumber` on
+   * a great many Athens roads: that is a gap in the map, not a bug to
+   * code around, and the honest handling is to answer with the street and
+   * say that is what it is. `wantedNumber` rides along so the app can
+   * label those rows rather than passing them off as the address. */
   const wantsNumber = looksAddressed(q);
-  const hasNumber = r => /\d/.test((r.address && r.address.road) || "");
+  const hasNumber = r => /\d/.test((r.address && r.address.road) || "")
+    || !!(r.address && r.address.house_number);
+  const tag = rows => rows.map(r => ({ ...r, wantedNumber: wantsNumber }));
+  let street = null;                       // best street-level answer, if any
 
   if (env && env.ORS_KEY) {
     const tries = isLatin(q) ? [q, toGreek(q)] : [q];
     for (const cand of tries) {
       const rows = await orsGeocode(cand, lang, focus, env);
       if (!rows || !rows.length) continue;
-      const keep = wantsNumber ? rows.filter(hasNumber) : rows;
-      if (keep.length) return json(keep.map(r => ({ ...r, matched: cand })));
+      const exact = wantsNumber ? rows.filter(hasNumber) : rows;
+      if (exact.length) return json(tag(exact.map(r => ({ ...r, matched: cand }))));
+      if (!street) street = rows.map(r => ({ ...r, matched: cand }));
     }
   }
 
   const osmRows = (data, cand) => data.map(d => ({
     lat: d.lat, lon: d.lon, display_name: d.display_name,
     address: d.address || null, matched: cand, source: "osm",
+    // Nominatim says so in class/category: highway = a road, not a point
+    precision: (d.address && d.address.house_number) ? "address"
+      : /highway/.test(String(d.class || d.category || "")) ? "street" : "point",
   }));
 
   /* A query naming a building gets the structured form first, in every
    * spelling. Free-form search ranks the street, or a shop on it, above
    * the address often enough that "some streets work and some don't" was
    * the reported symptom — the difference was never the street. */
-  const addr = looksAddressed(q) ? splitAddress(q) : null;
+  const addr = wantsNumber ? splitAddress(q) : null;
   if (addr) {
     for (const cand of geocodeCandidates(q)) {
       const c = splitAddress(cand) || addr;
       const data = await getJSON(nominatimAddressUrl(c.street, lang), GEO_CACHE);
-      const hits = Array.isArray(data)
-        // keep only what actually resolved to a building
-        ? data.filter(d => d.address && d.address.house_number) : [];
-      if (hits.length) return json(osmRows(hits, cand));
+      if (!Array.isArray(data) || !data.length) continue;
+      // a building is the answer; a street is the consolation, kept aside
+      const hits = data.filter(d => d.address && d.address.house_number);
+      if (hits.length) return json(tag(osmRows(hits, cand)));
+      if (!street) street = osmRows(data, cand);
     }
   }
 
   for (const cand of geocodeCandidates(q)) {
     const data = await getJSON(nominatimSearchUrl(cand, lang), GEO_CACHE);
-    if (Array.isArray(data) && data.length) return json(osmRows(data, cand));
+    if (!Array.isArray(data) || !data.length) continue;
+    const hits = wantsNumber ? data.filter(d => d.address && d.address.house_number) : data;
+    if (hits.length) return json(tag(osmRows(hits, cand)));
+    if (!street) street = osmRows(data, cand);
   }
-  return json([]);
+
+  // no building anywhere: the street, honestly labelled, beats an empty list
+  return json(street ? tag(street) : []);
 }
 
 /* =========================== web push ============================= */

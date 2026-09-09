@@ -239,7 +239,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v50",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v51",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -313,7 +313,7 @@ no key but are a donated service meant for small projects.
 - **`npx wrangler deploy` complains about account/auth:** run `npx wrangler login` again.
 - **Nothing loads on the phone but the `/api?...` URL returns JSON:** hard-refresh (pull
   down in Chrome) — the old service-worker shell may be cached. You can also bump
-  `SHELL = "stop-shell-v40"` to `v41` in `public/sw.js` and redeploy to force an update.
+  `SHELL = "stop-shell-v41"` to `v42` in `public/sw.js` and redeploy to force an update.
 
 ---
 

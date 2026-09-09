@@ -97,8 +97,13 @@ await page.waitForTimeout(1400);
 
 console.log("\n— getting to it —");
 await page.click("#menubtn"); await page.waitForTimeout(250);
-ok("the menu offers a journey", await page.locator("#m-plan").isVisible());
-await page.click("#m-plan"); await page.waitForTimeout(400);
+/* Journey moved out of the ☰ menu in v51 and sits with List and Map,
+   because two taps behind a hamburger is where a feature goes to be
+   undiscovered. */
+ok("the journey is a top-level control, not a menu entry",
+   await page.locator("#t-vplan").isVisible()
+   && await page.evaluate(() => !document.getElementById("m-plan")));
+await page.click("#t-vplan"); await page.waitForTimeout(400);
 ok("the panel opens", await page.locator("#jp").evaluate(e => e.classList.contains("on")));
 ok("it starts from where you are",
    /my location/i.test(await page.locator("#jp-from-t").innerText()),
@@ -210,10 +215,9 @@ console.log("\n— Greek —");
 await page.click("#jp-x"); await page.waitForTimeout(300);
 await page.evaluate(() => switchLang());
 await page.waitForTimeout(500);
-await page.click("#menubtn"); await page.waitForTimeout(250);
-ok("the menu entry is translated", /Διαδρομή/.test(await page.locator("#m-plan-t").innerText()),
-   await page.locator("#m-plan-t").innerText());
-await page.click("#m-plan"); await page.waitForTimeout(400);
+ok("the control is translated", /Διαδρομή|ΔΙΑΔΡΟΜΗ/.test(await page.locator("#t-vplan").innerText()),
+   await page.locator("#t-vplan").innerText());
+await page.click("#t-vplan"); await page.waitForTimeout(400);
 // uppercase Greek drops its accents, so match either form
 ok("...and the button", /Εύρεση|ΕΥΡΕΣΗ/.test(await page.locator("#jp-go").innerText()),
    await page.locator("#jp-go").innerText());
