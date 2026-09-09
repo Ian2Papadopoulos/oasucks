@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { fileURLToPath } from "node:url";
+import { TOUR_FLAG } from "./_tour.mjs";
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 const NOW = Math.floor(Date.now() / 1000);
 const LAT = 37.9760, LNG = 23.7300;
@@ -66,8 +67,8 @@ async function run(key) {
   await ctx.route("**://tile.openstreetmap.org/**", r => { tiles.push(r.request().url()); r.fulfill({ contentType: "image/png", body: PIXEL }); });
   const page = await ctx.newPage();
   const errs = []; page.on("pageerror", e => errs.push(String(e)));
-  await page.addInitScript(() => { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", "1");
-    localStorage.setItem("subId", "tile-1"); localStorage.setItem("dark", "0"); });
+  await page.addInitScript(tf => { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", tf);
+    localStorage.setItem("subId", "tile-1"); localStorage.setItem("dark", "0"); }, TOUR_FLAG);
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "networkidle" });
   await page.waitForTimeout(1200);
   await page.evaluate(() => setView("map"));

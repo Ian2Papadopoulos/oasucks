@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v51.**
+version: v52.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,16 +35,17 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 586 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 595 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The menu, and the FAQ
 
-**Journey sits with List and Map**, in the segmented control under the location bar. It
-is a third thing the app does, not a preference, and two taps behind a hamburger is where
-a feature goes to be undiscovered. It does not stay selected — the board underneath is
-still list or map, and the highlight goes back to whichever it was when the panel closes.
+**Journey sits in the header**, an `A→B` button first in the row with live reports,
+alerts and ☰. It is a third thing the app does, not a preference, and two taps behind a
+hamburger is where a feature goes to be undiscovered. It is not a view of the board
+either: the list/map segment keeps pointing at whatever is underneath the panel, and the
+`A→B` button is the only thing that lights up while the panel is open.
 
 That leaves the ☰ menu as two entries — **Find a line** and **Settings** — each with a
 line under it saying what it does. Settings sits below a rule, since it changes the app
@@ -128,8 +129,8 @@ than none.
 Where Chrome and Edge hand the page an install prompt of their own
 (`beforeinstallprompt`), the instructions give way to a real **Install** button and the
 whole thing is one tap. An app already running standalone is not told how to install
-itself; it just says so. The carousel is reachable again from **Settings → How it works**,
-so the card is not a one-time thing someone dismissed on day one.
+itself; it just says so. The FAQ carries the same steps in writing, for anyone who
+skipped the card on day one.
 
 ## How many people use it
 
@@ -658,9 +659,7 @@ straight into search rather than dead-ending.
 
 ### Settings
 
-Language (ΕΛ / EN), a replay of the guide, and one display preference:
-
-**How it works** reopens the four-card onboarding described below.
+Language (ΕΛ / EN), the FAQ, and one display preference:
 
 **Hide stops with no arrivals** — off by default. On, a stop with nothing due in the
 next `imminentMin` (15 min) is left out of the list entirely rather than demoted to the
@@ -670,13 +669,19 @@ never sneak in only to drop out a moment later. Kept in `localStorage` under `hi
 
 ## First run — the guide
 
-The gestures that matter here are not discoverable, so on a fresh install four floating
+The gestures that matter here are not discoverable, so on a fresh install six floating
 cards appear once the stops behind them have painted (700ms after load, so the app is
 never explained against an empty screen). They cover live reports, double-tap to
-favourite, swiping between list and map, and setting an alert for a stop you are
-nowhere near. **Skip** or **Next → Start**; either way it is remembered in
-`localStorage.tourSeen` and never shows again on its own. Settings → **How it works**
-replays it from card one.
+favourite, swiping between list and map, planning an A→B journey, setting an alert for a
+stop you are nowhere near, and installing it. **Skip** or **Next → Start**; either way it
+is remembered in `localStorage.tourSeen` and never shows again.
+
+Nothing reopens it. It is the only thing in the app that interrupts you, so it gets one
+chance, and the FAQ covers the same ground in a place you can read at your own pace. The
+flag stores the tour's version (`TOUR_VER`, currently `2`) rather than a bare `1`: bump
+that when the cards change enough to be worth seeing again, and everyone gets them once
+more. `test/_tour.mjs` reads the value out of the source so the six suites that skip the
+carousel do not all fail on the next bump.
 
 This replaced the permanent hint line under the list, which said one thing forever and
 was the first sentence people stopped reading.

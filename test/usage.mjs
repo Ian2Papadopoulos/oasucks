@@ -16,6 +16,7 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { TOUR_FLAG } from "./_tour.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUB = path.join(REPO, "public");
@@ -206,15 +207,15 @@ async function boot({ standalone = false } = {}) {
   pulses = [];
   const c = await browser.newContext({ viewport: { width: 390, height: 780 },
     permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
-  await c.addInitScript(s => {
-    try { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", "1"); } catch (_) {}
+  await c.addInitScript(([s, tf]) => {
+    try { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", tf); } catch (_) {}
     if (s) {
       const mm = window.matchMedia.bind(window);
       window.matchMedia = q => /display-mode: standalone/.test(q)
         ? { matches: true, media: q, addListener() {}, removeListener() {},
             addEventListener() {}, removeEventListener() {} } : mm(q);
     }
-  }, standalone);
+  }, [standalone, TOUR_FLAG]);
   const page = await c.newPage();
   const errs = [];
   page.on("pageerror", e => errs.push(e.message));

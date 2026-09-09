@@ -14,6 +14,7 @@ import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOUR_FLAG } from "./_tour.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUB = path.join(REPO, "public");
@@ -89,7 +90,7 @@ async function card({ ua, lang = "en", touch = 0, prompt = false, standalone = f
 console.log("\n— the card is part of the carousel —");
 {
   const v = await card({ ua: UA.android });
-  ok("the carousel has five cards now", v.dots === 5, `${v.dots} dots`);
+  ok("the carousel has six cards now", v.dots === 6, `${v.dots} dots`);
   ok("...and installing is the last one", /Put it on your home screen/.test(v.head), v.head);
   ok("...so its button starts the app rather than saying Next",
     !/next/i.test(v.last), v.last);
@@ -167,6 +168,61 @@ console.log("\n— both languages —");
   const en = await card({ ua: UA.iphone, touch: 5, lang: "en", standalone: true });
   ok("en: the installed message is translated too", /Already running/.test(en.text));
   await en.ctx.close();
+}
+
+/* The carousel is the only thing in the app that interrupts you, so it
+   gets exactly one chance: first run, then never again on its own. The
+   flag carries the tour's version rather than a bare "1", which is what
+   lets a materially different set of cards be shown once more to someone
+   who saw the old one. */
+console.log("\n— shown once, on the first run —");
+async function boot(flag) {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 800 }, userAgent: UA.android });
+  await ctx.addInitScript(fl => {
+    try {
+      localStorage.setItem("lang", "en");
+      // clear it on the first load only — this runs again on reload, and
+      // wiping the flag there would defeat the point of the reload
+      if (fl === null) {
+        if (!sessionStorage.getItem("cleared")) {
+          localStorage.removeItem("tourSeen"); sessionStorage.setItem("cleared", "1");
+        }
+      } else localStorage.setItem("tourSeen", fl);
+    } catch (_) {}
+  }, flag);
+  const page = await ctx.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2400);
+  const open = await page.evaluate(() => !document.getElementById("tour").hidden);
+  return { page, ctx, open };
+}
+{
+  const fresh = await boot(null);
+  ok("a first-time visitor gets the carousel", fresh.open);
+  ok("...starting at the first card",
+    await fresh.page.evaluate(() => $("#tour-h").textContent === t("tour1h")),
+    await fresh.page.evaluate(() => $("#tour-h").textContent));
+  await fresh.page.click("#tour-skip");
+  await fresh.page.waitForTimeout(120);
+  ok("...and skipping records the tour's version, not a bare flag",
+    await fresh.page.evaluate(() => localStorage.getItem("tourSeen")) === TOUR_FLAG,
+    await fresh.page.evaluate(() => localStorage.getItem("tourSeen")));
+  await fresh.page.reload({ waitUntil: "domcontentloaded" });
+  await fresh.page.waitForTimeout(2400);
+  ok("...so the next visit is not interrupted",
+    await fresh.page.evaluate(() => document.getElementById("tour").hidden));
+  await fresh.ctx.close();
+
+  const seen = await boot(TOUR_FLAG);
+  ok("someone who has seen this set is left alone", !seen.open);
+  ok("...and nothing in the FAQ offers to replay it",
+    await seen.page.evaluate(() => { openAbout(); return !document.getElementById("faq-tour"); }),
+    "a tour you can summon is a tour nobody summons");
+  await seen.ctx.close();
+
+  const stale = await boot("1");
+  ok("a flag left by an older carousel does not hide this one", stale.open);
+  await stale.ctx.close();
 }
 
 console.log("\n— the manifest actually supports installing —");

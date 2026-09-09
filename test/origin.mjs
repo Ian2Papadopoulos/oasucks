@@ -12,6 +12,7 @@ import { readFileSync, writeFileSync, existsSync, mkdtempSync, cpSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOUR_FLAG } from "./_tour.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(REPO, "public");
@@ -60,15 +61,15 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 async function open({ standalone = false, lang = "en", host = "127.0.0.1", page: at = "/" } = {}) {
   const c = await browser.newContext({ viewport: { width: 390, height: 780 },
     permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
-  await c.addInitScript(([l, s]) => {
-    try { localStorage.setItem("lang", l); localStorage.setItem("tourSeen", "1"); } catch (_) {}
+  await c.addInitScript(([l, s, tf]) => {
+    try { localStorage.setItem("lang", l); localStorage.setItem("tourSeen", tf); } catch (_) {}
     if (s) {
       const mm = window.matchMedia.bind(window);
       window.matchMedia = q => /display-mode:\s*(standalone|fullscreen|minimal-ui|window-controls-overlay)/.test(q)
         ? { matches: true, media: q, addListener() {}, removeListener() {},
             addEventListener() {}, removeEventListener() {} } : mm(q);
     }
-  }, [lang, standalone]);
+  }, [lang, standalone, TOUR_FLAG]);
   const p = await c.newPage();
   const errs = [];
   p.on("pageerror", e => errs.push(e.message));

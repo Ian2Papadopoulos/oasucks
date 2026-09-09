@@ -7,6 +7,7 @@ import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOUR_FLAG } from "./_tour.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 const NOW = Math.floor(Date.now() / 1000);
@@ -90,20 +91,25 @@ await ctx.route("**://*.cartocdn.com/**", r => r.fulfill({ contentType: "image/p
 await ctx.route("**://tile.openstreetmap.org/**", r => r.fulfill({ contentType: "image/png", body: PIXEL }));
 const page = await ctx.newPage();
 const errs = []; page.on("pageerror", e => errs.push(String(e)));
-await page.addInitScript(() => { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", "1");
-  localStorage.setItem("subId", "jp-0001"); });
+await page.addInitScript(tf => { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", tf);
+  localStorage.setItem("subId", "jp-0001"); }, TOUR_FLAG);
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "networkidle" });
 await page.waitForTimeout(1400);
 
 console.log("\n— getting to it —");
 await page.click("#menubtn"); await page.waitForTimeout(250);
-/* Journey moved out of the ☰ menu in v51 and sits with List and Map,
-   because two taps behind a hamburger is where a feature goes to be
-   undiscovered. */
+/* Journey moved out of the ☰ menu and into the header, next to reports,
+   alerts and the hamburger, because two taps behind a hamburger is where a
+   feature goes to be undiscovered. */
 ok("the journey is a top-level control, not a menu entry",
-   await page.locator("#t-vplan").isVisible()
+   await page.locator("#planbtn").isVisible()
    && await page.evaluate(() => !document.getElementById("m-plan")));
-await page.click("#t-vplan"); await page.waitForTimeout(400);
+ok("...and it is the first of the header buttons, before reports",
+   await page.evaluate(() => {
+     const b = [...document.querySelectorAll(".brand .iconbtn")].map(x => x.id);
+     return b[0] === "planbtn" && b.indexOf("reportbtn") === 1;
+   }));
+await page.click("#planbtn"); await page.waitForTimeout(400);
 ok("the panel opens", await page.locator("#jp").evaluate(e => e.classList.contains("on")));
 ok("it starts from where you are",
    /my location/i.test(await page.locator("#jp-from-t").innerText()),
@@ -215,9 +221,10 @@ console.log("\n— Greek —");
 await page.click("#jp-x"); await page.waitForTimeout(300);
 await page.evaluate(() => switchLang());
 await page.waitForTimeout(500);
-ok("the control is translated", /Διαδρομή|ΔΙΑΔΡΟΜΗ/.test(await page.locator("#t-vplan").innerText()),
-   await page.locator("#t-vplan").innerText());
-await page.click("#t-vplan"); await page.waitForTimeout(400);
+ok("the control is labelled in Greek for a screen reader",
+   /Διαδρομή/.test(await page.locator("#planbtn").getAttribute("aria-label") || ""),
+   await page.locator("#planbtn").getAttribute("aria-label"));
+await page.click("#planbtn"); await page.waitForTimeout(400);
 // uppercase Greek drops its accents, so match either form
 ok("...and the button", /Εύρεση|ΕΥΡΕΣΗ/.test(await page.locator("#jp-go").innerText()),
    await page.locator("#jp-go").innerText());

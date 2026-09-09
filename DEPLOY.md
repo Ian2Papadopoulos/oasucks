@@ -85,8 +85,8 @@ https://oasa-stop.<your-subdomain>.workers.dev
    The app says this itself on the **last card of the first-run carousel**, with the
    steps for whichever device is reading — and on Chrome and Edge it offers a real
    **Install** button instead of instructions. Worth checking on the phone: the card
-   should name Chrome's ⋮ menu, not iOS's Share sheet. It is reachable again from
-   ☰ → Settings → **How it works**.
+   should name Chrome's ⋮ menu, not iOS's Share sheet. The same steps are written out
+   in ☰ → Settings → **FAQ** for anyone who skipped the card.
 
 ---
 
@@ -239,7 +239,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v51",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v52",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 

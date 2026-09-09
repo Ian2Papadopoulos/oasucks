@@ -102,6 +102,10 @@
     color:var(--toner);font-size:13px;cursor:pointer;display:grid;place-items:center;
     flex:none;position:relative;border-radius:2px}
   .iconbtn:active{background:var(--paper)}
+  /* the journey button says what it does in three characters, which at this
+     size reads faster than any glyph we could draw for it */
+  .iconbtn .ab{font:700 10px/1 var(--mono);letter-spacing:0}
+  .iconbtn.on{background:var(--toner);color:var(--paper)}
   .iconbtn .badge{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;
     background:var(--marker);color:var(--toner);font-size:9px;font-weight:700;
     display:grid;place-items:center;padding:0 3px;border:1px solid var(--toner);border-radius:2px}
@@ -492,6 +496,8 @@
   .art-seg b,.art-seg i{padding:7px 13px;font-style:normal}
   .art-seg b{background:var(--toner);color:var(--paper)}
   .art-seg i{background:var(--card);color:var(--ink3)}
+  .art-plan{width:52px;height:52px}
+  .art-plan .ab{font-size:15px}
   .art-bell{font-size:34px;line-height:1}
   .art-mark{font-size:17px;padding:7px 9px 14px}
   .art-mark::after{font-size:27px;-webkit-text-stroke-width:3.5px}
@@ -514,9 +520,6 @@
   /* The accessibility answer is the one with a real cost to skimming. */
   .faq.warn>summary{color:var(--flag)}
   .faq.warn .faq-a{border-left:3px solid var(--flag);padding-left:10px}
-  .faq-btn{margin-top:4px;background:var(--toner);color:var(--paper);border:none;
-    padding:9px 14px;font-family:var(--mono);font-size:11px;font-weight:700;
-    cursor:pointer;border-radius:2px;letter-spacing:.08em;text-transform:uppercase}
   /* While the picker is waiting to be told where home is, its heading
      carries the marker colour — the one visible difference between
      "choose a destination" and "choose a place to remember". */
@@ -819,6 +822,11 @@
            and neither of them was information the rider needed. -->
       <h1 class="wordmark"><span class="w-oasa">OASA</span><span class="w-x">x</span></h1>
       <div class="spacer"></div>
+      <!-- Journey sits with the other three things you can reach from
+           anywhere. It is not a view of the board, so it does not belong in
+           the list/map segment, and two taps behind a hamburger is where a
+           feature goes to be undiscovered. -->
+      <button class="iconbtn" id="planbtn" aria-label="journey"><span class="ab">A→B</span></button>
       <button class="iconbtn alert" id="reportbtn" aria-label="live reports"><span class="livedot"></span><span class="badge" id="repcount" style="display:none">0</span></button>
       <button class="iconbtn" id="bell">🔔<span class="badge" id="bellcount" style="display:none">0</span></button>
       <button class="iconbtn" id="menubtn" aria-label="menu" aria-expanded="false">
@@ -838,15 +846,9 @@
       <span class="fresh" id="fresh"></span>
       <button id="change">Αλλαγή</button>
     </div>
-    <!-- Journey sits with List and Map because it is a third thing the app
-         does, not a preference. Two taps behind a hamburger is where a
-         feature goes to be undiscovered. It does not stay selected: the
-         board underneath is still list or map, and the segment returns to
-         whichever it was when the journey panel closes. -->
     <div class="seg" id="seg">
       <button data-v="list" class="on" id="t-vlist">Λίστα</button>
       <button data-v="map" id="t-vmap">Χάρτης</button>
-      <button data-v="journey" id="t-vplan">Διαδρομή</button>
     </div>
   </header>
 
@@ -862,7 +864,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v51</span></div>
+  <div class="foot"><span class="ver">v52</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1230,7 +1232,7 @@ const T={
   jpMyLocErr:"Δεν ξέρω πού είσαι. Πάτα «Αλλαγή» για να ορίσεις τοποθεσία.",
   jpFast:"Ταχύτερη", jpFewer:"Λιγότερες αλλαγές", jpMetro:"Με μετρό",
   jpByVehicle:"Με όχημα",
-  mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις", setTour:"Οδηγός χρήσης",
+  mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις",
   tourNext:"Επόμενο", tourGo:"Ξεκίνα", tourSkip:"Παράλειψη",
   tour1h:"Ζωντανές αναφορές",
   tour1p:"Το πορτοκαλί κουμπί δείχνει τι συμβαίνει τώρα στο δίκτυο: βλάβες, υπερπλήρη οχήματα, "+
@@ -1241,6 +1243,9 @@ const T={
   tour3h:"Λίστα και χάρτης",
   tour3p:"Σύρε αριστερά για τον χάρτη, δεξιά για τη λίστα. Κράτα πατημένη μια γραμμή στη λίστα "+
     "για να δεις τη διαδρομή της. Στον χάρτη, πάτα μια στάση και διάλεξε γραμμή για να σχεδιαστεί.",
+  tour6h:"Διαδρομή Α→Β",
+  tour6p:"Το κουμπί A→B πάνω δεξιά βρίσκει διαδρομή από ένα σημείο σε άλλο: διεύθυνση, "+
+    "στάση ή η θέση σου. Αποθήκευσε Σπίτι και Δουλειά και δεν τα ξαναγράφεις.",
   tour4h:"Ειδοποιήσεις",
   tour4p:"Βάλε ειδοποίηση για οποιαδήποτε στάση, όχι μόνο τις κοντινές: το καμπανάκι έχει "+
     "αναζήτηση για κάθε στάση της Αθήνας.",
@@ -1316,8 +1321,7 @@ const T={
   faqInstallA:`<p>Ανοίγει σε πλήρη οθόνη, με δικό του εικονίδιο, χωρίς μπάρες.</p>
     <p>Android: Chrome → μενού <b>⋮</b> → <b>Προσθήκη στην αρχική οθόνη</b>.<br>
     iPhone: Safari → <b>Κοινοποίηση</b> → <b>Προσθήκη στην οθόνη Αφετηρίας</b>.<br>
-    Υπολογιστής: το εικονίδιο εγκατάστασης στη γραμμή διευθύνσεων.</p>
-    <button class="faq-btn" id="faq-tour">Δες την ξενάγηση</button>`,
+    Υπολογιστής: το εικονίδιο εγκατάστασης στη γραμμή διευθύνσεων.</p>`,
   faqPrivacyQ:"Τι δεδομένα συλλέγετε;",
   faqPrivacyA:`<p><b>Χωρίς λογαριασμό, διαφημίσεις, cookies ή παρακολούθηση.</b></p>
     <ul><li><b>Τοποθεσία</b> — στέλνεται με το αίτημα, δεν αποθηκεύεται.</li>
@@ -1485,7 +1489,7 @@ const T={
   jpMyLocErr:"I do not know where you are. Tap Change to set a location.",
   jpFast:"Fastest", jpFewer:"Fewer changes", jpMetro:"By metro",
   jpByVehicle:"By vehicle",
-  mSettings:"Settings", setH:"Settings", setTour:"How it works",
+  mSettings:"Settings", setH:"Settings",
   tourNext:"Next", tourGo:"Start", tourSkip:"Skip",
   tour1h:"Live reports",
   tour1p:"The orange button shows what is happening on the network right now: breakdowns, "+
@@ -1496,6 +1500,9 @@ const T={
   tour3h:"List and map",
   tour3p:"Swipe left for the map, right for the list. Long-press a line in the list to preview "+
     "its route. On the map, tap a stop and pick a line to draw it.",
+  tour6h:"Journey A→B",
+  tour6p:"The A→B button at the top plans a trip from one place to another: an address, a "+
+    "stop, or where you are. Save Home and Work and you never type them again.",
   tour4h:"Alerts",
   tour4p:"Set an alert for any stop, not just nearby ones: the bell has a search for every stop "+
     "in Athens.",
@@ -1571,8 +1578,7 @@ const T={
   faqInstallA:`<p>It opens full-screen with its own icon, no browser bars.</p>
     <p>Android: Chrome → menu <b>⋮</b> → <b>Add to Home screen</b>.<br>
     iPhone: Safari → <b>Share</b> → <b>Add to Home Screen</b>.<br>
-    Desktop: the install icon in the address bar.</p>
-    <button class="faq-btn" id="faq-tour">Show me around</button>`,
+    Desktop: the install icon in the address bar.</p>`,
   faqPrivacyQ:"What data do you collect?",
   faqPrivacyA:`<p><b>No account, no advertising, no cookies, no tracking.</b></p>
     <ul><li><b>Location</b> — sent with the request, never stored.</li>
@@ -1780,7 +1786,8 @@ function applyStatics(){
   $("#s-quick").textContent=t("quick");
   $("#addr").placeholder=t("searchPh"); $("#pickok").textContent=t("use");
   $("#t-vlist").textContent=t("vlist"); $("#t-vmap").textContent=t("vmap");
-  $("#t-vplan").textContent=t("mPlan");
+  $("#planbtn").setAttribute("aria-label",t("mPlan"));
+  $("#planbtn").title=t("mPlan");
   $("#a-h").textContent=t("alertsH"); $("#a-p").textContent=t("alertsP");
   $("#t-rad").textContent=t("radius");
   $("#locwhere").textContent=here.label||(here.gps?t("you"):"…");
@@ -4294,11 +4301,15 @@ async function loadLive(){
 }
 
 /* --------------------------- onboarding ---------------------------- *
- * Four cards on first run. Each one names a gesture that is otherwise
- * invisible, which is why the permanent hint line under the list could go
- * away. Skippable at any point, shown once, and reachable again from
- * Settings if someone wants a reminder. */
+ * Five cards on first run. Each one names a control or a gesture that is
+ * otherwise invisible, which is why the permanent hint line under the list
+ * could go away. Skippable at any point and shown exactly once — the FAQ
+ * carries the same ground for anyone who wants to read it again. */
 const TOUR_KEY="tourSeen";
+/* Bumped when the cards change enough that someone who saw the old set has
+   not seen this one. The flag stores the version rather than a bare "1", so
+   a bump shows the carousel once more and then goes quiet again. */
+const TOUR_VER="2";
 /* The art on each card is the REAL control, not a grey glyph standing in
    for it. A card that says "tap the orange dot" over a black ◉ is asking
    you to translate before you can look, and the thing you are then hunting
@@ -4309,6 +4320,8 @@ const TOUR=[
   {art:`<span class="livedot art-dot"></span>`,      h:"tour1h", p:"tour1p"},
   {art:`<span class="art-star">★</span>`,            h:"tour2h", p:"tour2p"},
   {art:`<span class="art-seg"><b></b><i></i></span>`, h:"tour3h", p:"tour3p"},
+  {art:`<span class="iconbtn art-plan"><span class="ab">A→B</span></span>`,
+                                                     h:"tour6h", p:"tour6p"},
   {art:`<span class="art-bell">🔔</span>`,           h:"tour4h", p:"tour4p"},
   {art:`<span class="mark art-mark">OASA</span>`,    h:"tour5h", p:installCard, html:true},
 ];
@@ -4372,7 +4385,7 @@ function installCard(){
     <div class="inst-other">${esc(t("instOther"))}</div>`;
 }
 function tourDone(){
-  try{ localStorage.setItem(TOUR_KEY,"1"); }catch(_){}
+  try{ localStorage.setItem(TOUR_KEY,TOUR_VER); }catch(_){}
   $("#tour").hidden=true;
 }
 function paintTour(){
@@ -4396,13 +4409,15 @@ function paintTour(){
   $("#tour-skip").textContent=t("tourSkip");
   $("#tour-next").textContent=tourAt===TOUR.length-1?t("tourGo"):t("tourNext");
 }
-function openTour(from){
+function openTour(){
   tourAt=0; paintTour(); $("#tour").hidden=false;
-  if(from==="settings") closeSettings();
 }
+/* First run only. There is no button anywhere that reopens it: the FAQ
+   answers everything the cards do, in a place you can read at your own
+   pace, and a tour you can summon is a tour nobody summons. */
 function maybeTour(){
   let seen=true;
-  try{ seen=localStorage.getItem(TOUR_KEY)==="1"; }catch(_){}
+  try{ seen=localStorage.getItem(TOUR_KEY)===TOUR_VER; }catch(_){}
   if(seen) return;
   /* After the splash, not on a timer of its own: on a slow first load the
      tour used to open behind the splash and be revealed mid-animation. */
@@ -4470,13 +4485,14 @@ function openJourney() {
   loadMetro().catch(() => {});      // so stations are searchable in the picker
 }
 function closeJourney() { $("#jp").classList.remove("on"); paintSeg(); }
-/* The segment reflects what is actually in front of you: the journey
-   panel while it is open, otherwise the board's own view. */
+/* The segment keeps showing which board is underneath — the journey panel
+   sits on top of it, it does not replace it — and the header button lights
+   up while that panel is open. */
 function paintSeg() {
   const onPlan = $("#jp") && $("#jp").classList.contains("on");
-  $("#t-vplan").classList.toggle("on", onPlan);
-  $("#t-vlist").classList.toggle("on", !onPlan && state.view === "list");
-  $("#t-vmap").classList.toggle("on", !onPlan && state.view === "map");
+  $("#planbtn").classList.toggle("on", onPlan);
+  $("#t-vlist").classList.toggle("on", state.view === "list");
+  $("#t-vmap").classList.toggle("on", state.view === "map");
 }
 
 /* ------------------------- home and work ---------------------------- *
@@ -4964,10 +4980,8 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v51</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v52</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
-  const tourBtn=$("#faq-tour");
-  if(tourBtn) tourBtn.onclick=()=>{ closeAbout(); openTour("settings"); };
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -5391,10 +5405,8 @@ $("#jpp-q").addEventListener("keydown",e=>{ if(e.key==="Enter") jpPickResults($(
   $("#jpp-q").addEventListener("input",()=>{ clearTimeout(qt);
     qt=setTimeout(()=>jpPickResults($("#jpp-q").value),JPQ.debounceMs); });
 }
-/* Journey is a destination, not a view of the board — it opens the panel
-   and leaves list/map as it was underneath. */
-$$("#seg button").forEach(b=>b.onclick=()=>
-  b.dataset.v==="journey" ? openJourney() : setView(b.dataset.v));
+$$("#seg button").forEach(b=>b.onclick=()=>setView(b.dataset.v));
+$("#planbtn").onclick=openJourney;
 
 $("#basemap").onclick=()=>{
   state.dark=!state.dark;

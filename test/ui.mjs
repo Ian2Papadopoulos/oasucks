@@ -11,6 +11,7 @@ import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { TOUR_FLAG } from "./_tour.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUB = path.join(REPO, "public");
@@ -62,12 +63,12 @@ const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH 
 async function open({ lang = "en", slots = null } = {}) {
   const c = await browser.newContext({ viewport: { width: 390, height: 840 },
     permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
-  await c.addInitScript(([l, sl]) => {
+  await c.addInitScript(([l, sl, tf]) => {
     try {
-      localStorage.setItem("lang", l); localStorage.setItem("tourSeen", "1");
+      localStorage.setItem("lang", l); localStorage.setItem("tourSeen", tf);
       if (sl) for (const k of Object.keys(sl)) localStorage.setItem("slot:" + k, JSON.stringify(sl[k]));
     } catch (_) {}
-  }, [lang, slots]);
+  }, [lang, slots, TOUR_FLAG]);
   const page = await c.newPage();
   const errs = [];
   page.on("pageerror", e => errs.push(e.message));
@@ -281,7 +282,14 @@ console.log("\n— the carousel shows the real controls —");
   });
   ok("card three shows the list/map control, labelled as it is in the app",
     /list/i.test(seg || "") && /map/i.test(seg || ""), String(seg));
-  await v.page.evaluate(() => { tourAt = 4; paintTour(); });
+  await v.page.evaluate(() => { tourAt = 3; paintTour(); });
+  ok("card four shows the journey button, the same three characters as the header",
+    await v.page.evaluate(() => {
+      const a = document.querySelector("#tour-art .art-plan .ab");
+      const h = document.querySelector("#planbtn .ab");
+      return !!a && !!h && a.textContent === h.textContent;
+    }));
+  await v.page.evaluate(() => { tourAt = TOUR.length - 1; paintTour(); });
   ok("the last card shows the app's own mark",
     await v.page.evaluate(() => !!document.querySelector("#tour-art .mark")));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
@@ -294,29 +302,35 @@ console.log("\n— the menu says what each entry does —");
   const items = await v.page.evaluate(() =>
     [...document.querySelectorAll("#menu .menu-item")].filter(b => !b.hidden)
       .map(b => b.innerText.replace(/\s+/g, " ").trim()));
-  /* Journey left the menu in v51 for the segmented control, so what is
-     left is the two things that are genuinely menu-shaped. */
+  /* Journey left the menu for the header button row, so what is left is
+     the two things that are genuinely menu-shaped. */
   ok("two entries, not six", items.length === 2, items.join(" | "));
   ok("each carries a line saying what it is for",
     items.every(x => x.split(" ").length > 2), items.join(" | "));
   ok("the journey is not among them any more",
     !/journey/i.test(items.join(" ")), items.join(" | "));
-  ok("...it is a top-level control instead",
-    await v.page.evaluate(() => !!document.getElementById("t-vplan")));
+  ok("...it sits in the header instead, left of reports",
+    await v.page.evaluate(() => {
+      const b = [...document.querySelectorAll(".brand .iconbtn")].map(x => x.id);
+      return b[0] === "planbtn" && b[1] === "reportbtn";
+    }));
   ok("...which opens the panel without changing the board underneath",
     await v.page.evaluate(async () => {
       const before = state.view;
-      document.getElementById("t-vplan").click();
+      document.getElementById("planbtn").click();
       await new Promise(r => setTimeout(r, 200));
       return state.view === before && document.getElementById("jp").classList.contains("on");
     }));
-  ok("...and shows as selected while it is open",
-    await v.page.evaluate(() => document.getElementById("t-vplan").classList.contains("on")));
-  ok("...handing the highlight back on close",
+  /* The segment keeps pointing at the board, which is still there behind
+     the panel — the journey is not a third view of it. */
+  ok("...leaving the segment on the view it was showing",
+    await v.page.evaluate(() => document.getElementById("t-vlist").classList.contains("on")
+      && document.getElementById("planbtn").classList.contains("on")));
+  ok("...and the button goes quiet again on close",
     await v.page.evaluate(async () => {
       closeJourney();
       await new Promise(r => setTimeout(r, 150));
-      return !document.getElementById("t-vplan").classList.contains("on")
+      return !document.getElementById("planbtn").classList.contains("on")
         && document.getElementById("t-vlist").classList.contains("on");
     }));
   ok("Settings is set apart from the two that use the app",

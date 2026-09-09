@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v51 defaults** — if you edit the
+breaks if you change it. Values here are the **v52 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -309,8 +309,10 @@ release it so it is not draining anything in a pocket.
 | stale threshold | **150 s** | `paintFresh` | The stamp turns red past this: five missed refreshes, so the arrivals on screen are no longer trustworthy. |
 | tour delay | **700 ms** | `maybeTour` | Wait after load before the guide opens on a fresh install, so it appears over a painted list rather than an empty screen. |
 
-The guide's four cards live in the `TOUR` array in `public/index.html`; add or remove
-entries and the dots follow. Seen-state is `localStorage.tourSeen`.
+The guide's six cards live in the `TOUR` array in `public/index.html`; add or remove
+entries and the dots follow. Seen-state is `localStorage.tourSeen`, which holds
+`TOUR_VER` (**"2"**) rather than a flag — raise it to show a changed carousel once more.
+Nothing in the app reopens the tour; the FAQ is the second reading.
 
 ---
 
