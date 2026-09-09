@@ -98,13 +98,31 @@
      in the app's single accent colour */
   .wordmark .w-x{font-size:16px;letter-spacing:0;color:var(--marker2);margin-left:-.06em}
   .brand .spacer{flex:1}
+  /* padding:0 is load-bearing. A <button> carries the UA's own 1px 6px,
+     which leaves a 16px content box inside these 30px — fine for a bell or
+     three bars, but the A→B label is wider than that and overflowed to one
+     side rather than centring. The exact UA padding differs per engine,
+     which is why it looked right on one machine and wrong on a phone. */
   .iconbtn{width:30px;height:30px;border:1px solid var(--rule);background:var(--card);
     color:var(--toner);font-size:13px;cursor:pointer;display:grid;place-items:center;
-    flex:none;position:relative;border-radius:2px}
+    flex:none;position:relative;border-radius:2px;padding:0}
   .iconbtn:active{background:var(--paper)}
-  /* the journey button says what it does in three characters, which at this
-     size reads faster than any glyph we could draw for it */
-  .iconbtn .ab{font:700 10px/1 var(--mono);letter-spacing:0}
+  /* The journey button says what it does in three characters, which at this
+     size reads faster than any glyph we could draw for it.
+
+     The arrow is DRAWN, not typed. U+2192 is missing from the monospace
+     faces several phones ship, so the browser pulled it from a symbol font
+     with its own ascent — and a line box sized by that fallback is what
+     pushed the label off-centre on mobile while every desktop looked fine.
+     Two plain letters and a rule have no such argument. Sized in em so the
+     tour card's larger copy scales with it. */
+  .iconbtn .ab{display:flex;align-items:center;justify-content:center;gap:.16em;
+    font:700 10px/1 var(--mono);letter-spacing:0}
+  .iconbtn .ab i{flex:none;position:relative;font-style:normal;
+    width:.66em;height:.13em;background:currentColor}
+  .iconbtn .ab i::after{content:"";position:absolute;right:0;top:50%;
+    width:.3em;height:.3em;border-top:.13em solid currentColor;
+    border-right:.13em solid currentColor;transform:translate(.06em,-50%) rotate(45deg)}
   .iconbtn.on{background:var(--toner);color:var(--paper)}
   .iconbtn .badge{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;
     background:var(--marker);color:var(--toner);font-size:9px;font-weight:700;
@@ -826,7 +844,7 @@
            anywhere. It is not a view of the board, so it does not belong in
            the list/map segment, and two taps behind a hamburger is where a
            feature goes to be undiscovered. -->
-      <button class="iconbtn" id="planbtn" aria-label="journey"><span class="ab">A→B</span></button>
+      <button class="iconbtn" id="planbtn" aria-label="journey"><span class="ab">A<i></i>B</span></button>
       <button class="iconbtn alert" id="reportbtn" aria-label="live reports"><span class="livedot"></span><span class="badge" id="repcount" style="display:none">0</span></button>
       <button class="iconbtn" id="bell">🔔<span class="badge" id="bellcount" style="display:none">0</span></button>
       <button class="iconbtn" id="menubtn" aria-label="menu" aria-expanded="false">
@@ -864,7 +882,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v53</span></div>
+  <div class="foot"><span class="ver">v54</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -4328,7 +4346,7 @@ const TOUR=[
   {art:`<span class="livedot art-dot"></span>`,      h:"tour1h", p:"tour1p"},
   {art:`<span class="art-star">★</span>`,            h:"tour2h", p:"tour2p"},
   {art:`<span class="art-seg"><b></b><i></i></span>`, h:"tour3h", p:"tour3p"},
-  {art:`<span class="iconbtn art-plan"><span class="ab">A→B</span></span>`,
+  {art:`<span class="iconbtn art-plan"><span class="ab">A<i></i>B</span></span>`,
                                                      h:"tour6h", p:"tour6p"},
   {art:`<span class="art-bell">🔔</span>`,           h:"tour4h", p:"tour4p"},
   {art:`<span class="mark art-mark">OASA</span>`,    h:"tour5h", p:installCard, html:true},
@@ -4989,7 +5007,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v53</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v54</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

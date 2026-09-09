@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v53",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v54",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -289,6 +289,37 @@ not answer yet is worse than no banner.
 
 None of this is recoverable by any means, which is why the honest move is to keep both
 origins alive indefinitely rather than to migrate anybody.
+
+### Closing the `workers.dev` address
+
+Only worth doing **before anyone has installed from it**. After that, the reasoning above
+applies and the answer is no.
+
+There is one switch. In `wrangler.toml`:
+
+```toml
+workers_dev = false
+```
+
+then `npx wrangler deploy`. The `…workers.dev` subdomain stops routing to the Worker and
+answers with a Cloudflare error; `oasax.com` is untouched, because a custom domain is a
+separate route. Set it back to `true` and redeploy to reopen it. Note that this also
+takes away the per-version preview URLs, which is usually what you want and occasionally
+not.
+
+**Cloudflare Access cannot help here.** It protects hostnames in a zone you own, and
+`workers.dev` is not one — there is no password to put in front of that subdomain.
+
+**If you want it reachable but not public**, gate it in the Worker rather than at the
+edge: check `new URL(req.url).hostname.endsWith(".workers.dev")` at the top of `fetch` and
+return a 404 for anyone without a shared token in a cookie or a query parameter. That
+keeps a working staging address for you while the public sees nothing, at the price of a
+branch on every request.
+
+**A note on your own phone.** If you installed the app from the `…workers.dev` URL while
+testing, closing that address breaks *that* install — the icon opens to an error. Delete
+it and reinstall from `oasax.com` before flipping the switch, and you will never think
+about it again.
 
 ### How many people are using it?
 

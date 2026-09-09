@@ -314,6 +314,27 @@ console.log("\n— the menu says what each entry does —");
       const b = [...document.querySelectorAll(".brand .iconbtn")].map(x => x.id);
       return b[0] === "planbtn" && b[1] === "reportbtn";
     }));
+  /* A <button> carries the UA's own padding, and 1px 6px of it leaves a
+     16px content box inside these 30px — narrower than the label, which
+     then overflowed to one side instead of centring. The amount differs
+     per engine, so it looked right on a desktop and wrong on a phone. */
+  const ab = await v.page.evaluate(() => {
+    const b = document.getElementById("planbtn").getBoundingClientRect();
+    const s = document.querySelector("#planbtn .ab").getBoundingClientRect();
+    return { dx: (s.x + s.width / 2) - (b.x + b.width / 2),
+             dy: (s.y + s.height / 2) - (b.y + b.height / 2),
+             fits: s.width <= b.width && s.height <= b.height };
+  });
+  ok("...with its label centred in the button, not pushed off one side",
+    Math.abs(ab.dx) < 0.6 && Math.abs(ab.dy) < 0.6, `off by ${ab.dx.toFixed(2)},${ab.dy.toFixed(2)}`);
+  ok("...and fitting inside it", ab.fits);
+  /* U+2192 is missing from the monospace faces several phones ship, and
+     the symbol font that supplies it brings its own metrics. */
+  ok("...drawing the arrow rather than typing it",
+    await v.page.evaluate(() => {
+      const s = document.querySelector("#planbtn .ab");
+      return !/→/.test(s.textContent) && !!s.querySelector("i");
+    }), "no glyph, nothing to fall back to");
   ok("...which opens the panel without changing the board underneath",
     await v.page.evaluate(async () => {
       const before = state.view;

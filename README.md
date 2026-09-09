@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v53.**
+version: v54.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 617 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 620 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -46,6 +46,13 @@ alerts and ☰. It is a third thing the app does, not a preference, and two taps
 hamburger is where a feature goes to be undiscovered. It is not a view of the board
 either: the list/map segment keeps pointing at whatever is underneath the panel, and the
 `A→B` button is the only thing that lights up while the panel is open.
+
+Its label is two letters and a drawn rule, and the button sets `padding:0`. Both are
+repairs to the same bug: a `<button>` carries the UA's own padding — 1px 6px in Chromium,
+different elsewhere — which left a 16px content box inside the 30px button and pushed the
+wider label off one side, and U+2192 is missing from the monospace faces several phones
+ship, so the symbol font that supplied it brought its own metrics. It looked right on a
+desktop and wrong in the hand.
 
 That leaves the ☰ menu as two entries — **Find a line** and **Settings** — each with a
 line under it saying what it does. Settings sits below a rule, since it changes the app
