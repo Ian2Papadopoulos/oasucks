@@ -719,6 +719,12 @@
   .rule .del{background:var(--card);border:1px solid var(--rule);color:var(--ink3);
     width:28px;height:28px;cursor:pointer;flex:none;font-family:var(--mono);border-radius:2px}
   .rule .del:active{border-color:var(--toner);color:var(--toner)}
+  /* which alert the form below is changing — otherwise "Edit" opens a form
+     that looks exactly like "New alert" and there is nothing on screen
+     saying which of your alerts you are about to overwrite */
+  .rule.editing{border-color:var(--toner);border-left:3px solid var(--marker2)}
+  .fhead{margin-top:12px;color:var(--ink3);font-size:9.5px;letter-spacing:.16em;
+    text-transform:uppercase;border-bottom:1px dashed var(--rule);padding-bottom:6px}
   .field{margin-top:11px}
   .field label{display:block;color:var(--ink3);font-size:9.5px;letter-spacing:.16em;
     text-transform:uppercase;margin-bottom:5px}
@@ -877,7 +883,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v55</span></div>
+  <div class="foot"><span class="ver">v56</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1404,6 +1410,7 @@ const T={
   alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση, όχι μόνο τις κοντινές.",
   newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
+  editAlert:"Επεξεργασία",delAlert:"Διαγραφή",
   test:"Δοκιμαστική ειδοποίηση",noRules:"Καμία ειδοποίηση ακόμη.",
   needStops:"Φόρτωσε πρώτα στάσεις κοντά σου.",
   findStop:"⌕ Αναζήτηση άλλης στάσης…", noStopHit:"Καμία στάση με αυτό το όνομα.",
@@ -1666,6 +1673,7 @@ const T={
   alertsH:"Alerts",alertsP:"Get notified before your bus reaches any stop, not just the ones near you.",
   newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
+  editAlert:"Edit",delAlert:"Delete",
   test:"Send test notification",noRules:"No alerts yet.",
   needStops:"Load nearby stops first.",
   findStop:"⌕ Search another stop…", noStopHit:"No stop by that name.",
@@ -5002,7 +5010,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v55</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v56</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5195,12 +5203,27 @@ function renderAlerts(){
     const days=(r.days||[]).map(i=>t("dayNames")[i]).join(" ");
     d.innerHTML=`<div class="info"><div class="ln">${esc(r.lineId||"")} · ${esc(r.stopName||"")}</div>
       <div class="dt">${esc(r.routeName||"")}<br>${days} · ${esc(r.from)}–${esc(r.to)} · ${(r.leads||[]).join("′, ")}′</div></div>`;
+    /* Editing beats delete-and-retype: the rule you want is nearly always
+       the rule you have, an hour later or a stop along. The Worker already
+       replaces a rule when a POST carries its id, and refuses when the sub
+       does not match, so this is the same call the form always made. */
+    const ed=document.createElement("button"); ed.className="del";
+    // U+FE0E: draw it as a glyph, not as a colour emoji
+    ed.textContent="\u270E\uFE0E";
+    ed.title=t("editAlert"); ed.setAttribute("aria-label",t("editAlert"));
+    ed.onclick=()=>{
+      $$("#rulelist .rule").forEach(x=>x.classList.remove("editing"));
+      d.classList.add("editing");
+      renderForm(r);
+      $("#ruleform").scrollIntoView({block:"nearest"});
+    };
     const del=document.createElement("button"); del.className="del"; del.textContent="✕";
+    del.title=t("delAlert"); del.setAttribute("aria-label",t("delAlert"));
     del.onclick=async()=>{ await fetch(base()+"/rules/delete",{method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({id:r.id,sub:state.subId})});   // sub = ownership proof
       await loadRules(); bellBadge(); renderAlerts(); };
-    d.appendChild(del); list.appendChild(d);
+    d.appendChild(ed); d.appendChild(del); list.appendChild(d);
   });
   const add=document.createElement("button"); add.className="primary"; add.textContent=t("newAlert");
   add.onclick=()=>renderForm(); form.appendChild(add);
@@ -5209,8 +5232,16 @@ function renderAlerts(){
      the Worker for debugging by hand:
        curl -X POST <url>/push/test -d '{"sub":"<your sub id>"}' */
 }
-function renderForm(){
+/* With a rule, the same form edits it; without one, it makes a new one.
+   One form either way — an "edit" screen that is a near-copy of the "new"
+   screen is two places to fix every time a field changes. */
+function renderForm(edit){
   const form=$("#ruleform"); form.innerHTML="";
+  if(edit){
+    const h=document.createElement("div"); h.className="fhead";
+    h.textContent=`${t("editAlert")} · ${edit.stopName||""}`.trim();
+    form.appendChild(h);
+  }
   /* The stop list here used to be "whatever is near you right now", which
      meant setting an alarm for your evening stop required dragging the
      location pin across town first. Now the picker offers favourites and
@@ -5219,6 +5250,10 @@ function renderForm(){
   const stops=[];
   const seen={};
   const push=s=>{ const k=String(s.code); if(!k||seen[k]) return; seen[k]=1; stops.push(s); };
+  /* First, so it is the selected option: the stop an existing rule names
+     is often nowhere near where you are standing when you edit it. */
+  if(edit&&edit.stopCode!=null)
+    push(adoptStop({code:edit.stopCode,name_el:edit.stopName,name_en:edit.stopName}));
   favs.forEach(f=>{ const live=(state.stops||[]).find(s=>String(s.code)===String(f.code))
     ||state.favLive[String(f.code)]; if(live) push(live); });
   (state.stops||[]).slice(0,CONFIG.listStops).forEach(push);
@@ -5235,15 +5270,15 @@ function renderForm(){
       <div class="shint">${esc(t("alertHint"))}</div></div>
     <div class="field"><label>${t("line")}</label><select id="f-route"></select></div>
     <div class="field"><label>${t("days")}</label><div class="chips" id="f-days"></div></div>
-    <div class="field two"><div><label>${t("from")}</label><input type="time" id="f-from" value="08:30"></div>
-      <div><label>${t("till")}</label><input type="time" id="f-to" value="08:50"></div></div>
+    <div class="field two"><div><label>${t("from")}</label><input type="time" id="f-from" value="${esc(edit&&edit.from||"08:30")}"></div>
+      <div><label>${t("till")}</label><input type="time" id="f-to" value="${esc(edit&&edit.to||"08:50")}"></div></div>
     <div class="field"><label>${t("lead")}</label><div class="chips" id="f-leads"></div></div>`;
   form.appendChild(wrap);
-  const sel=new Set([1,2,3,4,5]),db=wrap.querySelector("#f-days");
+  const sel=new Set(edit&&Array.isArray(edit.days)?edit.days:[1,2,3,4,5]),db=wrap.querySelector("#f-days");
   [1,2,3,4,5,6,0].forEach(i=>{ const c=document.createElement("button");
     c.className="chip"+(sel.has(i)?" on":""); c.textContent=t("dayNames")[i];
     c.onclick=()=>{ sel.has(i)?sel.delete(i):sel.add(i); c.classList.toggle("on"); }; db.appendChild(c); });
-  const leads=new Set([10,5]),lb=wrap.querySelector("#f-leads");
+  const leads=new Set(edit&&Array.isArray(edit.leads)?edit.leads:[10,5]),lb=wrap.querySelector("#f-leads");
   [15,10,5,3].forEach(L=>{ const c=document.createElement("button");
     c.className="chip"+(leads.has(L)?" on":""); c.textContent=L+"′";
     c.onclick=()=>{ leads.has(L)?leads.delete(L):leads.add(L); c.classList.toggle("on"); }; lb.appendChild(c); });
@@ -5322,7 +5357,22 @@ function renderForm(){
   };
   qIn.oninput=()=>{ clearTimeout(qTimer); qTimer=setTimeout(runFind,320); };
   qIn.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(qTimer); runFind(); } };
-  fill();
+  if(edit) stopSel.value="0";                    // the rule's own stop, pushed first
+  fill().then(()=>{
+    const want=(edit&&edit.routeCodes||[])[0];
+    if(!want) return;
+    rs.value=String(want);
+    /* The stop's directions did not come back, or this one has been
+       retired since. Either way the rule's own line is the answer here —
+       switching it silently to whatever sorted first would change the
+       alert into one for a different bus. */
+    if(rs.value!==String(want)){
+      const o=document.createElement("option");
+      o.value=String(want);
+      o.textContent=`${edit.lineId||""} · ${edit.routeName||""}`.replace(/^ · | · $/,"")||String(want);
+      rs.insertBefore(o,rs.firstChild); rs.value=String(want);
+    }
+  });
   const save=document.createElement("button"); save.className="primary"; save.textContent=t("save");
   save.onclick=async()=>{
     save.disabled=true;
@@ -5336,6 +5386,17 @@ function renderForm(){
         routeName:(LANG==="en"?(route.en||route.el):(route.el||route.en))||"",
         days:[...sel].sort(),from:wrap.querySelector("#f-from").value,to:wrap.querySelector("#f-to").value,
         leads:[...leads].sort((a,b)=>b-a),enabled:true};
+      /* Carrying the id turns the same POST into a replace, which is why
+         editing needed no new endpoint. A direction kept from a stop whose
+         routes never loaded has no `route` object behind it, so fall back
+         to what the rule already said rather than blanking the line. */
+      if(edit){
+        rule.id=edit.id;
+        if(edit.enabled!=null) rule.enabled=edit.enabled;
+        if(!route.id&&String(rc)===String((edit.routeCodes||[])[0])){
+          rule.lineId=edit.lineId||""; rule.routeName=edit.routeName||"";
+        }
+      }
       const r=await fetch(base()+"/rules",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify(rule)});
       if(!r.ok) throw new Error("save");

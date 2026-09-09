@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v55.**
+version: v56.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 631 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 645 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -698,6 +698,21 @@ been near.
 That means setting a 08:35 alarm for your office stop no longer requires dragging the
 location pin across town first. With no nearby stops loaded at all, the form opens
 straight into search rather than dead-ending.
+
+**Each alert can be edited (✎) as well as deleted (✕).** The alert you want is nearly
+always the alert you have, half an hour later or a stop along, and retyping it from the
+stop upwards to move it by ten minutes is the kind of chore that makes people stop using
+a feature. It is the same form, prefilled: the rule's own stop is pushed to the top of
+the picker so it is selected even when you are nowhere near it, its days, times and lead
+times come back as they were set, and the row being edited is marked so the form is never
+mistaken for a new alert.
+
+No new endpoint was needed. `POST /rules` already replaces a rule when the body carries
+its `id`, and refuses when the `sub` does not match, so an edit is the save the form
+always did with one more field. One case is worth knowing about: if the stop's directions
+cannot be fetched — OASA down, or that direction retired — the rule's own line is kept as
+the selected option and saved back unchanged, rather than being silently switched to
+whichever direction happens to sort first.
 
 ### Settings
 

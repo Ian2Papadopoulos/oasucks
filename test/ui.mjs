@@ -296,6 +296,94 @@ console.log("\n— the carousel shows the real controls —");
   await v.ctx.close();
 }
 
+/* An alert you set once is nearly always the alert you want again, an hour
+   later or a stop along. Until now the only thing you could do to one was
+   delete it and retype the whole thing from the stop upwards. */
+console.log("\n— an alert can be edited, not only deleted —");
+{
+  const v = await open();
+  const RULE = {
+    id: "r-1", sub: "s-1", stopCode: "9001", stopName: "PANORMOU",
+    lineId: "608", routeCodes: ["rc-9"], routeName: "608 TO GALATSI",
+    days: [2, 4], from: "07:15", to: "07:45", leads: [15, 3], enabled: true,
+  };
+  await v.page.evaluate(r => {
+    hasBackend = () => true;            // no push in a test browser
+    state.subId = "s-1";
+    state.rules = [r];
+    renderAlerts();
+  }, RULE);
+  await v.page.waitForTimeout(150);
+
+  const btns = await v.page.evaluate(() =>
+    [...document.querySelectorAll("#rulelist .rule button")]
+      .map(b => [b.textContent, b.getAttribute("aria-label")]));
+  ok("each alert offers two things, not one", btns.length === 2, JSON.stringify(btns));
+  ok("...edit first, delete second",
+    btns[0][0].startsWith("\u270E") && btns[1][0] === "✕",
+    JSON.stringify(btns.map(b => b[0])));
+  ok("...and the pencil is asked for as a glyph, not a colour emoji",
+    btns[0][0].includes("\uFE0E"), JSON.stringify(btns[0][0]));
+  ok("...both named for a screen reader",
+    btns.every(b => b[1] && b[1].length > 2), JSON.stringify(btns.map(b => b[1])));
+
+  await v.page.evaluate(() => document.querySelector("#rulelist .rule button").click());
+  await v.page.waitForTimeout(400);
+  const form = await v.page.evaluate(() => ({
+    head: (document.querySelector("#ruleform .fhead") || {}).textContent || "",
+    stop: (() => { const s = document.getElementById("f-stop");
+      return s.options[s.selectedIndex].textContent.trim(); })(),
+    route: document.getElementById("f-route").value,
+    routeText: (() => { const r = document.getElementById("f-route");
+      return r.options[r.selectedIndex] ? r.options[r.selectedIndex].textContent.trim() : ""; })(),
+    from: document.getElementById("f-from").value,
+    to: document.getElementById("f-to").value,
+    days: [...document.querySelectorAll("#f-days .chip")].filter(c => c.classList.contains("on"))
+      .map(c => c.textContent),
+    leads: [...document.querySelectorAll("#f-leads .chip")].filter(c => c.classList.contains("on"))
+      .map(c => c.textContent),
+    marked: !!document.querySelector("#rulelist .rule.editing"),
+  }));
+  ok("editing opens the form on the rule's own stop", /PANORMOU/.test(form.stop), form.stop);
+  ok("...its own times", form.from === "07:15" && form.to === "07:45",
+    `${form.from}–${form.to}`);
+  ok("...its own days, not the weekday default",
+    form.days.length === 2 && form.days.join() !== "Mo,Tu,We,Th,Fr", form.days.join(" "));
+  ok("...and its own lead times", form.leads.join(" ") === "15′ 3′", form.leads.join(" "));
+  /* This stop's directions never load in the harness, which is the same
+     thing that happens when OASA is down or the direction was retired. The
+     rule's own line has to survive that, or saving would quietly move the
+     alert to whichever bus happened to sort first. */
+  ok("...keeping the line even when the stop's directions do not load",
+    form.route === "rc-9" && /608/.test(form.routeText), `${form.route} · ${form.routeText}`);
+  ok("the row being edited says so", form.marked,
+    "otherwise the form is indistinguishable from a new alert");
+  ok("...and the form says which alert it is changing", /PANORMOU/.test(form.head), form.head);
+
+  /* The Worker replaces a rule when the POST carries its id and refuses
+     when the sub does not match, so editing needed no new endpoint. */
+  const src = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("saving an edit carries the id, which is what makes it a replace",
+    /if\(edit\)\{[\s\S]{0,80}rule\.id=edit\.id;/.test(src),
+    "POST /rules with an id replaces in place");
+
+  await v.page.evaluate(() => { document.querySelectorAll("#ruleform button")
+    .forEach(b => { if (/cancel/i.test(b.textContent)) b.click(); }); });
+  await v.page.waitForTimeout(200);
+  await v.page.evaluate(() => renderForm());
+  await v.page.waitForTimeout(300);
+  const fresh = await v.page.evaluate(() => ({
+    head: !!document.querySelector("#ruleform .fhead"),
+    from: document.getElementById("f-from").value,
+    days: [...document.querySelectorAll("#f-days .chip")].filter(c => c.classList.contains("on")).length,
+  }));
+  ok("a new alert afterwards is a new alert, not the last one again",
+    !fresh.head && fresh.from === "08:30" && fresh.days === 5,
+    `${fresh.from}, ${fresh.days} days`);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+
 console.log("\n— the menu says what each entry does —");
 {
   const v = await open();
