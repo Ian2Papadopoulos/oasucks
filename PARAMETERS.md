@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v54 defaults** — if you edit the
+breaks if you change it. Values here are the **v55 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -402,9 +402,13 @@ and suppressing a stop because you are standing on it would remove it as a desti
 | `minMs` | **420 ms** | Shortest the mark is ever on screen. | Below this a warm cache makes it strobe. |
 | `maxMs` | **2 200 ms** | Longest, whatever the network is doing. | This is the promise that a dead network cannot trap anyone on a logo. |
 
-The mark lives here and only here; the header carries the wordmark alone. It is painted
-from markup rather than added by script, so it is up in the first frame instead of after a
-white flash. The first-run carousel waits for it to clear before opening.
+The header carries the wordmark alone; the graphic mark appears on the splash, on the
+last tour card and in the launcher icons, and all three draw the same `.mark` rules —
+OASA on a black block, struck by a near-horizontal white rule and a steeper one crossing
+it. Everything about those rules is in em, so `.splash .mark` sets a font size and nothing
+else. The splash is painted from markup rather than added by script, so it is up in the
+first frame instead of after a white flash. The first-run carousel waits for it to clear
+before opening.
 
 ### Address search
 

@@ -47,51 +47,53 @@ console.log("\n— and the new one is in the places that matter —");
      `${(sw.match(/"OASAx"/g) || []).length} of 2`);
 }
 
-console.log("\n— the wordmark is one word, and the mark carries an x —");
+console.log("\n— one mark, struck through, wherever it appears —");
 {
   const idx = read("public/index.html");
   ok("the wordmark reads OASA + x",
      /<span class="w-oasa">OASA<\/span><span class="w-x">x<\/span>/.test(idx));
   ok("...with the two-line pun stack gone", !/<span>O A<\/span>/.test(idx));
 
-  /* v46 replaced the two crossing strokes with a single yellow X. Two
-     lines read as a strikeout cancelling the name; one X reads as a mark
-     stamped on it, which is the thing the app is called. */
-  const after = (idx.match(/\.mark::after\{[^}]*\}/s) || [""])[0];
-  ok("the mark carries a literal X, not a pair of struck lines",
-     /content:"X"/.test(after), after.slice(0, 60));
-  /* Two marks now, on purpose. The icon and the header wear the yellow X;
-     the SPLASH wears the original black-and-white strike, which is the
-     quiet opening frame. The risk is one bleeding into the other, so:
-     no unscoped strike rule anywhere, and the strike that does exist must
-     be scoped to the splash. */
-  ok("...no strikeout rule applies to the icon mark",
-     !/(^|\n)\s*\.mark::before\{/.test(idx),
-     "an unscoped line would strike through the X as well");
-  ok("the splash keeps the original strike, and only the splash",
-     /\.splash \.mark::before/.test(idx) && /\.splash \.mark::after\{[^}]*rotate\(-7deg\)/s.test(idx),
-     "the two marks are different by choice, not by drift");
-  ok("...and it is colourless, which is what makes it the quiet one",
-     !/\.splash \.mark::(before|after)\{[^}]*var\(--marker\)/s.test(idx));
-  ok("...and it is yellow, the one colour the wordmark's x already uses",
-     /color:var\(--marker\)/.test(after), after);
-  ok("...set in the same face as the letters it sits on",
-     /var\(--mono\)/.test(after));
+  /* There was a second mark for a while — a yellow X stamped on the name,
+     worn by the icon and the header while the splash kept the original
+     strike. Two drawings of one logo drift, and this one drifted straight
+     into the launcher. Now there is one: the black-and-white strike, and
+     everything that shows a mark shows that. */
+  const before = (idx.match(/\.mark::before\{[^}]*\}/s) || [""])[0];
+  const after = (idx.match(/(?:^|\n)\s*\.mark::after\{[^}]*\}/s) || [""])[0];
+  ok("the mark is struck by two rules, not stamped with a glyph",
+     /rotate\(-7deg\)/.test(after) && /rotate\(52deg\)/.test(before),
+     "the skew is the joke; a clean X would read as a logo");
+  ok("...and they cross off-square, at different angles",
+     !/rotate\(-?7deg\)/.test(before));
+  ok("no X glyph is left anywhere in the mark", !/content:"X"/.test(idx),
+     "the yellow stamp is gone, not merely covered up");
+  ok("...and no colour either — black and white is the whole design",
+     !/\.mark::(before|after)\{[^}]*var\(--marker\)/s.test(idx));
+  ok("the splash no longer redraws the mark, it only resizes it",
+     !/\.splash \.mark::(before|after)/.test(idx),
+     "a second drawing scoped to one screen is how the drift started");
 
-  /* "In the middle, towards the bottom": horizontally on the seam between
-     the second A and the S, vertically in the lower third. */
-  const top = Number((after.match(/top:(\d+)%/) || [])[1]);
-  ok("it sits low in the block, not across the middle", top >= 65 && top <= 85,
-     `top:${top}% — a centred X would be a strikeout again`);
-  ok("...and on the horizontal centre of the word",
-     /left:calc\(50% - \dpx\)/.test(after),
-     "nudged off the box centre because the letter-spacing adds a trailing gap");
-  const pad = (idx.match(/\.mark\{[^}]*padding:(\d+)px (\d+)px (\d+)px/s) || []);
-  ok("the block is deeper below than above, to give the X room",
-     Number(pad[3]) > Number(pad[1]), `${pad[1]}px above, ${pad[3]}px below`);
-  ok("the dark outline is painted behind the yellow, not over it",
-     /paint-order:stroke fill/.test(after),
-     "without it the stroke eats into the glyph and the X goes thin");
+  /* Sized in em, so one rule set draws the splash at 34px, the tour card
+     at 17px and the icon at whatever the generator asks for. A px here
+     would look right in exactly one of those places. */
+  for (const [what, css] of [["the long rule", after], ["the steep one", before]]) {
+    ok(`${what} is measured in em, so it scales with the block`,
+       !/:\s*-?[\d.]+px/.test(css.replace(/\/\*[\s\S]*?\*\//g, "")), css.slice(0, 70));
+  }
+  const mark = (idx.match(/(?:^|\n)\s*\.mark\{[^}]*\}/s) || [""])[0];
+  ok("the block's height is pinned, or the icon cannot reproduce it",
+     /line-height:1/.test(mark), mark.slice(0, 80));
+  ok("...and the trailing tracking is given back, so the word sits centred",
+     /text-indent:\.1em/.test(mark));
+
+  /* The generator draws from these numbers; the CSS is the design. If the
+     two disagree the launcher gets a logo nobody approved. */
+  const gen = read("tools/icons.mjs");
+  for (const n of ["0.09", "0.2", "1.82", "0.35", "0.53"]) {
+    ok(`the icon generator uses the CSS value ${n}em`, gen.includes(n), n);
+  }
+  ok("...and no longer knows what yellow is", !/MARKER|FFE24A/.test(gen));
 }
 
 console.log("\n— the icons were regenerated, not left behind —");
@@ -105,31 +107,49 @@ console.log("\n— the icons were regenerated, not left behind —");
     const want = f.includes("192") ? 192 : 512;
     ok(`...${w}x${h}, as the manifest promises`, w === want && h === want, `${w}x${h}`);
   }
-  /* A timestamp only proves someone touched the file. This looks for the
-     mark's yellow in the actual pixels: an icon still carrying the old
-     white-on-black strikeout has none of it anywhere, so forgetting to run
-     `npm run icons` after changing `.mark` fails here rather than shipping
-     last year's logo to everyone who installs the app. */
+  /* A timestamp only proves someone touched the file. This reads the
+     actual pixels: an icon left over from the yellow-X era still has that
+     yellow in it, and one rendered from a stale lockup has the wrong
+     proportions. Forgetting `npm run icons` after changing `.mark` fails
+     here rather than shipping last year's logo to everyone who installs. */
   const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
   const page = await (await browser.newContext()).newPage();
   for (const f of ["icon-192.png", "icon-512.png", "icon-maskable-512.png"]) {
     const b64 = readFileSync(path.join(REPO, "public", f)).toString("base64");
-    const share = await page.evaluate(async src => {
+    const m = await page.evaluate(async src => {
       const img = new Image();
       await new Promise(r => { img.onload = r; img.src = src; });
       const c = document.createElement("canvas");
       c.width = img.width; c.height = img.height;
       c.getContext("2d").drawImage(img, 0, 0);
       const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-      let hits = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        // near #FFE24A: high red, high green, low blue
-        if (d[i] > 220 && d[i + 1] > 190 && d[i + 1] < 245 && d[i + 2] < 130) hits++;
+      const at = (x, y) => { const i = (y * c.width + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+      const dark = p => p[0] < 60 && p[1] < 60 && p[2] < 70;
+      const pale = p => p[0] > 225 && p[1] > 225 && p[2] > 225;
+      let yellow = 0, x0 = c.width, x1 = -1, y0 = c.height, y1 = -1;
+      for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+        const p = at(x, y);
+        if (p[0] > 220 && p[1] > 190 && p[1] < 245 && p[2] < 130) yellow++;
+        if (dark(p)) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
       }
-      return hits / (c.width * c.height);
+      // white ink — letters and the two rules — inside the black block
+      let ink = 0, cells = 0;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        cells++; if (pale(at(x, y))) ink++;
+      }
+      return { yellow: yellow / (c.width * c.height), ink: ink / Math.max(1, cells),
+               w: x1 - x0 + 1, h: y1 - y0 + 1 };
     }, "data:image/png;base64," + b64);
-    ok(`${f} carries the mark's yellow X`, share > 0.004,
-       `${(share * 100).toFixed(2)}% yellow — run \`npm run icons\` after changing .mark`);
+    /* An icon drawn with the yellow X measured over 0.4% of its pixels;
+       what is left here is a few antialiased edges reading warm. */
+    ok(`${f} has no yellow left in it`, m.yellow < 0.002,
+       `${(m.yellow * 100).toFixed(2)}% — run \`npm run icons\` after changing .mark`);
+    /* The struck lockup is 3.86em wide by 1.7em tall. The stamped one it
+       replaced was 3.5 by 2.25, so the ratio alone tells the two apart. */
+    ok(`...and the block has the struck lockup's proportions`,
+       Math.abs(m.w / m.h - 2.27) < 0.3, `${(m.w / m.h).toFixed(2)} wide-to-tall, want ~2.27`);
+    ok(`...with the word and the strike actually drawn on it`,
+       m.ink > 0.1 && m.ink < 0.45, `${(m.ink * 100).toFixed(1)}% white ink in the block`);
   }
   await browser.close();
 }

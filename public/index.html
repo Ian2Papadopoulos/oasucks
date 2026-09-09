@@ -72,23 +72,27 @@
   header{position:sticky;top:0;z-index:800;background:var(--paper);
     padding:14px 16px 10px;margin:0 -16px 2px;border-bottom:1px solid var(--rule)}
   .brand{display:flex;align-items:center;gap:9px}
-  /* Deeper at the bottom than the top: that is the room the X hangs in. */
-  .mark{background:var(--toner);color:var(--paper);padding:5px 7px 10px;font-weight:700;
-    font-size:12px;letter-spacing:.1em;flex:none;position:relative}
-  /* One yellow X, not a strikeout. It sits on the seam between the second
-     A and the S — the middle of the word — and low, in the bottom third,
-     so OASA still reads in full above it and the X lands as a stamp on
-     the name rather than a line cancelling it. Set as a glyph in the same
-     mono face as the letters, so it belongs to the same alphabet.
-     `paint-order` keeps the dark stroke outside the yellow instead of
-     eating into it; the shadow is the fallback where that is ignored, and
-     is invisible under the stroke where it is not. */
-  .mark::after{content:"X";position:absolute;left:calc(50% - 2px);top:74%;
-    transform:translate(-50%,-50%);
-    font:700 19px/1 var(--mono);letter-spacing:0;color:var(--marker);
-    -webkit-text-stroke:2.5px var(--toner);paint-order:stroke fill;
-    text-shadow:0 0 1px var(--toner),0 0 1px var(--toner);
-    pointer-events:none}
+  /* One mark, everywhere it appears: OASA in white on a black block, struck
+     through by two white rules that cross off-square. That skew is the whole
+     idea — a clean X would read as a logo, a lopsided one reads as something
+     scratched out by hand, which is the joke the name is making.
+
+     Every measurement below is in em, so the same rule set draws the splash
+     at 34px, the tour card at 17px and the launcher icon at whatever size
+     the generator asks for. `line-height:1` is what makes the box height
+     predictable enough for the icon to be the same lockup rather than a
+     near-miss; `text-indent` gives back the trailing space that
+     letter-spacing adds after the final A, so the word sits on the centre. */
+  .mark{background:var(--toner);color:var(--paper);padding:.35em .53em;font-weight:700;
+    font-size:12px;line-height:1;letter-spacing:.1em;text-indent:.1em;
+    flex:none;position:relative}
+  .mark::before,.mark::after{content:"";position:absolute;top:50%;
+    height:.09em;background:var(--paper);pointer-events:none}
+  /* the long one, near-horizontal, running the width of the block */
+  .mark::after{left:.2em;right:.2em;transform:translateY(-.045em) rotate(-7deg)}
+  /* and the short steep one it crosses */
+  .mark::before{left:50%;width:1.82em;margin-left:-.91em;
+    transform:translateY(-.045em) rotate(52deg)}
   /* One word now, so the two-line stack that made the old pun work is gone.
      Everything else about it is the same: mono, bold, uppercase, tracked. */
   .wordmark{display:flex;align-items:baseline;margin:0;line-height:1;
@@ -517,8 +521,7 @@
   .art-plan{width:52px;height:52px}
   .art-plan .ab{font-size:15px}
   .art-bell{font-size:34px;line-height:1}
-  .art-mark{font-size:17px;padding:7px 9px 14px}
-  .art-mark::after{font-size:27px;-webkit-text-stroke-width:3.5px}
+  .art-mark{font-size:17px}
   /* ---------------------------- the FAQ ---------------------------- */
   .faq{border-top:1px dashed var(--rule)}
   .faq:last-of-type{border-bottom:1px dashed var(--rule)}
@@ -803,16 +806,8 @@
      crossed rules, no colour. The yellow X is the app's icon and the thing
      a launcher shows; putting the plain strike here keeps the opening
      frame quiet, and the two are different by choice rather than drift. */
-  .splash .mark{font-size:34px;padding:12px 18px;letter-spacing:.1em;
-    animation:splashin .32s ease-out}
-  .splash .mark::after{content:"";position:static;font:0/0 a;color:transparent;
-    -webkit-text-stroke:0;text-shadow:none;transform:none}
-  .splash .mark::before,.splash .mark::after{
-    content:"";position:absolute;height:3px;background:var(--paper);
-    top:50%;-webkit-text-stroke:0;text-shadow:none}
-  .splash .mark::after{left:7px;right:7px;transform:translateY(-1.5px) rotate(-7deg)}
-  .splash .mark::before{left:50%;width:62px;margin-left:-31px;
-    transform:translateY(-1.5px) rotate(52deg)}
+  /* Nothing to redraw here any more — the mark is the mark. Only its size. */
+  .splash .mark{font-size:34px;animation:splashin .32s ease-out}
   @keyframes splashin{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){
     .splash{transition:none} .splash .mark{animation:none}
@@ -882,7 +877,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v54</span></div>
+  <div class="foot"><span class="ver">v55</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -5007,7 +5002,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v54</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v55</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

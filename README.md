@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v54.**
+version: v55.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 620 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 631 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -250,9 +250,19 @@ the app to one domain.
 
 `npm run icons` rebuilds `icon-192`, `icon-512` and `icon-maskable-512` from the CSS mark
 rather than from a separate drawing, because two drawings of one logo drift and the drift
-is invisible until somebody installs the app and gets last year's icon. `test/brand.mjs`
-looks for the mark's yellow in the icons' actual pixels, so forgetting to run it fails
-the suite instead of shipping.
+is invisible until somebody installs the app and gets last year's icon. That is not
+hypothetical here: for several versions the icon and the header wore a yellow X stamped on
+the name while the splash kept the black-and-white strike, and the launcher ended up with
+the one nobody meant to ship. There is one mark now — OASA struck through by two white
+rules crossing off-square — and the splash, the tour card and all three icons draw it from
+the same rules.
+
+Those rules are measured in em, so one description scales from 17px on a tour card to 512
+across in a launcher, and `.mark` pins `line-height` so the block's height is predictable
+enough for the generator to reproduce it exactly. `test/brand.mjs` reads the icons' pixels:
+no yellow anywhere, the block's width-to-height matching the current lockup, and enough
+white ink on it to prove the word and the strike are actually drawn. Forgetting to run
+`npm run icons` fails the suite instead of shipping.
 
 ## Ship it as a real Play Store app (optional)
 
