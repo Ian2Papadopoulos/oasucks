@@ -188,12 +188,32 @@ browser. Without it nothing breaks, the app just says walking times are estimate
 curl.exe "https://oasax.com/health?token=$env:ADMIN_TOKEN"
 ```
 Look for `"ors": true` under `bindings`. If it is `false`, walking legs will be drawn as
-straight lines and house numbers will not resolve — the two symptoms have one cause.
+straight lines and house numbers resolve worse — the two symptoms have one cause.
+
+`bindings` only appears when you are authenticated, and that needs a second secret:
+
+```bash
+npx wrangler secret put ADMIN_TOKEN   # any long random string you keep
+npx wrangler secret list              # names only, never values
+```
+
+`secret list` answers the same question offline: if `ORS_KEY` is in that list, the Worker
+has it. Without `ADMIN_TOKEN` set, `/health` still answers — it just returns `ok`, the
+version and the time, and no `bindings` block, which is the point. There is no way to
+read a secret's value back out of Cloudflare, by design; if you have lost it, put a new
+one in.
 
 > **PowerShell note.** `curl` there is an alias for `Invoke-WebRequest`, which parses the
 > response and warns about script execution. Use **`curl.exe`** (the real one, shipped
 > with Windows 10+) for anything that should just print the body, or
 > `Invoke-RestMethod` if you want PowerShell to parse the JSON for you.
+
+**Address estimates need no key and no account.** When no geocoder can find a house
+number, the Worker asks the public Overpass API for the street and the numbered points
+along it and estimates the position between them. Nothing to configure — but it is a
+third-party service with a fair-use policy, so if you ever see estimated numbers stop
+appearing, check that `overpass-api.de` is answering before looking anywhere else. The
+app degrades to the street row, which is what it did before this existed.
 
 The same key also powers **address search**. With it, typing a destination into the
 journey planner matches partial words, ranks what is near you first, and finds street
@@ -239,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v52",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v53",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 

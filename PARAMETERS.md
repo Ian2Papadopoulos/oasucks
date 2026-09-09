@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v52 defaults** — if you edit the
+breaks if you change it. Values here are the **v53 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -441,6 +441,28 @@ daily quota while Nominatim's are free.
 The key goes in an `Authorization` header, never the query string, so the request
 URL is safe to use as a cache key. Putting it in the query would file the secret
 into Cloudflare's cache index for every search anyone ever runs.
+
+### Estimating a house number nobody mapped — `INTERP`
+
+Last resort on the address path: every geocoder has missed, and what came back is the
+street. The worker asks Overpass for that road and the numbered points along it, then
+reads the requested number off the line between the two nearest.
+
+| Name | Default | What it does | Raise it / lower it |
+|---|---|---|---|
+| `radiusM` | **350 m** | How far around the matched point to look for the road and its numbers. | Too small and a long road is cut short of its anchors; too large and the next street's numbers join in. |
+| `anchorM` | **60 m** | A numbered point further than this from the road belongs to another road. | Buildings set back from the kerb need the slack; a narrow grid needs less. |
+| `maxStreets` | **3** | Distinct roads in one result set that get an Overpass call. | This is the request budget for the whole feature. |
+| `maxSpan` | **60** | Widest gap in numbers we will interpolate across, and furthest past the last mapped number we will extrapolate. | Past this it is guessing, not estimating. |
+| `timeoutMs` | **3 500 ms**, one try | Fuse on the Overpass call. | Someone is mid-keystroke; the shared helper's 2 × 8 s would be 16 s of nothing. |
+| `cache` | **7 days** | Edge-cache lifetime. A street pays for this once a week, everyone else rides the cache. | |
+
+Odd and even are read off their own pavement when either side has two anchors of its own.
+The road's several OSM ways are chained end to end first, flipping as needed, since
+interpolating along the wrong one puts the number in the next neighbourhood. The row
+comes back with `precision: "interpolated"` and the app labels it *approximate*; a row
+that cannot be estimated stays a street, and Overpass being down changes nothing on
+screen.
 
 ---
 

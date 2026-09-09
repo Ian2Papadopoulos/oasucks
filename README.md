@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v52.**
+version: v53.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 595 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 617 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -480,9 +480,34 @@ Nominatim rather than surfacing an error.
 
 **A street beats nothing.** v50 rejected any addressed result that had not resolved to a
 building, which turned "OSM has no number 12 on this road" into an empty list. That was a
-regression: the honest answer is the street, *labelled as the street* — the app now says
+regression: the honest answer is the street, *labelled as the street* — the app says
 "whole street — that number isn't mapped" on such a row rather than passing it off as the
 address or hiding it.
+
+**And an estimate beats a street.** No geocoder can return a number nobody surveyed, and
+a great many Athens roads carry none. What most of them do carry is a handful of numbered
+points — a pharmacy at 14, a school at 32 — and a road geometry running between them,
+which is enough to say roughly where 22 sits. When every geocoder has missed, the worker
+asks Overpass for the road and its numbered points, projects those points onto the road,
+and reads the requested number off the line between them.
+
+Odd and even are measured on their own pavement, since they run up opposite sides
+together and mixing them doubles the steps per metre. A number past the last mapped one
+carries on at the rate the nearest two set, but only for `maxSpan` (60) numbers —
+extrapolating 200 past the evidence is guessing, not estimating. A numbered point more
+than `anchorM` (60 m) off the road belongs to a different street and is dropped, and a
+long road is chained end to end from its several OSM ways first, because interpolating
+along the wrong one puts number 22 in the next neighbourhood.
+
+The result is labelled **"approximate — that number isn't mapped"** and lands within a
+block, which is the resolution a bus journey needs; the walking leg absorbs the rest. It
+costs at most three Overpass calls per search, only on the path where everything else has
+already failed, cached for a week, with a 3.5-second fuse and no retry — someone is
+mid-keystroke, and a slow answer there is worse than none. If Overpass is down the street
+row it would have replaced is still on screen.
+
+Same-named streets in different neighbourhoods each get their own estimate, because they
+are genuinely different answers and the rider is the one who knows which.
 
 **Some streets resolved and some didn't**, with nothing obviously different about them.
 The cause was never the street: free-form search treats "Φιλοτίμου 12" as a bag of words

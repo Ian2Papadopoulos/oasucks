@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v52";
+const APP_VERSION = "v53";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -112,11 +112,17 @@ function adminOK(req, env) {
 
 /* ===================== generic fetch helpers ====================== */
 
-async function timedFetch(urlStr, cacheTtl) {
+/* `opts` exists for the one caller that must not make a rider wait: a
+   best-effort lookup on the type-ahead path wants a short fuse and no
+   second attempt, because failing fast still leaves a usable answer on
+   screen and 2 × 8s does not. */
+async function timedFetch(urlStr, cacheTtl, opts) {
+  const ms = (opts && opts.timeoutMs) || TIMEOUT_MS;
+  const tries = (opts && opts.tries) || 2;
   let lastErr;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < tries; attempt++) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), ms);
     try {
       const res = await fetch(urlStr, {
         method: "GET",
@@ -161,9 +167,9 @@ async function proxy(targetUrl, cacheSeconds, skipCache) {
   return res;
 }
 
-async function getJSON(urlStr, cacheTtl) {
+async function getJSON(urlStr, cacheTtl, opts) {
   try {
-    const r = await timedFetch(urlStr, cacheTtl);
+    const r = await timedFetch(urlStr, cacheTtl, opts);
     if (!r.ok) return null;
     return await r.json();
   } catch { return null; }
@@ -405,6 +411,213 @@ async function orsGeocode(q, lang, focus, env) {
   return rows;
 }
 
+/* ------------- house numbers OpenStreetMap does not have ------------- *
+ * A great many Athens streets carry no `addr:housenumber` at all, and no
+ * geocoder can return a number that was never surveyed. What most of those
+ * streets DO carry is a handful of numbered points — a pharmacy at 14, a
+ * school at 32 — and a road geometry running between them. That is enough
+ * to say roughly where number 22 is: project the known numbers onto the
+ * road, and read the requested one off the line between them.
+ *
+ * This is an estimate and it is labelled as one. It lands within a block,
+ * which is the resolution a bus journey actually needs — the walking leg
+ * absorbs the rest — and it beats the alternative, which was handing back
+ * the midpoint of a two-kilometre road.
+ *
+ * Overpass is the only free source for "every numbered point on this
+ * street", so it is asked at most three times per search, only after every
+ * geocoder has already missed, and the answer is cached for a week. If it
+ * is slow or down, the street row it would have replaced is still there.
+ * ------------------------------------------------------------------- */
+const OVERPASS = "https://overpass-api.de/api/interpreter";
+const INTERP = {
+  radiusM: 350,      // how far around the matched point to look for the road
+  anchorM: 60,       // a numbered point further than this belongs to another street
+  maxStreets: 3,     // distinct roads we will spend an Overpass call on
+  maxSpan: 60,       // give up if the nearest known numbers are this far off
+  cache: 7 * 86400,  // a house number is not news
+  timeoutMs: 3500,   // someone is typing; a slow answer is worse than none
+};
+
+function overpassUrl(name, lat, lng, r) {
+  // the name goes inside a quoted Overpass string; quotes and backslashes out
+  const n = String(name).replace(/["\\]/g, " ").trim();
+  const q = `[out:json][timeout:20];`
+    + `way(around:${r},${lat},${lng})[highway][name="${n}"];out geom;`
+    + `nwr(around:${r},${lat},${lng})["addr:housenumber"]["addr:street"="${n}"];out center;`;
+  return OVERPASS + "?data=" + encodeURIComponent(q);
+}
+
+/* "12", "12Α", "12-14" → 12. A number we cannot read is not an anchor. */
+function houseNum(s) {
+  const m = /^\s*(\d{1,4})/.exec(String(s || ""));
+  return m ? Number(m[1]) : null;
+}
+
+/* Metres, flat, around one latitude. Athens is small enough that the
+   error over a single street is far below the error in the estimate. */
+function planar(lat0) {
+  const kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
+  return { x: p => p.lon * kx, y: p => p.lat * ky };
+}
+
+/* A long road is several OSM ways with independent directions, and
+   interpolating along the wrong one puts number 22 in the next
+   neighbourhood. Chain them end to end, flipping as needed; anything that
+   will not join is a side branch and is dropped. */
+function joinWays(ways) {
+  const segs = ways.map(w => (w.geometry || []).map(g => ({ lat: g.lat, lon: g.lon })))
+    .filter(s => s.length > 1);
+  if (!segs.length) return [];
+  const same = (a, b) => Math.abs(a.lat - b.lat) < 1e-7 && Math.abs(a.lon - b.lon) < 1e-7;
+  let line = segs.shift(), moved = true;
+  while (segs.length && moved) {
+    moved = false;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i], head = line[0], tail = line[line.length - 1];
+      if (same(tail, s[0])) line = line.concat(s.slice(1));
+      else if (same(tail, s[s.length - 1])) line = line.concat(s.slice(0, -1).reverse());
+      else if (same(head, s[s.length - 1])) line = s.slice(0, -1).concat(line);
+      else if (same(head, s[0])) line = s.slice(1).reverse().concat(line);
+      else continue;
+      segs.splice(i, 1); moved = true; break;
+    }
+  }
+  return line;
+}
+
+function cumulative(pts) {
+  const c = [0];
+  for (let i = 1; i < pts.length; i++)
+    c.push(c[i - 1] + hav(pts[i - 1].lat, pts[i - 1].lon, pts[i].lat, pts[i].lon));
+  return c;
+}
+
+/* How far along the road a point sits, and how far off it — the second
+   number is what tells us the point belongs to some other street. */
+function projectAlong(pts, cum, pr, p) {
+  let best = { off: Infinity, along: 0 };
+  const qx = pr.x(p), qy = pr.y(p);
+  for (let i = 1; i < pts.length; i++) {
+    const ax = pr.x(pts[i - 1]), ay = pr.y(pts[i - 1]);
+    const vx = pr.x(pts[i]) - ax, vy = pr.y(pts[i]) - ay;
+    const L2 = vx * vx + vy * vy;
+    let t = L2 ? ((qx - ax) * vx + (qy - ay) * vy) / L2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const off = Math.hypot(qx - (ax + t * vx), qy - (ay + t * vy));
+    if (off < best.off) best = { off, along: cum[i - 1] + t * (cum[i] - cum[i - 1]) };
+  }
+  return best;
+}
+
+function pointAt(pts, cum, along) {
+  const total = cum[cum.length - 1];
+  const d = Math.max(0, Math.min(total, along));
+  let i = 1;
+  while (i < cum.length - 1 && cum[i] < d) i++;
+  const seg = (cum[i] - cum[i - 1]) || 1;
+  const t = (d - cum[i - 1]) / seg;
+  return { lat: pts[i - 1].lat + t * (pts[i].lat - pts[i - 1].lat),
+           lon: pts[i - 1].lon + t * (pts[i].lon - pts[i - 1].lon) };
+}
+
+/* Odd and even run up opposite pavements together, so when one side has
+   enough anchors of its own it is the better ruler — mixing the sides
+   doubles the number of steps per metre and skews the estimate. */
+function alongFor(anchors, want) {
+  const side = anchors.filter(a => a.n % 2 === want % 2);
+  const use = (side.length >= 2 ? side : anchors).slice().sort((a, b) => a.n - b.n);
+  if (!use.length) return null;
+
+  const exact = use.find(a => a.n === want);
+  if (exact) return { along: exact.along, exact: true };
+  if (use.length < 2) return null;
+
+  let lo = null, hi = null;
+  for (const a of use) {
+    if (a.n < want && (!lo || a.n > lo.n)) lo = a;
+    if (a.n > want && (!hi || a.n < hi.n)) hi = a;
+  }
+  if (lo && hi) {
+    if (hi.n - lo.n > INTERP.maxSpan) return null;
+    const t = (want - lo.n) / (hi.n - lo.n);
+    return { along: lo.along + t * (hi.along - lo.along), exact: false };
+  }
+  /* Past both ends of what anyone has mapped: carry on at the rate the
+     nearest two numbers set, but only just past them. Extrapolating 200
+     numbers off the end of the evidence is guessing, not estimating. */
+  const near = want < use[0].n ? [use[0], use[1]] : [use[use.length - 1], use[use.length - 2]];
+  if (Math.abs(want - near[0].n) > INTERP.maxSpan) return null;
+  const dn = near[0].n - near[1].n;
+  if (!dn) return null;
+  const rate = (near[0].along - near[1].along) / dn;
+  return { along: near[0].along + (want - near[0].n) * rate, exact: false };
+}
+
+/* One street row in, the same row with a house number in it out — or null
+   when the road has nothing to measure against. */
+async function interpolateStreet(row, want) {
+  const lat = Number(row.lat), lon = Number(row.lon);
+  const a = row.address || {};
+  const name = a.road || a.pedestrian || a.footway || a.path
+    || String(row.display_name || "").split(",")[0].trim();
+  if (!name || !isFinite(lat) || !isFinite(lon)) return null;
+
+  const data = await getJSON(overpassUrl(name, lat, lon, INTERP.radiusM), INTERP.cache,
+    { timeoutMs: INTERP.timeoutMs, tries: 1 });
+  const els = (data && Array.isArray(data.elements)) ? data.elements : null;
+  if (!els || !els.length) return null;
+
+  const line = joinWays(els.filter(e => e.type === "way" && e.geometry && e.tags && e.tags.highway));
+  if (line.length < 2) return null;
+  const cum = cumulative(line), pr = planar(lat);
+
+  const anchors = [];
+  for (const e of els) {
+    const n = e.tags ? houseNum(e.tags["addr:housenumber"]) : null;
+    if (n === null) continue;
+    const p = e.type === "node" ? { lat: e.lat, lon: e.lon } : e.center;
+    if (!p || !isFinite(p.lat) || !isFinite(p.lon)) continue;
+    const pj = projectAlong(line, cum, pr, p);
+    if (pj.off > INTERP.anchorM) continue;
+    anchors.push({ n, along: pj.along });
+  }
+  const hit = alongFor(anchors, want);
+  if (!hit) return null;
+
+  const at = pointAt(line, cum, hit.along);
+  const rest = String(row.display_name || "").split(",").slice(1).join(",").trim();
+  return {
+    lat: String(at.lat), lon: String(at.lon),
+    display_name: rest ? `${name} ${want}, ${rest}` : `${name} ${want}`,
+    address: { ...a, road: name, house_number: String(want) },
+    matched: row.matched, source: hit.exact ? "osm" : "interp",
+    precision: hit.exact ? "address" : "interpolated",
+  };
+}
+
+/* Same-named streets in different neighbourhoods are separate answers and
+   each deserves its own estimate, so this runs per row rather than once —
+   but only for the first few distinct roads, and all at the same time. */
+async function fillHouseNumbers(rows, want) {
+  if (!Number.isFinite(want)) return rows;
+  const seen = new Set(), picks = [];
+  for (const r of rows) {
+    const la = Number(r.lat), ln = Number(r.lon);
+    if (!isFinite(la) || !isFinite(ln)) continue;
+    const k = la.toFixed(3) + "," + ln.toFixed(3);
+    if (seen.has(k)) continue;
+    seen.add(k); picks.push(r);
+    if (picks.length >= INTERP.maxStreets) break;
+  }
+  if (!picks.length) return rows;
+  const done = await Promise.all(picks.map(r =>
+    interpolateStreet(r, want).catch(() => null)));
+  const swap = new Map();
+  picks.forEach((r, i) => { if (done[i]) swap.set(r, done[i]); });
+  return swap.size ? rows.map(r => swap.get(r) || r) : rows;
+}
+
 async function handleGeocode(url, env) {
   const q = (url.searchParams.get("q") || "").trim();
   if (!q) return json({ error: "q required" }, 400);
@@ -477,8 +690,17 @@ async function handleGeocode(url, env) {
     if (!street) street = osmRows(data, cand);
   }
 
-  // no building anywhere: the street, honestly labelled, beats an empty list
-  return json(street ? tag(street) : []);
+  /* No building anywhere. Before falling back to the whole road, try to
+     place the number along it from whatever numbers the street does carry;
+     rows that cannot be estimated stay as they were. The street, honestly
+     labelled, still beats an empty list. */
+  if (!street) return json([]);
+  if (wantsNumber) {
+    const a = splitAddress(q);
+    const want = a ? houseNum(a.num) : null;
+    if (want !== null) return json(tag(await fillHouseNumbers(street, want)));
+  }
+  return json(tag(street));
 }
 
 /* =========================== web push ============================= */

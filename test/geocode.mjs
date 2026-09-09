@@ -27,6 +27,7 @@ const src = readFileSync(path.join(REPO, "worker.js"), "utf8")
 let sent = [];
 let orsReply = null;          // set per test: a Pelias FeatureCollection, or a thrower
 let osmReply = null;          // what the Nominatim fallback returns
+let overpassReply = null;     // the street geometry and its numbered points
 let cachePuts = [];
 
 const ctx = {
@@ -51,6 +52,7 @@ vm.runInContext(src, ctx);
 ctx.__record = (url, headers) => sent.push({ url, headers });
 ctx.__ors = () => orsReply;
 ctx.__osm = () => osmReply;
+ctx.__overpass = () => overpassReply;
 vm.runInContext(`
   fetch = async (url, opts) => {
     __record(url, (opts && opts.headers) || {});
@@ -59,7 +61,10 @@ vm.runInContext(`
     if (r === "500") return { ok: false, status: 500, json: async () => ({}) };
     return { ok: true, status: 200, json: async () => r };
   };
-  getJSON = async (u) => { __record(u, {}); return __osm(); };
+  getJSON = async (u) => {
+    __record(u, {});
+    return String(u).includes("overpass") ? __overpass(u) : __osm();
+  };
 `, ctx);
 
 const geocode = (params, env) => {
@@ -274,6 +279,130 @@ console.log("\n— falling back —");
     r.status === 400 && sent.length === 0);
 }
 
+/* ---- the number OpenStreetMap never recorded ------------------------ *
+   Most Athens streets carry a few numbered points and no more. Between
+   them the position of a number can be read off the road itself, which is
+   an estimate, is labelled as one, and lands within a block — where the
+   alternative was the midpoint of the whole street. */
+console.log("\n— interpolating a house number —");
+const STREET = "Φιλοτίμου";
+const street = (over = {}) => ({
+  lat: "37.9750", lon: "23.7350", class: "highway",
+  display_name: `${STREET}, Πολύγωνο, Αθήνα`, address: { road: STREET }, ...over,
+});
+// a straight run due east, so distance along it is linear in longitude
+const road = (lon0 = 23.7300, lon1 = 23.7400) => ({
+  type: "way", tags: { highway: "residential", name: STREET },
+  geometry: [{ lat: 37.9750, lon: lon0 }, { lat: 37.9750, lon: lon1 }],
+});
+const at = (n, lon, lat = 37.9750) => ({
+  type: "node", lat, lon,
+  tags: { "addr:housenumber": String(n), "addr:street": STREET },
+});
+const askFor = async (num, elements, rows = [street()]) => {
+  orsReply = fc();
+  osmReply = rows;
+  overpassReply = elements === null ? null : { elements };
+  return body(await geocode("q=" + encodeURIComponent(`${STREET} ${num}`), KEY));
+};
+const overpassCalls = () => sent.filter(s => s.url.includes("overpass"));
+
+{
+  const j = await askFor(20, [road(), at(10, 23.7320), at(30, 23.7360)]);
+  ok("a number between two mapped ones is placed between them",
+    Math.abs(Number(j[0].lon) - 23.7340) < 0.0002, j[0].lon);
+  ok("...and says so, rather than passing for a surveyed address",
+    j[0].precision === "interpolated", j[0].precision);
+  ok("...carrying the number the rider asked for",
+    j[0].address.house_number === "20" && j[0].address.road === STREET,
+    JSON.stringify(j[0].address));
+  ok("...and keeping the neighbourhood it was found in",
+    /Πολύγωνο/.test(j[0].display_name), j[0].display_name);
+}
+{
+  const j = await askFor(21, [road(), at(11, 23.7320), at(31, 23.7360),
+                              at(10, 23.7300), at(100, 23.7400)]);
+  ok("odd and even are read off their own pavement",
+    Math.abs(Number(j[0].lon) - 23.7340) < 0.0002,
+    `${j[0].lon} — mixing the sides doubles the steps per metre`);
+}
+{
+  const j = await askFor(12, [road(), at(10, 23.7320), at(12, 23.7330), at(30, 23.7360)]);
+  ok("a number that IS mapped is used as it stands, not estimated",
+    j[0].precision === "address" && Math.abs(Number(j[0].lon) - 23.7330) < 0.0002,
+    `${j[0].precision} ${j[0].lon}`);
+}
+{
+  const j = await askFor(24, [road(), at(10, 23.7320), at(20, 23.7360)]);
+  ok("just past the last mapped number, the rate carries on",
+    j[0].precision === "interpolated" && Number(j[0].lon) > 23.7360, j[0].lon);
+  const far = await askFor(400, [road(), at(10, 23.7320), at(20, 23.7360)]);
+  ok("...but 380 numbers past it is guessing, so the street comes back instead",
+    far[0].precision === "street", far[0].precision);
+}
+{
+  const j = await askFor(20, [road(), at(10, 23.7320)]);
+  ok("one lonely number is nothing to measure against",
+    j[0].precision === "street", j[0].precision);
+}
+{
+  // same numbers, but sitting a street away — they describe a different road
+  const j = await askFor(20, [road(), at(10, 23.7320, 37.9790), at(30, 23.7360, 37.9790)]);
+  ok("numbered points off the line belong to another street and are ignored",
+    j[0].precision === "street", `${j[0].precision} — 440m off the road`);
+}
+{
+  const j = await askFor(20, null);
+  ok("Overpass being down leaves the street answer standing",
+    j.length === 1 && j[0].precision === "street", JSON.stringify(j[0]));
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("...and it fails fast, because someone is mid-keystroke",
+    /timeoutMs: INTERP\.timeoutMs, tries: 1/.test(w) && /timeoutMs: 3500/.test(w),
+    "the shared helper retries twice at 8s, which is 16s of nothing on screen");
+}
+{
+  const rows = [street(), street({ lat: "37.9800", lon: "23.7500" }),
+                street({ lat: "37.9900", lon: "23.7600" }),
+                street({ lat: "38.0000", lon: "23.7700" }),
+                street({ lat: "38.0100", lon: "23.7800" })];
+  const j = await askFor(20, [road(), at(10, 23.7320), at(30, 23.7360)], rows);
+  ok("every same-named street in Athens is still offered", j.length === 5);
+  ok("...but only the first few cost an Overpass call",
+    overpassCalls().length === 3, `${overpassCalls().length} calls`);
+  ok("...and the ones not estimated are still there as streets",
+    j.slice(3).every(r => r.precision === "street"));
+}
+{
+  const j = await askFor(20, [road(), at(10, 23.7320), at(30, 23.7360)],
+    [street({ lat: "37.9750", lon: "23.7350" }), street({ lat: "37.97501", lon: "23.73502" })]);
+  ok("two ways of one road are one street, not two Overpass calls",
+    overpassCalls().length === 1, `${overpassCalls().length} calls`);
+}
+{
+  orsReply = fc(feature());          // an exact address, first time of asking
+  osmReply = [];
+  overpassReply = { elements: [road(), at(10, 23.7320), at(30, 23.7360)] };
+  const j = await body(await geocode("q=" + encodeURIComponent("Φιλοτίμου 12"), KEY));
+  ok("a geocoder that found the building is not second-guessed",
+    j[0].precision === "address" && overpassCalls().length === 0);
+}
+{
+  orsReply = fc();
+  osmReply = [street()];
+  overpassReply = { elements: [road(), at(10, 23.7320), at(30, 23.7360)] };
+  await body(await geocode("q=" + encodeURIComponent(STREET), KEY));
+  ok("a search with no number in it never asks", overpassCalls().length === 0,
+    "nothing to interpolate, and a quota to protect");
+}
+{
+  await askFor(20, [road(), at(10, 23.7320), at(30, 23.7360)]);
+  const q = decodeURIComponent(new URL(overpassCalls()[0].url).searchParams.get("data") || "");
+  ok("the query asks for the road and its numbered points in one round trip",
+    /\[highway\]\[name="Φιλοτίμου"\]/.test(q) && /addr:housenumber/.test(q), q.slice(0, 90));
+  ok("...bounded to the neighbourhood the street was matched in",
+    /around:350,37\.975,23\.735/.test(q), q.slice(0, 90));
+}
+
 console.log("\n— caching —");
 {
   orsReply = fc(feature());
@@ -331,6 +460,10 @@ console.log("\n— the type-ahead itself —");
     /query\.length < JPQ\.minChars/.test(html));
   ok("address hits are told apart from stops at a glance",
     /add\("📍 " \+ lab/.test(html));
+  ok("an estimated number is labelled as estimated in the list",
+    /it\.precision === "interpolated" \? t\("addrApprox"\)/.test(html),
+    "the rider has to be able to tell a survey from an interpolation");
+  ok("...in both languages", (html.match(/addrApprox:/g) || []).length === 2);
   ok("every map builds its tiles through addTiles",
     (html.match(/L\.tileLayer\(/g) || []).length === 1,
     "a second construction is how the journey map shipped broken in v43");

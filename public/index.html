@@ -864,7 +864,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v52</span></div>
+  <div class="foot"><span class="ver">v53</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1213,6 +1213,7 @@ const T={
   jpWhyAlso:v=>`Πιο αργό από το να πάρεις όχημα (${v}′), αλλά γίνεται με τα πόδια.`,
   jpPickH:"Επίλεξε σημείο", jpPickPh:"Διεύθυνση, στάση ή σταθμός…",
   addrStreetOnly:"όλος ο δρόμος — δεν βρέθηκε ο αριθμός",
+  addrApprox:"κατά προσέγγιση — ο αριθμός δεν είναι στον χάρτη",
   slotHome:"Σπίτι", slotWork:"Δουλειά",
   slotSetHome:"Όρισε το σπίτι", slotSetWork:"Όρισε τη δουλειά",
   slotPick:n=>`Διάλεξε: ${n}`,
@@ -1299,10 +1300,13 @@ const T={
     καρφιτσώνεται. Μένει στην κορυφή ακόμη κι όταν είσαι αλλού.</p>
     <p><b>Κράτα το πατημένο</b> για να την ξεκαρφιτσώσεις.</p>`,
   faqPlanQ:"Πώς βρίσκω διαδρομή;",
-  faqPlanA:`<p>☰ → <b>Διαδρομή</b>. Βάλε αφετηρία και προορισμό: διεύθυνση (και με αριθμό),
-    στάση, σταθμό ή την τοποθεσία σου.</p>
+  faqPlanA:`<p>Το κουμπί <b>A→B</b> πάνω. Βάλε αφετηρία και προορισμό: διεύθυνση (και με
+    αριθμό), στάση, σταθμό ή την τοποθεσία σου.</p>
     <p>Στη λίστα επιλογής μπορείς να ορίσεις <b>Σπίτι</b> και <b>Δουλειά</b> — μετά είναι
     ένα πάτημα. Κράτα πατημένο για να τα καθαρίσεις.</p>
+    <p>Πολλοί δρόμοι της Αθήνας δεν έχουν καταγεγραμμένους αριθμούς στον χάρτη. Τότε η
+    θέση υπολογίζεται από τους γειτονικούς αριθμούς και το αποτέλεσμα γράφει
+    <b>κατά προσέγγιση</b> — πέφτει μέσα στο τετράγωνο, όχι στην πόρτα.</p>
     <p>Οι χρόνοι με τα πόδια υπολογίζονται σε πραγματικό πεζόδρομο όπου γίνεται· αλλιώς η
     εφαρμογή το λέει ότι είναι εκτίμηση.</p>`,
   faqReportQ:"Τι είναι οι ζωντανές αναφορές;",
@@ -1470,6 +1474,7 @@ const T={
   jpWhyAlso:v=>`Slower than riding (${v}′), but you can walk it.`,
   jpPickH:"Pick a place", jpPickPh:"Address, stop or station…",
   addrStreetOnly:"whole street — that number isn't mapped",
+  addrApprox:"approximate — that number isn't mapped",
   slotHome:"Home", slotWork:"Work",
   slotSetHome:"Set home", slotSetWork:"Set work",
   slotPick:n=>`Choose your ${n.toLowerCase()}`,
@@ -1556,10 +1561,13 @@ const T={
     stays at the top even when you are somewhere else.</p>
     <p><b>Press and hold</b> to unpin it.</p>`,
   faqPlanQ:"How do I plan a journey?",
-  faqPlanA:`<p>☰ → <b>Journey</b>. Set a start and a destination: an address (house number
-    included), a stop, a station, or where you are.</p>
+  faqPlanA:`<p>The <b>A→B</b> button at the top. Set a start and a destination: an address
+    (house number included), a stop, a station, or where you are.</p>
     <p>In the place picker you can set <b>Home</b> and <b>Work</b> — after that it is one
     tap. Press and hold either to clear it.</p>
+    <p>Many Athens streets have no house numbers recorded on the map. There the position
+    is worked out from the numbers on either side and the result says
+    <b>approximate</b> — it lands on the right block, not the right door.</p>
     <p>Walking times follow real pavements where the router is available; where it is not,
     the app says the time is an estimate.</p>`,
   faqReportQ:"What are live reports?",
@@ -4688,7 +4696,8 @@ async function jpPickResults(q) {
        and OpenStreetMap has no number on a great many Athens roads, so
        that near miss is common and worth naming rather than hiding. */
     const isStreet = it.precision === "street";
-    const note = isStreet && it.wantedNumber ? t("addrStreetOnly") : "";
+    const note = it.precision === "interpolated" ? t("addrApprox")
+      : isStreet && it.wantedNumber ? t("addrStreetOnly") : "";
     add("📍 " + lab, { kind: "addr", lat: la, lng: ln, label: lab }, note, isStreet);
   });
 
@@ -4980,7 +4989,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v52</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v53</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
