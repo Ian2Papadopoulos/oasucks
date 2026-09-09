@@ -131,6 +131,14 @@
   /* display:flex above beats the UA's [hidden]{display:none} */
   .menu-item[hidden]{display:none}
   .menu-item:active{background:var(--paper)}
+  /* Two lines per item. Three entries is short enough that the space is
+     free, and "Journey" alone does not tell a first-time user that it
+     plans a trip across the network rather than showing one line. */
+  .mtxt{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .mtxt i{font-style:normal;font-weight:400;font-size:10.5px;color:var(--ink3);
+    letter-spacing:.01em}
+  /* Settings is the odd one out: it changes the app rather than using it. */
+  .menu-item.apart{border-top:2px solid var(--toner)}
   .menu-item .mi{width:18px;height:18px;display:grid;place-items:center;flex:none;
     border:1px solid var(--rule);font-size:10.5px;font-weight:700;border-radius:2px}
   .menu-item .mi-side{margin-left:auto;color:var(--ink3);font-size:10px;letter-spacing:.1em}
@@ -471,6 +479,49 @@
   .tourart{height:74px;display:grid;place-items:center;margin-bottom:12px;
     background:var(--paper);border:1px dashed var(--rule);border-radius:2px;
     font-size:30px;line-height:1}
+  /* Each card shows the actual control, at a size you can see. Built from
+     the app's own classes wherever one exists, so the picture and the
+     thing it points at cannot drift apart. */
+  .art-dot{width:34px;height:34px;border-width:4px}
+  .art-dot::after{width:16px;height:16px}
+  .art-star{font-size:38px;color:var(--marker2);line-height:1;
+    text-shadow:0 0 1px var(--toner),0 0 1px var(--toner)}
+  .art-seg{display:flex;border:1px solid var(--toner);border-radius:2px;overflow:hidden;
+    font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase}
+  .art-seg b,.art-seg i{padding:7px 13px;font-style:normal}
+  .art-seg b{background:var(--toner);color:var(--paper)}
+  .art-seg i{background:var(--card);color:var(--ink3)}
+  .art-bell{font-size:34px;line-height:1}
+  .art-mark{font-size:17px;padding:7px 9px 14px}
+  .art-mark::after{font-size:27px;-webkit-text-stroke-width:3.5px}
+  /* ---------------------------- the FAQ ---------------------------- */
+  .faq{border-top:1px dashed var(--rule)}
+  .faq:last-of-type{border-bottom:1px dashed var(--rule)}
+  .faq>summary{list-style:none;cursor:pointer;padding:11px 22px 11px 0;position:relative;
+    font-family:var(--mono);font-size:12px;font-weight:700;line-height:1.45;
+    color:var(--toner)}
+  .faq>summary::-webkit-details-marker{display:none}
+  .faq>summary::after{content:"+";position:absolute;right:2px;top:10px;
+    font-size:15px;color:var(--ink3);font-weight:700}
+  .faq[open]>summary::after{content:"–"}
+  .faq[open]>summary{color:var(--toner)}
+  .faq-a{padding:0 0 12px;font-size:12.5px;line-height:1.6;color:var(--ink2)}
+  .faq-a p{margin:0 0 8px}
+  .faq-a p:last-child{margin-bottom:0}
+  .faq-a b{color:var(--toner)}
+  .faq-a ul{margin:0 0 8px;padding-left:17px}
+  /* The accessibility answer is the one with a real cost to skimming. */
+  .faq.warn>summary{color:var(--flag)}
+  .faq.warn .faq-a{border-left:3px solid var(--flag);padding-left:10px}
+  .faq-btn{margin-top:4px;background:var(--toner);color:var(--paper);border:none;
+    padding:9px 14px;font-family:var(--mono);font-size:11px;font-weight:700;
+    cursor:pointer;border-radius:2px;letter-spacing:.08em;text-transform:uppercase}
+  /* While the picker is waiting to be told where home is, its heading
+     carries the marker colour — the one visible difference between
+     "choose a destination" and "choose a place to remember". */
+  .arming .sheet h3{background:var(--marker);border:1px solid var(--toner);
+    border-radius:2px;padding:6px 9px;margin:-2px 0 10px}
   .tourcard h3{margin:0 0 6px;font-family:var(--mono);font-size:14px;letter-spacing:.04em}
   .tourcard p{margin:0;color:var(--ink2);font-size:13px;line-height:1.55;font-family:var(--sans);
     min-height:60px}
@@ -727,9 +778,20 @@
      where fading out a splash the launcher already showed is still a
      second splash, just a politer one. */
   .splash.off{display:none}
-  .splash .mark{font-size:34px;padding:14px 20px 28px;letter-spacing:.1em;
+  /* The splash wears the ORIGINAL mark: white OASA struck through by two
+     crossed rules, no colour. The yellow X is the app's icon and the thing
+     a launcher shows; putting the plain strike here keeps the opening
+     frame quiet, and the two are different by choice rather than drift. */
+  .splash .mark{font-size:34px;padding:12px 18px;letter-spacing:.1em;
     animation:splashin .32s ease-out}
-  .splash .mark::after{font-size:54px;-webkit-text-stroke-width:7px}
+  .splash .mark::after{content:"";position:static;font:0/0 a;color:transparent;
+    -webkit-text-stroke:0;text-shadow:none;transform:none}
+  .splash .mark::before,.splash .mark::after{
+    content:"";position:absolute;height:3px;background:var(--paper);
+    top:50%;-webkit-text-stroke:0;text-shadow:none}
+  .splash .mark::after{left:7px;right:7px;transform:translateY(-1.5px) rotate(-7deg)}
+  .splash .mark::before{left:50%;width:62px;margin-left:-31px;
+    transform:translateY(-1.5px) rotate(52deg)}
   @keyframes splashin{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){
     .splash{transition:none} .splash .mark{animation:none}
@@ -763,14 +825,15 @@
         <span class="bars"><i></i><i></i><i></i></span></button>
     </div>
     <nav class="menu" id="menu" hidden>
-      <button class="menu-item" id="m-plan"><span class="mi">⇢</span><span id="m-plan-t"></span></button>
-      <button class="menu-item" id="m-line"><span class="mi">⌕</span><span id="m-line-t"></span></button>
+      <button class="menu-item" id="m-plan"><span class="mi">⇢</span>
+        <span class="mtxt"><b id="m-plan-t"></b><i id="m-plan-s"></i></span></button>
+      <button class="menu-item" id="m-line"><span class="mi">⌕</span>
+        <span class="mtxt"><b id="m-line-t"></b><i id="m-line-s"></i></span></button>
       <!-- Live buses: retired from the menu, code kept intact (openLiveMap,
            #livebg, /live). Un-hide this button to bring it back. -->
       <button class="menu-item" id="m-live" hidden><span class="mi">🗺</span><span id="m-live-t"></span></button>
-      <button class="menu-item" id="m-settings"><span class="mi">⚙</span><span id="m-settings-t"></span></button>
-      <button class="menu-item" id="m-about"><span class="mi">i</span><span id="m-about-t"></span></button>
-      <a class="menu-item" id="m-legal" href="./legal.html"><span class="mi">§</span><span id="m-legal-t"></span></a>
+      <button class="menu-item apart" id="m-settings"><span class="mi">⚙</span>
+        <span class="mtxt"><b id="m-settings-t"></b><i id="m-settings-s"></i></span></button>
     </nav>
     <div class="locbar">
       <span class="dot"></span><span id="locwhere" class="where">…</span>
@@ -795,7 +858,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v49</span></div>
+  <div class="foot"><span class="ver">v50</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -925,7 +988,7 @@
 <div class="toast" id="toast" hidden></div>
 
 <div class="sheet-bg" id="aboutbg"><div class="sheet">
-  <h3 id="ab-h">Σχετικά</h3>
+  <h3 id="ab-h">FAQ</h3>
   <div id="ab-body"></div>
 </div></div>
 
@@ -949,7 +1012,7 @@
   <button class="setrow" id="set-empty">
     <span class="setlab" id="set-empty-t"></span><span class="sw" id="set-empty-sw"></span></button>
   <div class="shint" id="set-empty-h"></div>
-  <button class="setrow" id="set-tour"><span class="setlab" id="set-tour-t"></span></button>
+  <button class="setrow" id="set-faq"><span class="setlab" id="set-faq-t"></span></button>
 </div></div>
 
 <div class="rl" id="rl"><div class="rlbox">
@@ -1114,7 +1177,10 @@ const T={
   back:"← Πίσω",
   mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
   /* journey planner */
-  mPlan:"Διαδρομή", jpH:"Διαδρομή", jpFrom:"Από πού;", jpTo:"Πού πάμε;",
+  mPlan:"Διαδρομή", mPlanS:"Από πού και πού πάω, με μετεπιβιβάσεις",
+  mLineS:"Βρες γραμμή, στάση ή περιοχή",
+  mSettingsS:"Γλώσσα, εμφάνιση λίστας, συχνές ερωτήσεις",
+  jpH:"Διαδρομή", jpFrom:"Από πού;", jpTo:"Πού πάμε;",
   jpMyLoc:"Η τοποθεσία μου", jpGo:"Εύρεση διαδρομής", jpSearching:"Υπολογισμός…",
   jpNone:"Δεν βρέθηκε διαδρομή με λεωφορείο, τρόλεϊ, τραμ ή μετρό.",
   jpClosed:"Αυτή την ώρα δεν κυκλοφορούν λεωφορεία ούτε συρμοί.",
@@ -1130,6 +1196,11 @@ const T={
   jpWhyBeats:v=>`Πιο γρήγορο από κάθε διαδρομή που βρέθηκε (${v}′).`,
   jpWhyAlso:v=>`Πιο αργό από το να πάρεις όχημα (${v}′), αλλά γίνεται με τα πόδια.`,
   jpPickH:"Επίλεξε σημείο", jpPickPh:"Διεύθυνση, στάση ή σταθμός…",
+  slotHome:"Σπίτι", slotWork:"Δουλειά",
+  slotSetHome:"Όρισε το σπίτι", slotSetWork:"Όρισε τη δουλειά",
+  slotPick:n=>`Διάλεξε: ${n}`,
+  slotSaved:n=>`Αποθηκεύτηκε ως «${n}» ✓`,
+  slotCleared:n=>`Το «${n}» καθαρίστηκε`,
   jpWalkAll:"Με τα πόδια", jpWalk:"Περπάτημα", jpTo2:"προς",
   jpMin:"λεπτά", jpChanges:n=>n===0?"χωρίς αλλαγή":(n===1?"1 αλλαγή":`${n} αλλαγές`),
   jpStops:n=>n===1?"1 στάση":`${n} στάσεις`,
@@ -1151,7 +1222,7 @@ const T={
     "ασανσέρ και κυλιόμενες εκτός λειτουργίας, προσωπικό. Από εκεί κάνεις και τη δική σου αναφορά.",
   tour2h:"Αγαπημένες στάσεις",
   tour2p:"Διπλό πάτημα σε μια στάση, στη λίστα ή στον χάρτη, για να την καρφιτσώσεις. Μένει πάντα "+
-    "στην κορυφή, ακόμη κι αν είσαι αλλού. Διπλό πάτημα ξανά για αφαίρεση.",
+    "στην κορυφή, ακόμη κι αν είσαι αλλού. Για αφαίρεση, κράτα το πατημένο.",
   tour3h:"Λίστα και χάρτης",
   tour3p:"Σύρε αριστερά για τον χάρτη, δεξιά για τη λίστα. Κράτα πατημένη μια γραμμή στη λίστα "+
     "για να δεις τη διαδρομή της. Στον χάρτη, πάτα μια στάση και διάλεξε γραμμή για να σχεδιαστεί.",
@@ -1179,9 +1250,10 @@ const T={
   setEmptyH:"Όταν είναι ενεργό, οι στάσεις που δεν έχουν άφιξη τα επόμενα 15′ δεν εμφανίζονται "+
     "στη λίστα, όσο κοντά κι αν είναι. Τα αγαπημένα εμφανίζονται πάντα.",
   dtFav:"Διπλό πάτημα για αγαπημένο",
+  favAlready:"Είναι ήδη αγαπημένο — κράτα πατημένο για αφαίρεση",
   favAdded:"★ Προστέθηκε στα αγαπημένα", favRemoved:"Αφαιρέθηκε από τα αγαπημένα",
   favFull:"Έφτασες το όριο αγαπημένων", favHint:"Διπλό πάτημα στο όνομα για αγαπημένο",
-  favHintOn:"Διπλό πάτημα στο όνομα για αφαίρεση",
+  favHintOn:"Κράτα πατημένο το όνομα για αφαίρεση",
   secLines:"Γραμμές", secStops:"Στάσεις",
   lineH:"Αναζήτηση",
   lineP:"Γράψε γραμμή (π.χ. 022) για τη διαδρομή της, ή όνομα στάσης/περιοχής για τις αφίξεις της.",
@@ -1192,6 +1264,65 @@ const T={
   liveH:"Ζωντανά λεωφορεία", liveLoading:"Φόρτωση ζωντανών θέσεων…",
   liveCount:n=>`${n} λεωφορεία σε κίνηση`, liveNone:"Κανένα λεωφορείο σε κίνηση εδώ.",
   liveHint:"Δείχνει τα λεωφορεία των γραμμών γύρω από το κέντρο του χάρτη. Μετακίνησε τον χάρτη και πάτα ↻.",
+  mFaq:"Συχνές ερωτήσεις",
+  faqWhatQ:"Τι είναι το OASAx;",
+  faqWhatA:`<p>Ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις γύρω σου, με δεδομένα
+    από την τηλεματική του ΟΑΣΑ, μαζί με σχεδιασμό διαδρομής και αναφορές επιβατών.</p>
+    <p><b>Είναι ανεπίσημο.</b> Δωρεάν, μη εμπορικό, χωρίς καμία σχέση με ΟΑΣΑ, ΟΣΥ ή ΣΤΑΣΥ.</p>`,
+  faqTimesQ:"Πόσο ακριβείς είναι οι χρόνοι;",
+  faqTimesA:`<p>Οι χρόνοι και οι θέσεις είναι του ΟΑΣΑ — δεν τους παράγουμε ούτε τους
+    επαληθεύουμε. Οι θέσεις είναι συνήθως <b>30–60 δευτερόλεπτα</b> πίσω και οι εκτιμήσεις
+    πέφτουν έξω αρκετά λεπτά.</p>
+    <p><b>Μη βασίζεσαι στο OASAx για κάτι χρονικά κρίσιμο.</b></p>`,
+  faqPinQ:"Πώς καρφιτσώνω μια στάση;",
+  faqPinA:`<p><b>Διπλό πάτημα</b> στο όνομα μιας στάσης — στη λίστα ή στον χάρτη — και
+    καρφιτσώνεται. Μένει στην κορυφή ακόμη κι όταν είσαι αλλού.</p>
+    <p><b>Κράτα το πατημένο</b> για να την ξεκαρφιτσώσεις.</p>`,
+  faqPlanQ:"Πώς βρίσκω διαδρομή;",
+  faqPlanA:`<p>☰ → <b>Διαδρομή</b>. Βάλε αφετηρία και προορισμό: διεύθυνση (και με αριθμό),
+    στάση, σταθμό ή την τοποθεσία σου.</p>
+    <p>Στη λίστα επιλογής μπορείς να ορίσεις <b>Σπίτι</b> και <b>Δουλειά</b> — μετά είναι
+    ένα πάτημα. Κράτα πατημένο για να τα καθαρίσεις.</p>
+    <p>Οι χρόνοι με τα πόδια υπολογίζονται σε πραγματικό πεζόδρομο όπου γίνεται· αλλιώς η
+    εφαρμογή το λέει ότι είναι εκτίμηση.</p>`,
+  faqReportQ:"Τι είναι οι ζωντανές αναφορές;",
+  faqReportA:`<p>Το πορτοκαλί κουμπί δείχνει τι συμβαίνει τώρα: <b>βλάβη, υπερπλήρες,
+    χωρίς A/C, ασφάλεια, προσωπικό ΟΑΣΑ</b>, και σε σταθμούς <b>ασανσέρ, κυλιόμενες ή
+    πρόσβαση ΑμεΑ</b>.</p>
+    <p>Είναι <b>ανεπιβεβαίωτες</b> — τις στέλνουν άλλοι επιβάτες και δεν τις ελέγχουμε.
+    Λήγουν μόνες τους σε 30 λεπτά έως 3 ώρες. Δεν υπάρχει ελεύθερο κείμενο ή φωτογραφίες.</p>`,
+  faqAccessQ:"Μπορώ να βασιστώ στις πληροφορίες προσβασιμότητας;",
+  faqAccessA:`<p><b>Όχι.</b> Οι σημάνσεις για ασανσέρ, κυλιόμενες και πρόσβαση ΑμεΑ είναι
+    παρατηρήσεις επιβατών μια δεδομένη στιγμή — δεν αποτελούν επίσημη ενημέρωση.</p>
+    <p>Ένας σταθμός χωρίς σήμανση μπορεί να μην είναι προσβάσιμος, και ένα πρόβλημα που
+    αναφέρθηκε μπορεί να έχει αποκατασταθεί. <b>Μη σχεδιάζεις διαδρομή χωρίς σκαλιά μόνο με
+    το OASAx</b> — ρώτα τον ΟΑΣΑ, τη ΣΤΑΣΥ ή τον σταθμό.</p>`,
+  faqInstallQ:"Πώς το βάζω στην αρχική οθόνη;",
+  faqInstallA:`<p>Ανοίγει σε πλήρη οθόνη, με δικό του εικονίδιο, χωρίς μπάρες.</p>
+    <p>Android: Chrome → μενού <b>⋮</b> → <b>Προσθήκη στην αρχική οθόνη</b>.<br>
+    iPhone: Safari → <b>Κοινοποίηση</b> → <b>Προσθήκη στην οθόνη Αφετηρίας</b>.<br>
+    Υπολογιστής: το εικονίδιο εγκατάστασης στη γραμμή διευθύνσεων.</p>
+    <button class="faq-btn" id="faq-tour">Δες την ξενάγηση</button>`,
+  faqPrivacyQ:"Τι δεδομένα συλλέγετε;",
+  faqPrivacyA:`<p><b>Χωρίς λογαριασμό, διαφημίσεις, cookies ή παρακολούθηση.</b></p>
+    <ul><li><b>Τοποθεσία</b> — στέλνεται με το αίτημα, δεν αποθηκεύεται.</li>
+    <li><b>IP</b> — έως 60 δευτερόλεπτα στη μνήμη, για προστασία από κατάχρηση.</li>
+    <li><b>Αναφορές</b> — γραμμή ή σταθμός και ένα πρόβλημα από λίστα. Τίποτα προσωπικό.</li>
+    <li><b>Αναζητήσεις</b> — το κείμενο πάει σε υπηρεσία γεωκωδικοποίησης μέσω του
+    διακομιστή μας, οπότε δεν βλέπει την IP σου. Δεν το αποθηκεύουμε.</li>
+    <li><b>Ανοίγματα</b> — ένας αριθμός την ημέρα, χωρίς αναγνωριστικό. Μετράει ανοίγματα,
+    όχι ανθρώπους.</li></ul>`,
+  faqTermsQ:"Όροι χρήσης",
+  faqTermsA:`<p>Το OASAx παρέχεται «ως έχει», χωρίς εγγύηση διαθεσιμότητας ή ακρίβειας.
+    Στον μέγιστο βαθμό που επιτρέπει ο νόμος, ο διαχειριστής δεν ευθύνεται για χαμένες
+    μετακινήσεις, κόμιστρα, πρόστιμα ή ραντεβού.</p>
+    <p>Μην υποβάλλεις ψευδείς αναφορές, μην τις αυτοματοποιείς και μη χρησιμοποιείς την
+    εφαρμογή για να στοχοποιήσεις κάποιον. Να έχεις πάντα έγκυρο εισιτήριο.</p>
+    <p>Ελληνικό δίκαιο, δικαστήρια Αθηνών, χωρίς να θίγονται δικαιώματα καταναλωτή.</p>`,
+  faqWhoQ:"Ποιος το φτιάχνει και πώς επικοινωνώ;",
+  faqWhoA:`<p>Ανεξάρτητο, μη εμπορικό έργο. Για καταχρηστικές αναφορές, θέματα απορρήτου ή
+    οτιδήποτε άλλο: <a href="mailto:oasax@proton.me">oasax@proton.me</a>.</p>
+    <p>Ο κώδικας είναι ελεύθερος (AGPL v3) και διατίθεται κατόπιν αιτήματος.</p>`,
   aboutH:"Σχετικά", srcLink:"Πηγαίος κώδικας (AGPL v3): διατίθεται κατόπιν αιτήματος",
   mapsAttr:"Χάρτες © OpenStreetMap contributors · Πλακίδια © CARTO",
   aboutBody:`<p><b>OASAx</b> — ζωντανές αφίξεις λεωφορείων και τρόλεϊ για τις στάσεις γύρω
@@ -1300,7 +1431,10 @@ const T={
   back:"← Back",
   mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
   /* journey planner */
-  mPlan:"Journey", jpH:"Journey", jpFrom:"From where?", jpTo:"Where to?",
+  mPlan:"Journey", mPlanS:"Plan a trip across the network, changes included",
+  mLineS:"Find a line, a stop or an area",
+  mSettingsS:"Language, list options, FAQ",
+  jpH:"Journey", jpFrom:"From where?", jpTo:"Where to?",
   jpMyLoc:"My location", jpGo:"Find a route", jpSearching:"Working it out…",
   jpNone:"No route by bus, trolley, tram or metro.",
   jpClosed:"Neither buses nor trains are running at this hour.",
@@ -1316,6 +1450,11 @@ const T={
   jpWhyBeats:v=>`Quicker than any route we found (${v}′).`,
   jpWhyAlso:v=>`Slower than riding (${v}′), but you can walk it.`,
   jpPickH:"Pick a place", jpPickPh:"Address, stop or station…",
+  slotHome:"Home", slotWork:"Work",
+  slotSetHome:"Set home", slotSetWork:"Set work",
+  slotPick:n=>`Choose your ${n.toLowerCase()}`,
+  slotSaved:n=>`Saved as ${n.toLowerCase()} ✓`,
+  slotCleared:n=>`${n} cleared`,
   jpWalkAll:"Walk", jpWalk:"Walk", jpTo2:"to",
   jpMin:"min", jpChanges:n=>n===0?"no changes":(n===1?"1 change":`${n} changes`),
   jpStops:n=>n===1?"1 stop":`${n} stops`,
@@ -1337,7 +1476,7 @@ const T={
     "crowding, elevators and escalators out of order, staff. File your own from the same screen.",
   tour2h:"Favourite stops",
   tour2p:"Double-tap a stop, in the list or on the map, to pin it. It stays at the top even when "+
-    "you are somewhere else. Double-tap again to unpin.",
+    "you are somewhere else. To unpin it, press and hold.",
   tour3h:"List and map",
   tour3p:"Swipe left for the map, right for the list. Long-press a line in the list to preview "+
     "its route. On the map, tap a stop and pick a line to draw it.",
@@ -1364,9 +1503,10 @@ const T={
   setEmptyH:"When on, stops with nothing due in the next 15 min are left out of the list, "+
     "however close they are. Favourites always show.",
   dtFav:"Double-tap to pin",
+  favAlready:"Already pinned — long-press to unpin",
   favAdded:"★ Pinned to favourites", favRemoved:"Removed from favourites",
   favFull:"Favourites are full", favHint:"Double-tap the name to pin it",
-  favHintOn:"Double-tap the name to unpin",
+  favHintOn:"Long-press the name to unpin",
   secLines:"Lines", secStops:"Stops",
   lineH:"Search",
   lineP:"Type a line (e.g. 022) for its route, or a stop/place name for its arrivals.",
@@ -1377,6 +1517,68 @@ const T={
   liveH:"Live buses", liveLoading:"Loading live positions…",
   liveCount:n=>`${n} buses running`, liveNone:"No buses running here.",
   liveHint:"Shows buses on the lines around the centre of the map. Pan the map and tap ↻.",
+  mFaq:"FAQ",
+  faqWhatQ:"What is OASAx?",
+  faqWhatA:`<p>Live bus and trolley arrivals for the stops around you, from OASA's telematics
+    service, plus journey planning and passenger reports.</p>
+    <p><b>It is unofficial.</b> Free, non-commercial, and not connected to OASA, OSY or
+    STASY in any way.</p>`,
+  faqTimesQ:"How accurate are the times?",
+  faqTimesA:`<p>The times and positions are OASA's — we neither produce nor verify them.
+    Positions run about <b>30–60 seconds</b> behind, and estimates can be several minutes
+    out.</p>
+    <p><b>Don't rely on OASAx for anything time-critical.</b></p>`,
+  faqPinQ:"How do I pin a stop?",
+  faqPinA:`<p><b>Double-tap</b> a stop's name — in the list or on the map — to pin it. It
+    stays at the top even when you are somewhere else.</p>
+    <p><b>Press and hold</b> to unpin it.</p>`,
+  faqPlanQ:"How do I plan a journey?",
+  faqPlanA:`<p>☰ → <b>Journey</b>. Set a start and a destination: an address (house number
+    included), a stop, a station, or where you are.</p>
+    <p>In the place picker you can set <b>Home</b> and <b>Work</b> — after that it is one
+    tap. Press and hold either to clear it.</p>
+    <p>Walking times follow real pavements where the router is available; where it is not,
+    the app says the time is an estimate.</p>`,
+  faqReportQ:"What are live reports?",
+  faqReportA:`<p>The orange button shows what is happening right now: <b>breakdown,
+    overcrowded, no A/C, security, OASA staff</b>, and at stations <b>lifts, escalators or
+    step-free access</b>.</p>
+    <p>They are <b>unverified</b> — other passengers file them and we don't check them.
+    They expire on their own after 30 minutes to 3 hours. No free text, no photos.</p>`,
+  faqAccessQ:"Can I rely on the accessibility information?",
+  faqAccessA:`<p><b>No.</b> Lift, escalator and step-free flags are passenger observations
+    at one moment. They are not official accessibility information.</p>
+    <p>A station with no flag may still be unusable, and a reported fault may already be
+    fixed. <b>Don't plan a step-free journey on OASAx alone</b> — check with OASA, STASY or
+    the station.</p>`,
+  faqInstallQ:"How do I put it on my home screen?",
+  faqInstallA:`<p>It opens full-screen with its own icon, no browser bars.</p>
+    <p>Android: Chrome → menu <b>⋮</b> → <b>Add to Home screen</b>.<br>
+    iPhone: Safari → <b>Share</b> → <b>Add to Home Screen</b>.<br>
+    Desktop: the install icon in the address bar.</p>
+    <button class="faq-btn" id="faq-tour">Show me around</button>`,
+  faqPrivacyQ:"What data do you collect?",
+  faqPrivacyA:`<p><b>No account, no advertising, no cookies, no tracking.</b></p>
+    <ul><li><b>Location</b> — sent with the request, never stored.</li>
+    <li><b>IP address</b> — held up to 60 seconds in memory, to limit abuse.</li>
+    <li><b>Reports</b> — a line or station and one item from a fixed list. Nothing
+    personal.</li>
+    <li><b>Searches</b> — the text goes to a geocoding service through our server, so it
+    never sees your IP. We don't store it.</li>
+    <li><b>Openings</b> — one number per day, with no identifier attached. It counts
+    openings, not people.</li></ul>`,
+  faqTermsQ:"Terms of use",
+  faqTermsA:`<p>OASAx is provided "as is", with no guarantee of availability or accuracy.
+    To the fullest extent permitted by law, the operator is not responsible for missed
+    journeys, fares, fines or appointments.</p>
+    <p>Don't file reports you know to be false, don't automate them, and don't use the app
+    to target anyone. Always carry a valid ticket.</p>
+    <p>Greek law applies and the courts of Athens have jurisdiction, without affecting your
+    consumer rights.</p>`,
+  faqWhoQ:"Who makes this, and how do I get in touch?",
+  faqWhoA:`<p>An independent, non-commercial project. For abusive reports, privacy questions
+    or anything else: <a href="mailto:oasax@proton.me">oasax@proton.me</a>.</p>
+    <p>The source is free software (AGPL v3), available on request.</p>`,
   aboutH:"About", srcLink:"Source code (AGPL v3): free on request",
   mapsAttr:"Map data © OpenStreetMap contributors · Tiles © CARTO",
   aboutBody:`<p><b>OASAx</b> — live bus and trolley arrivals for the stops around you, from
@@ -1553,8 +1755,10 @@ function applyStatics(){
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
   $("#m-plan-t").textContent=t("mPlan");
   $("#m-line-t").textContent=t("mLine"); $("#m-live-t").textContent=t("mLive");
-  $("#m-settings-t").textContent=t("mSettings"); $("#m-about-t").textContent=t("mAbout");
-  $("#m-legal-t").textContent=t("mLegal");
+  $("#m-settings-t").textContent=t("mSettings");
+  $("#m-plan-s").textContent=t("mPlanS");
+  $("#m-line-s").textContent=t("mLineS");
+  $("#m-settings-s").textContent=t("mSettingsS");
   renderSettings();
   $("#live-title").textContent=t("liveH");
   $("#s-h").textContent=t("sheetH"); $("#s-p").textContent=t("sheetP");
@@ -1859,7 +2063,8 @@ function renderList(){
       const hd=document.createElement("div"); hd.className="stop-hd";
       const rows=document.createElement("div"); rows.className="rows";
       card.appendChild(hd); card.appendChild(rows);
-      onDoubleTap(hd,()=>{ const cur=byCode(key); if(cur) toggleFav(cur); });
+      onDoubleTap(hd,()=>{ const cur=byCode(key); if(cur) addFav(cur); });
+      onLongPress(hd,()=>{ const cur=byCode(key); if(cur) removeFav(cur); });
       c={card,hd,rows,sig:"",headSig:"",mode:""};
       cardCache.set(key,c);
     }
@@ -2007,8 +2212,9 @@ function bindMarkerGestures(m,s){
   onDoubleTap(el,e=>{
     // keep the gesture off the map, or Leaflet's double-tap zoom fires too
     if(e&&e.stopPropagation) e.stopPropagation();
-    m.closePopup(); toggleFav(s);
+    m.closePopup(); addFav(s);
   });
+  onLongPress(el,()=>{ m.closePopup(); removeFav(s); });
 }
 function stopIcon(s){
   // Pins carry the stop's own name; lines are revealed by opening the popup.
@@ -2214,19 +2420,31 @@ try{ const v=JSON.parse(localStorage.getItem(FAV_KEY)||"[]");
   if(Array.isArray(v)) favs=v.filter(f=>f&&f.code).slice(0,FAV_MAX); }catch(_){}
 function saveFavs(){ try{ localStorage.setItem(FAV_KEY,JSON.stringify(favs)); }catch(_){} }
 function isFav(code){ return favs.some(f=>String(f.code)===String(code)); }
-function toggleFav(s){
-  const code=String(s.code);
-  if(isFav(code)){ favs=favs.filter(f=>String(f.code)!==code); }
-  else{
-    if(favs.length>=FAV_MAX){ toast(t("favFull")); return; }
-    favs.push({code,name_el:s.name_el||"",name_en:s.name_en||"",
-      street:s.street||"",lat:Number(s.lat),lng:Number(s.lng)});
-  }
+function afterFav(msg){
   saveFavs();
   if(navigator.vibrate) try{ navigator.vibrate(18); }catch(_){}
-  toast(isFav(code)?t("favAdded"):t("favRemoved"));
+  toast(msg);
   renderView();
   if($("#stopcard").classList.contains("on")) renderStopCard();
+}
+/* Adding and removing are separate gestures now, not one toggle.
+   Double-tap only ever ADDS; long-press only ever REMOVES. A toggle
+   bound to a double-tap meant the same gesture did opposite things
+   depending on state you could not see mid-tap, so an accidental
+   repeat silently undid the thing you had just done. */
+function addFav(s){
+  const code=String(s.code);
+  if(isFav(code)){ toast(t("favAlready")); return; }
+  if(favs.length>=FAV_MAX){ toast(t("favFull")); return; }
+  favs.push({code,name_el:s.name_el||"",name_en:s.name_en||"",
+    street:s.street||"",lat:Number(s.lat),lng:Number(s.lng)});
+  afterFav(t("favAdded"));
+}
+function removeFav(s){
+  const code=String(s.code);
+  if(!isFav(code)) return;               // long-press on a plain stop: not for us
+  favs=favs.filter(f=>String(f.code)!==code);
+  afterFav(t("favRemoved"));
 }
 /* Does this stop have a bus worth waiting for? */
 function hasImminent(s){
@@ -4066,12 +4284,18 @@ async function loadLive(){
  * away. Skippable at any point, shown once, and reachable again from
  * Settings if someone wants a reminder. */
 const TOUR_KEY="tourSeen";
+/* The art on each card is the REAL control, not a grey glyph standing in
+   for it. A card that says "tap the orange dot" over a black ◉ is asking
+   you to translate before you can look, and the thing you are then hunting
+   for on screen is a different colour and shape from the thing you were
+   shown. These are built from the same classes the app uses, so they
+   cannot drift from it either. */
 const TOUR=[
-  {art:"◉", h:"tour1h", p:"tour1p"},
-  {art:"★", h:"tour2h", p:"tour2p"},
-  {art:"↔", h:"tour3h", p:"tour3p"},
-  {art:"🔔", h:"tour4h", p:"tour4p"},
-  {art:"⤓", h:"tour5h", p:installCard, html:true},
+  {art:`<span class="livedot art-dot"></span>`,      h:"tour1h", p:"tour1p"},
+  {art:`<span class="art-star">★</span>`,            h:"tour2h", p:"tour2p"},
+  {art:`<span class="art-seg"><b></b><i></i></span>`, h:"tour3h", p:"tour3p"},
+  {art:`<span class="art-bell">🔔</span>`,           h:"tour4h", p:"tour4p"},
+  {art:`<span class="mark art-mark">OASA</span>`,    h:"tour5h", p:installCard, html:true},
 ];
 let tourAt=0;
 
@@ -4138,7 +4362,10 @@ function tourDone(){
 }
 function paintTour(){
   const c=TOUR[tourAt]; if(!c) return tourDone();
-  $("#tour-art").textContent=c.art;
+  // ours, never user input — see TOUR
+  $("#tour-art").innerHTML=c.art;
+  const seg=$("#tour-art .art-seg");
+  if(seg){ seg.children[0].textContent=t("vlist"); seg.children[1].textContent=t("vmap"); }
   $("#tour-h").textContent=t(c.h);
   // a card may build its own body — the install one differs per device
   const body=typeof c.p==="function"?c.p():t(c.p);
@@ -4184,7 +4411,7 @@ function renderSettings(){
   $("#set-empty-t").textContent=t("setEmpty");
   $("#set-empty-sw").classList.toggle("on",hideEmpty);
   $("#set-empty-h").textContent=t("setEmptyH");
-  $("#set-tour-t").textContent=t("setTour");
+  $("#set-faq-t").textContent=t("mFaq");
 }
 function toggleHideEmpty(){
   hideEmpty=!hideEmpty;
@@ -4228,6 +4455,56 @@ function openJourney() {
 }
 function closeJourney() { $("#jp").classList.remove("on"); }
 
+/* ------------------------- home and work ---------------------------- *
+ * Two slots, because two of them cover almost every journey anyone plans
+ * twice. They live at the top of the picker, so the common case is one
+ * tap rather than a search, and they are cleared by long-press — the same
+ * gesture that unpins a favourite, so there is one thing to learn rather
+ * than two.
+ *
+ * Stored per browser, like everything else here; nothing about where you
+ * live leaves the device. That is also why they are set from a place you
+ * have already picked rather than from a separate address form: the app
+ * never needs to know more than the point you chose. */
+const SLOTS=[{id:"home",icon:"🏠",set:"slotSetHome",name:"slotHome"},
+             {id:"work",icon:"💼",set:"slotSetWork",name:"slotWork"}];
+const slotKey=id=>"slot:"+id;
+function readSlot(id){
+  try{ const v=JSON.parse(localStorage.getItem(slotKey(id))||"null");
+    return (v&&isFinite(v.lat)&&isFinite(v.lng))?v:null; }catch(_){ return null; }
+}
+function writeSlot(id,place){
+  try{
+    if(place) localStorage.setItem(slotKey(id),JSON.stringify(
+      {lat:Number(place.lat),lng:Number(place.lng),label:place.label||""}));
+    else localStorage.removeItem(slotKey(id));
+  }catch(_){}
+}
+/* Which slot, if any, the next choice should be saved into. Set by
+   tapping an empty slot; cleared as soon as it is used or the picker
+   closes, so it can never quietly capture an unrelated search. */
+let slotArming=null;
+function addPlaceSlots(add){
+  for(const sl of SLOTS){
+    const v=readSlot(sl.id);
+    if(v){
+      const row=add(`${sl.icon} ${t(sl.name)}`,
+        {kind:"slot",lat:v.lat,lng:v.lng,label:v.label||t(sl.name)},v.label||"");
+      // long-press clears it, exactly as it unpins a favourite
+      if(row) onLongPress(row,()=>{ writeSlot(sl.id,null); toast(t("slotCleared")(t(sl.name)));
+        jpPickResults($("#jpp-q").value); });
+    } else {
+      const row=add(`${sl.icon} ${t(sl.set)}`,null);
+      if(row) row.onclick=()=>{ slotArming=sl.id; paintSlotArming(); };
+    }
+  }
+}
+function paintSlotArming(){
+  const sl=SLOTS.find(x=>x.id===slotArming);
+  $("#jpp-h").textContent=sl?t("slotPick")(t(sl.name)):t("jpPickH");
+  $("#jppick").classList.toggle("arming",!!sl);
+}
+
 /* Type-ahead pacing. The geocoder behind /geocode matches partial words,
    so three characters is already a useful query — but every miss costs a
    request against a daily quota, hence the debounce. Stops, favourites
@@ -4245,36 +4522,83 @@ const jpq = { seq: 0, ctrl: null, last: 0, seen: new Map() };
    every metro station, and failing all that the geocoder. */
 function openJourneyPick(which) {
   jp.picking = which;
+  slotArming = null;
   $("#jpp-h").textContent = t("jpPickH");
   $("#jpp-q").placeholder = t("jpPickPh");
   $("#jpp-q").value = "";
+  paintSlotArming();
   jpPickResults("");
   $("#jppick").classList.add("on");
   setTimeout(() => $("#jpp-q").focus(), 80);
 }
 function closeJourneyPick() {
   $("#jppick").classList.remove("on"); jp.picking = null;
+  slotArming = null; $("#jppick").classList.remove("arming");
   jpq.seq++;                                    // orphan anything still in flight
   if (jpq.ctrl) { jpq.ctrl.abort(); jpq.ctrl = null; }
 }
 function jpChoose(place) {
+  if (!place) return;
+  /* Setting a slot and using a place are the same act, deliberately: you
+     pick where home is by picking it, and it is also where you are going
+     this time. One flow, no separate address form to fill in twice. */
+  if (slotArming) {
+    const sl = SLOTS.find(x => x.id === slotArming);
+    writeSlot(slotArming, place);
+    toast(t("slotSaved")(t(sl.name)));
+    slotArming = null;
+  }
   if (jp.picking === "to") jp.to = place; else jp.from = place;
   closeJourneyPick(); paintJourneyForm();
 }
 async function jpPickResults(q) {
   const box = $("#jpp-res");
+  /* One place, one row. The same corner reaches this list from three
+     directions — a loaded stop, a metro station and the geocoder all know
+     "Σύνταγμα" — and before this it was listed three times, which made the
+     list look broken and buried the rows that were actually different.
+     Keyed on the name AND the position, because two stops genuinely can
+     share a name on opposite sides of a road, and those are not the same
+     place to walk to. */
+  const seen = new Set();
+  /* Keyed on WHERE, not on what it is called. The three sources name one
+     corner three ways — the stop list has "ΣΥΝΤΑΓΜΑ", the metro list has
+     "SYNTAGMA", the geocoder has "Σύνταγμα, Αθήνα" — so a name-based key
+     misses exactly the duplicates a rider would notice. Four decimals is
+     about eleven metres: enough to fuse a station with the geocoded point
+     on top of it, fine enough to keep number 12 and number 14 apart.
+     `place` is null on the rows that set something rather than go
+     somewhere, and those fall back to their label. */
+  const key = (label, place) =>
+    place && isFinite(place.lat)
+      ? place.lat.toFixed(4) + "," + place.lng.toFixed(4)
+      : "label:" + String(label).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
   const add = (label, place, note) => {
+    /* Anchors are exempt. "My location", Home and Work are not places the
+       search found, they are places you named, and they keep their row
+       even when something else sits on the same spot — standing at a stop
+       must not delete that stop from the list of things you can travel
+       to. Only discovered rows — stops, stations, geocoder hits — are
+       candidates for being the same place twice. */
+    const anchor = place && (place.kind === "me" || place.kind === "slot");
+    const k = key(label.replace(/^\S+\s/, ""), place);   // glyph is not part of the name
+    if (!anchor) {
+      if (seen.has(k)) return;
+      seen.add(k);
+    }
     const b = document.createElement("button");
     b.className = "res";
     b.innerHTML = esc(label) + (note ? ` <span style="color:var(--ink3)">· ${esc(note)}</span>` : "");
     b.onclick = () => jpChoose(place);
     box.appendChild(b);
+    return b;
   };
   box.innerHTML = "";
   const query = q.trim().toLowerCase();
 
   if (!query) {
     if (here && isFinite(here.lat)) add(t("jpMyLoc"), { kind: "me", lat: here.lat, lng: here.lng });
+    addPlaceSlots(add);
     favs.slice(0, 4).forEach(f => {
       const s2 = state.favLive[String(f.code)] || byCode(f.code) || f;
       if (isFinite(s2.lat)) add("★ " + stopName(s2), { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) });
@@ -4562,21 +4886,46 @@ function drawItinerary(it) {
 }
 
 /* ----------------------------- about ------------------------------- */
+/* One sheet, everything folded away. What used to be About and Terms &
+   privacy were two long scrolls in two places, and almost nobody read
+   either — a wall of prose answers no question in particular, so it
+   answers none. As questions with the answers closed, you can find the
+   one you have.
+   `<details>` rather than a hand-rolled accordion: it opens without
+   JavaScript, is keyboard- and screen-reader-navigable for free, and the
+   browser's own find-in-page can reach inside a closed one. */
+const FAQ=[
+  {q:"faqWhatQ",   a:"faqWhatA"},
+  {q:"faqTimesQ",  a:"faqTimesA"},
+  {q:"faqPinQ",    a:"faqPinA"},
+  {q:"faqPlanQ",   a:"faqPlanA"},
+  {q:"faqReportQ", a:"faqReportA"},
+  {q:"faqAccessQ", a:"faqAccessA", warn:true},
+  {q:"faqInstallQ",a:"faqInstallA", tour:true},
+  {q:"faqPrivacyQ",a:"faqPrivacyA"},
+  {q:"faqTermsQ",  a:"faqTermsA"},
+  {q:"faqWhoQ",    a:"faqWhoA"},
+];
 function openAbout(){
   toggleMenu(false);
-  $("#ab-h").textContent=t("aboutH");
-  /* The disclaimer sits at the TOP, before anything else — an unofficial
-     app that borrows an operator's name has to say so where it will
-     actually be read, not in a footer. */
+  closeSettings();
+  $("#ab-h").textContent=t("mFaq");
+  /* The disclaimer sits at the TOP, outside the folds — an unofficial app
+     that borrows an operator's name has to say so where it will actually
+     be read, not inside something you have to open first. */
+  const items=FAQ.map(f=>
+    `<details class="faq${f.warn?" warn":""}"><summary>${esc(t(f.q))}</summary>
+      <div class="faq-a">${t(f.a)}</div></details>`).join("");
   $("#ab-body").innerHTML=`<div class="ab">
     <div class="unofficial">${esc(t("unofficial"))}</div>
-    ${t("aboutBody")}
-    <div class="sec-label">${t("aboutTip")}</div>${t("aboutTips")}
+    ${items}
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v49</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v50</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
+  const tourBtn=$("#faq-tour");
+  if(tourBtn) tourBtn.onclick=()=>{ closeAbout(); openTour("settings"); };
   $("#aboutbg").classList.add("on");
 }
 function closeAbout(){ $("#aboutbg").classList.remove("on"); }
@@ -4940,11 +5289,11 @@ $("#m-settings").onclick=openSettings;
 $("#set-lang").onclick=()=>{ switchLang(); renderSettings(); };
 $("#set-empty").onclick=toggleHideEmpty;
 $("#setbg").onclick=e=>{ if(e.target.id==="setbg") closeSettings(); };
-$("#set-tour").onclick=()=>openTour("settings");
+$("#set-faq").onclick=openAbout;
 $("#tour-next").onclick=()=>{ tourAt++; tourAt>=TOUR.length?tourDone():paintTour(); };
 $("#tour-skip").onclick=tourDone;
 $("#tour").onclick=e=>{ if(e.target.id==="tour") tourDone(); };
-$("#m-about").onclick=openAbout;
+
 $("#lngo").onclick=doLineSearch;
 $("#lnq").addEventListener("keydown",e=>{ if(e.key==="Enter") doLineSearch(); });
 $("#linebg").onclick=e=>{ if(e.target.id==="linebg") closeLineSearch(); };
@@ -4952,7 +5301,8 @@ $("#aboutbg").onclick=e=>{ if(e.target.id==="aboutbg") closeAbout(); };
 $("#live-x").onclick=closeLiveMap;
 $("#sc-x").onclick=closeStopCard;
 $("#stopcard").onclick=e=>{ if(e.target.id==="stopcard") closeStopCard(); };
-onDoubleTap($("#sc-hd"),()=>{ if(cardStop) toggleFav(cardStop); });
+onDoubleTap($("#sc-hd"),()=>{ if(cardStop) addFav(cardStop); });
+onLongPress($("#sc-hd"),()=>{ if(cardStop) removeFav(cardStop); });
 $("#live-r").onclick=loadLive;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;

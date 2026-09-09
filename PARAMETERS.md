@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v49 defaults** — if you edit the
+breaks if you change it. Values here are the **v50 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -373,6 +373,23 @@ in Athens would put it.
 Read it at `/health?token=` (headline) or `/stats/usage?token=&days=N` (the series, N
 clamped to 1–365). Without a D1 binding the beacon is accepted and dropped and the
 endpoint returns 501 rather than pretending zero.
+
+### Home and Work
+
+`public/index.html` → `SLOTS`. Two of them, stored under `slot:home` / `slot:work` in
+`localStorage` as `{lat, lng, label}`. Nothing about them reaches the server. Set by
+picking a place while the picker is armed; cleared by long-press, the same gesture that
+unpins a favourite.
+
+### Suggestion deduping
+
+Rows in the journey picker are keyed on **position at 4 decimal places** (~11 m), not on
+name: three sources name one corner three different ways, so a name-based key misses the
+duplicates that matter. Eleven metres fuses a station with the geocoded point on top of
+it and still separates adjacent house numbers.
+
+Rows whose `kind` is `me` or `slot` are exempt — they are anchors you named, not results,
+and suppressing a stop because you are standing on it would remove it as a destination.
 
 ### The splash
 

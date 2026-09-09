@@ -197,9 +197,21 @@ console.log("\n— what the user is told —");
     /30 minutes to\s+3 hours/.test(html) && /30 λεπτά έως\s+3 ώρες/.test(html),
     `TTL runs ${Math.min(...[...Object.values(TTL.bus), ...Object.values(TTL.metro)]) / 60}–` +
     `${Math.max(...[...Object.values(TTL.bus), ...Object.values(TTL.metro)]) / 3600}h`);
-  ok("no user-facing string coaches anyone around a fare",
-    !/valid ticket|έγκυρο εισιτήριο/i.test(html),
-    "that line belongs in the terms, and only there");
+  /* "Always carry a valid ticket" is a term of use, not advice the app
+     hands out beside a live report — the distinction is the whole reason
+     this assertion exists. Since v50 the terms live inside the app's FAQ,
+     so the line has one legitimate home; anywhere else is still wrong. */
+  // for each mention, which translation key is it sitting under?
+  const owner = at => {
+    const keys = [...html.slice(0, at).matchAll(/\b(faq[A-Za-z]+|tour\d[hp]|aboutBody|jp[A-Za-z]+):/g)];
+    return keys.length ? keys[keys.length - 1][1] : "(none)";
+  };
+  const hits = [...html.matchAll(/valid ticket|έγκυρο εισιτήριο/gi)];
+  const owners = hits.map(m => owner(m.index));
+  ok("the fare line appears only in the terms answer",
+    owners.every(o => o === "faqTermsA"), owners.join(", ") || "(no mentions)");
+  ok("...and it is there, in both languages", owners.length === 2,
+    `${owners.length} — one per language`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

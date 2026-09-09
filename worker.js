@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v49";
+const APP_VERSION = "v50";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -234,6 +234,42 @@ function nominatimSearchUrl(q, lang) {
   return n.toString();
 }
 
+/* Nominatim's STRUCTURED form, for a query that names a building.
+ *
+ * Free-form search treats "Φιλοτίμου 12" as a bag of words and will
+ * happily rank the street itself, or a café on it, above the address —
+ * which is why some streets resolved to a house number and others did
+ * not, with nothing obviously different about them. The structured form
+ * says which token is the street, so the geocoder stops guessing.
+ *
+ * `bounded=1` is safe here in a way it is not for free-form search: an
+ * address query that leaves Attica is wrong anyway, and the box is what
+ * keeps a same-named street in Thessaloniki out of the list. */
+function nominatimAddressUrl(street, lang) {
+  const n = new URL(NOMINATIM + "search");
+  n.searchParams.set("format", "jsonv2");
+  n.searchParams.set("street", street);          // "12 Φιλοτίμου" — number first
+  n.searchParams.set("countrycodes", "gr");
+  n.searchParams.set("viewbox", VIEWBOX);
+  n.searchParams.set("bounded", "1");
+  n.searchParams.set("limit", "6");
+  n.searchParams.set("addressdetails", "1");
+  n.searchParams.set("accept-language", lang);
+  return n.toString();
+}
+
+/* "Φιλοτίμου 12" and "12 Φιλοτίμου" both mean the same building, and
+ * Nominatim's structured `street` wants the number first. Pull the number
+ * out wherever it sits and rebuild it in the order the API expects. */
+function splitAddress(q) {
+  const s = String(q || "").trim();
+  const m = s.match(HOUSE_NO);
+  if (!m) return null;
+  const num = m[0].trim();
+  const name = s.replace(HOUSE_NO, " ").replace(/\s+/g, " ").trim();
+  return name ? { num, name, street: `${num} ${name}` } : null;
+}
+
 /* ------------------------- address search --------------------------- *
  * Two geocoders, tried in this order:
  *
@@ -378,24 +414,47 @@ async function handleGeocode(url, env) {
    * query as typed first — Pelias does index the English names — and
    * only then the transliteration. Two shots, not four: every miss is
    * a request off the daily quota. */
+  /* When a house number was asked for, a street is not an answer — it is
+   * the same wrong result the free-form path used to give. So an addressed
+   * query only accepts rows that resolved to a building, and otherwise
+   * falls through to the structured Nominatim lookup below. */
+  const wantsNumber = looksAddressed(q);
+  const hasNumber = r => /\d/.test((r.address && r.address.road) || "");
+
   if (env && env.ORS_KEY) {
     const tries = isLatin(q) ? [q, toGreek(q)] : [q];
     for (const cand of tries) {
       const rows = await orsGeocode(cand, lang, focus, env);
-      if (rows && rows.length) {
-        return json(rows.map(r => ({ ...r, matched: cand })));
-      }
+      if (!rows || !rows.length) continue;
+      const keep = wantsNumber ? rows.filter(hasNumber) : rows;
+      if (keep.length) return json(keep.map(r => ({ ...r, matched: cand })));
+    }
+  }
+
+  const osmRows = (data, cand) => data.map(d => ({
+    lat: d.lat, lon: d.lon, display_name: d.display_name,
+    address: d.address || null, matched: cand, source: "osm",
+  }));
+
+  /* A query naming a building gets the structured form first, in every
+   * spelling. Free-form search ranks the street, or a shop on it, above
+   * the address often enough that "some streets work and some don't" was
+   * the reported symptom — the difference was never the street. */
+  const addr = looksAddressed(q) ? splitAddress(q) : null;
+  if (addr) {
+    for (const cand of geocodeCandidates(q)) {
+      const c = splitAddress(cand) || addr;
+      const data = await getJSON(nominatimAddressUrl(c.street, lang), GEO_CACHE);
+      const hits = Array.isArray(data)
+        // keep only what actually resolved to a building
+        ? data.filter(d => d.address && d.address.house_number) : [];
+      if (hits.length) return json(osmRows(hits, cand));
     }
   }
 
   for (const cand of geocodeCandidates(q)) {
     const data = await getJSON(nominatimSearchUrl(cand, lang), GEO_CACHE);
-    if (Array.isArray(data) && data.length) {
-      return json(data.map(d => ({
-        lat: d.lat, lon: d.lon, display_name: d.display_name,
-        address: d.address || null, matched: cand, source: "osm",
-      })));
-    }
+    if (Array.isArray(data) && data.length) return json(osmRows(data, cand));
   }
   return json([]);
 }

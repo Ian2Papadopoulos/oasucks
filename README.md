@@ -3,11 +3,11 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v49.**
+version: v50.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops), **Settings** (language, and whether
-to hide stops with nothing coming), About, and Terms & privacy.
+to hide stops with nothing coming, and the FAQ).
 
 **Live reports.** The old line-stats button is now the orange live dot. Tap it and a live map of
 Athens opens — only the buses and metro stations that currently carry a flag, each
@@ -34,9 +34,43 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 523 assertions across eleven suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin and fixes suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 582 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
+
+## The menu, and the FAQ
+
+The ☰ menu is three entries: **Journey**, **Find a line**, **Settings** — each with a
+line under it saying what it does, because "Journey" alone does not tell a first-time
+user whether it plans a trip or shows one route. Settings sits below a rule, since it
+changes the app rather than uses it.
+
+About and Terms & privacy used to be two more entries leading to two long scrolls, and
+almost nobody read either: a wall of prose answers no question in particular, so it
+answers none. Both are now one **FAQ**, reached from Settings, written as questions with
+the answers folded away — you can find the one you have. It is built from `<details>`,
+so it opens without JavaScript, is keyboard- and screen-reader-navigable for free, and
+find-in-page reaches inside a closed section. The accessibility answer is the one styled
+to resist skimming.
+
+`public/legal.html` still holds the full, authoritative text and is still linked from the
+bottom of the FAQ. The FAQ summarises; it does not replace.
+
+### Home and Work
+
+Two slots at the top of the journey picker, because two of them cover almost every trip
+anyone plans twice. Setting one and using it are the same act — you pick where home is by
+picking it, and it is also where you are going this time, so there is no separate address
+form to fill in twice. **Long-press clears a slot**, the same gesture that unpins a
+favourite, so there is one thing to learn rather than two. Stored per browser; nothing
+about where you live leaves the device.
+
+### Two gestures, one job each
+
+**Double-tap pins. Long-press unpins.** It used to be one toggle bound to the double-tap,
+which meant the same gesture did opposite things depending on state you could not see
+mid-tap — so an accidental repeat silently undid the pin you had just made. Adding
+something already pinned now says so instead of removing it.
 
 ## The one thing you must understand
 
@@ -438,6 +472,19 @@ Either way the answers are flattened to the same rows server-side, so the app ne
 learns which one replied. ORS misses, errors and a rejected key all fall through to
 Nominatim rather than surfacing an error.
 
+**Some streets resolved and some didn't**, with nothing obviously different about them.
+The cause was never the street: free-form search treats "Φιλοτίμου 12" as a bag of words
+and will happily rank the street itself, or a café on it, above the address. An addressed
+query now goes to Nominatim's **structured** form — `street=12 Φιλοτίμου`, bounded to
+Attica — which says which token is the street so the geocoder stops guessing, and results
+without a house number are rejected rather than passed off as the answer. The same rule
+applies to the ORS path: when a number was asked for, a street is not an answer.
+
+The other half of the bug was in the label. Nominatim returns `house_number` as a field
+of its own, separate from `road`, and the label was built from `road` alone — so the
+number was understood and then thrown away on the way to the screen, which looked exactly
+like a search that had not understood you.
+
 **House numbers get a different endpoint.** Pelias keeps its address parser out of
 `/autocomplete`, which is tuned for prefixes — ask it for "Φιλοτίμου 12" and the number is
 quietly dropped and you get the middle of the street. So the moment a query *looks* like a
@@ -472,6 +519,22 @@ nothing, and a router that is not configured answers 501 once and is then left a
 **No key, no real routes.** `ORS_KEY` drives both this and the house numbers in address
 search, so "why is my walk a straight line" and "why can't I type a house number" are
 usually the same question. `GET /health?token=…` answers it: `bindings.ors`.
+
+### One row per place
+
+The same corner reaches the destination list from three directions — the loaded stop list
+has "ΣΥΝΤΑΓΜΑ", the metro list has "SYNTAGMA", the geocoder has "Σύνταγμα, Αθήνα" — and it
+used to be listed three times, which made the list look broken and buried the rows that
+were actually different.
+
+Rows are deduped **by position rather than by name**, since a name-based key misses
+exactly the duplicates a rider notices. Four decimals is about eleven metres: enough to
+fuse a station with the geocoded point on top of it, fine enough to keep number 12 and
+number 14 apart.
+
+Anchors are exempt. "My location", Home and Work are places *you* named rather than places
+the search found, so they keep their row even when something else sits on the same spot —
+standing at a stop must not delete that stop from the list of places you can travel to.
 
 ### Why it offered you a walk
 

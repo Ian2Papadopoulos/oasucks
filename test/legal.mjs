@@ -154,7 +154,9 @@ console.log("\n— the anchors About links to actually exist —");
 
 console.log("\n— About, in the app —");
 {
-  for (const [lang, want] of [["el", /Ζωντανές αναφορές/], ["en", /Live reports/]]) {
+  /* About and Terms are one collapsible FAQ since v50, so the checks are
+     on the questions rather than on prose headings. */
+  for (const [lang, want] of [["el", /ζωντανές αναφορές/i], ["en", /live reports/i]]) {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 780 },
       permissions: [], });
     await ctx.addInitScript(l => { try { localStorage.setItem("lang", l); } catch (_) {} }, lang);
@@ -165,12 +167,16 @@ console.log("\n— About, in the app —");
     await page.evaluate(() => { try { openAbout(); } catch (e) {} });
     // textContent, not innerText: the section labels are CSS-uppercased
     const txt = await page.evaluate(() => document.getElementById("ab-body").textContent);
-    ok(`${lang}: About renders in the language the app is set to`, want.test(txt),
+    ok(`${lang}: the FAQ renders in the language the app is set to`, want.test(txt),
       txt.slice(0, 60).replace(/\n/g, " "));
     ok(`${lang}: ...and carries the accessibility warning`,
       /(step-free|χωρίς σκαλιά)/i.test(txt));
     ok(`${lang}: ...and says the reports are unverified`,
       /(unverified|ανεπιβεβαίωτ)/i.test(txt));
+    ok(`${lang}: ...and the terms are in there too, not on a separate screen`,
+      /(as is|ως έχει)/i.test(txt));
+    ok(`${lang}: ...as are the privacy answers`,
+      /(no tracking|χωρίς παρακολούθηση|no cookies|cookies)/i.test(txt));
     ok(`${lang}: ...and the map attribution`, /OpenStreetMap/.test(txt));
     ok(`${lang}: ...and the version the Worker will report`, txt.includes(VERSION),
       `About says ${(txt.match(/v\d+/) || [])[0]}, worker.js says ${VERSION}`);

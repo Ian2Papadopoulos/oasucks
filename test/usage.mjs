@@ -237,10 +237,20 @@ const covered = p => p.evaluate(() => {
     await covered(b.page));
   const mark = await b.page.evaluate(() => {
     const m = document.querySelector("#splash .mark");
-    return m ? { text: m.textContent, x: getComputedStyle(m, "::after").content } : null;
+    if (!m) return null;
+    const a = getComputedStyle(m, "::after"), b2 = getComputedStyle(m, "::before");
+    return { text: m.textContent, bg: getComputedStyle(m).backgroundColor,
+             strike: [a.backgroundColor, b2.backgroundColor],
+             turned: [a.transform, b2.transform] };
   });
   ok("...and it is the graphic mark", mark && mark.text === "OASA", JSON.stringify(mark));
-  ok("...X and all", mark && /X/.test(mark.x), mark && mark.x);
+  /* The splash wears the ORIGINAL strike, not the icon's yellow X: two
+     crossed rules, both in paper white, both rotated. Black and white on
+     purpose — the colour belongs to the icon. */
+  ok("...struck through by two rules, not marked with an X",
+     mark && mark.turned.every(x => /matrix/.test(x)), JSON.stringify(mark && mark.turned));
+  ok("...and in black and white", mark && mark.strike.every(c => /255, 255, 255|247, 247, 245/.test(c)),
+     JSON.stringify(mark && mark.strike));
   await b.page.waitForTimeout(200);
   ok("it does not flash away instantly on a fast load", await covered(b.page),
     "under SPLASH.minMs a quick load would strobe");

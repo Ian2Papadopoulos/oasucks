@@ -60,9 +60,19 @@ console.log("\n— the wordmark is one word, and the mark carries an x —");
   const after = (idx.match(/\.mark::after\{[^}]*\}/s) || [""])[0];
   ok("the mark carries a literal X, not a pair of struck lines",
      /content:"X"/.test(after), after.slice(0, 60));
-  ok("...no strikeout rules are left behind",
-     !/\.mark::before\{/.test(idx) && !/rotate\(-7deg\)/.test(idx),
-     "a leftover line would read as a strike through the X");
+  /* Two marks now, on purpose. The icon and the header wear the yellow X;
+     the SPLASH wears the original black-and-white strike, which is the
+     quiet opening frame. The risk is one bleeding into the other, so:
+     no unscoped strike rule anywhere, and the strike that does exist must
+     be scoped to the splash. */
+  ok("...no strikeout rule applies to the icon mark",
+     !/(^|\n)\s*\.mark::before\{/.test(idx),
+     "an unscoped line would strike through the X as well");
+  ok("the splash keeps the original strike, and only the splash",
+     /\.splash \.mark::before/.test(idx) && /\.splash \.mark::after\{[^}]*rotate\(-7deg\)/s.test(idx),
+     "the two marks are different by choice, not by drift");
+  ok("...and it is colourless, which is what makes it the quiet one",
+     !/\.splash \.mark::(before|after)\{[^}]*var\(--marker\)/s.test(idx));
   ok("...and it is yellow, the one colour the wordmark's x already uses",
      /color:var\(--marker\)/.test(after), after);
   ok("...set in the same face as the letters it sits on",

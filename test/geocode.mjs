@@ -311,7 +311,7 @@ console.log("\n— the type-ahead itself —");
   ok("an abort is not reported to the user as a network failure",
     /e\.name === "AbortError"/.test(html));
   ok("closing the picker orphans anything still in flight",
-    /closeJourneyPick\(\)[\s\S]{0,220}jpq\.ctrl\.abort\(\)/.test(html));
+    /function closeJourneyPick\(\)[\s\S]{0,400}jpq\.ctrl\.abort\(\)/.test(html));
   ok("the dials are named in one place, not sprinkled",
     /const JPQ = \{ minChars: \d+, debounceMs: \d+, minGapMs: \d+, memo: \d+ \}/.test(html));
   ok("a floor sits between requests, on top of the debounce",
