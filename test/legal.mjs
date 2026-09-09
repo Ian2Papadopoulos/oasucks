@@ -132,6 +132,10 @@ console.log("\n— both languages say the same things —");
   both("the report retention window is stated", /30 λεπτά έως 3 ώρες/, /30 minutes to 3 hours/);
   both("the history window is stated", /90 ημέρες/, /90 days/);
   both("the geocoder is disclosed as a processor", /OpenRouteService/, /OpenRouteService/);
+  /* Added in v53 and disclosed late: a street name and its position leave
+     the Worker for a service nobody had been told about. Anything the app
+     talks to on the rider's behalf belongs on this list the day it ships. */
+  both("...and so is the service that estimates house numbers", /Overpass/, /Overpass/);
   both("...along with the rounding it receives", /ένα χιλιόμετρο/, /one kilometre/);
   both("...and that it does not get your IP", /δεν λαμβάνει τη διεύθυνση IP/, /not receive your IP/);
   both("the contact address is given", /oasax@proton\.me/, /oasax@proton\.me/);
@@ -192,6 +196,7 @@ console.log("\n— the documents agree with the repo —");
   const terms = flat("TERMS.md"), privacy = flat("PRIVACY.md");
   ok("TERMS.md carries the accessibility warning too", /step-free/i.test(terms));
   ok("PRIVACY.md names the geocoder as a processor", /OpenRouteService/.test(privacy));
+  ok("...and the house-number estimator", /Overpass/.test(privacy));
   ok("PRIVACY.md states the same retention window as the page",
     /30 minutes to 3 hours/.test(privacy),
     "the markdown mirrors legal.html; change them together");

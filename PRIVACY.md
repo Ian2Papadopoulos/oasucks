@@ -64,7 +64,10 @@ counter, not usage analytics. Legal basis: legitimate interests.
 - **OASA** for transit information (it receives our server's requests, not yours);
 - **OpenStreetMap** and **CARTO** for maps (your browser fetches map tiles, so
   they see your IP address);
-- **OpenRouteService** or OpenStreetMap's **Nominatim** for address searches.
+- **OpenRouteService** or OpenStreetMap's **Nominatim** for address searches;
+- OpenStreetMap's **Overpass API** — when a house number is missing from the map,
+  we ask which numbers that street does have so we can estimate it. What is sent
+  is the street's name and its position, not yours.
 
 Some of these services may process information outside Greece or the EEA, subject
 to appropriate safeguards where required, such as Standard Contractual Clauses.
