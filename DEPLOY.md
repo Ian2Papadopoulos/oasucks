@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v57",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v58",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -323,17 +323,104 @@ about it again.
 
 ### How many people are using it?
 
+**Step 1 — set an admin token, once.** Both endpoints refuse without it, and there is no
+way to read a secret back out of Cloudflare, so keep a copy where you keep passwords.
+
 ```powershell
-curl "https://<your-url>/stats/usage?token=$ADMIN_TOKEN&days=30"
+npx wrangler secret put ADMIN_TOKEN      # paste a long random string
+npx wrangler secret list                 # names only; confirms it landed
 ```
 
-Daily totals of `open`, `open_app` (launched from a home-screen icon) and `install`.
-`/health?token=…` carries the headline figures too, and the Cloudflare dashboard
-(Workers & Pages → your Worker → **Metrics**) gives raw requests per day for free.
+**Step 2 — the daily series.** In PowerShell, `curl` is an alias for something that
+mangles output, so use `curl.exe`:
 
-These count **openings, not people** — nothing identifying is stored, so no unique-user
-figure exists or can be derived. See the README for why, and for what changing that would
-cost.
+```powershell
+$env:ADMIN_TOKEN = "the-string-you-just-set"
+curl.exe "https://oasax.com/stats/usage?token=$env:ADMIN_TOKEN&days=30"
+```
+
+On macOS or Linux the same call is plain `curl`. `days` accepts 1 to 365 and defaults to
+30. What comes back is one row per day per kind:
+
+| Kind | What it counts |
+|---|---|
+| `open` | The app was opened. Every cold start, browser tab or installed app alike. |
+| `open_app` | Of those, the ones launched from a home-screen icon rather than a tab. |
+| `install` | The browser reported a completed install. Fires once per install. |
+| `cron` | Minutes the scheduler woke the Worker. Roughly 1,440 on a full day. |
+| `alert` | Push notifications actually handed to a push service. |
+
+`open_app` is your installed-user signal and `install` is your growth signal. Neither is a
+count of people — see below.
+
+**Step 3 — the one-glance summary.**
+
+```powershell
+curl.exe "https://oasax.com/health?token=$env:ADMIN_TOKEN"
+```
+
+Without a token this returns only `ok`, the version and the time, which is deliberate.
+With one it adds `bindings` (is the ORS key set, is push configured, is D1 there),
+`reports.activeNow`, `alerts.rules`, `usage` for today and the last 30 days, and the two
+fields that say whether alerts can work at all:
+
+- `cron.agoSec` — seconds since the scheduler last woke the Worker. Under 120 on a
+  healthy deployment. Null or thousands means **the cron is not running**, and no alert
+  will ever fire until that is fixed.
+- `alerts.lastSent` — when a push last went out. Null means none ever has.
+
+**Step 4 — the dashboard, for what the app cannot see.** Workers & Pages → your Worker →
+**Metrics** gives requests, errors and CPU time per day, and **Logs** → *Begin log stream*
+shows live requests including the cron firing. That is the place to confirm the scheduler
+is alive if `/health` says it is not.
+
+**What none of this can tell you.** There is no active-tab or concurrent-user figure, and
+no unique-visitor count. The app sends one beacon per cold start carrying a single word
+and stores nothing but a running daily total: no id, no session, no coordinates. It cannot
+distinguish two opens by one person from one open each by two, and that is the design, not
+a gap. Twenty `open` and eight `open_app` on a Tuesday means twenty openings, of which
+eight came from an installed icon. Any "users" number is your own inference from that.
+
+### An alert didn't arrive
+
+Work down this list; each step rules out one half of what is left.
+
+**1. Does any notification reach the device?** In the app: 🔔 → **Send test notification**.
+If that does not arrive, no bus alert ever will, and the cause is on the phone:
+
+- **iPhone or iPad** must have the app on the **Home screen** and be opened from there.
+  iOS delivers push only to an installed web app, never to a Safari tab, and needs
+  iOS 16.4 or later. This is the single most common cause and it looks exactly like a
+  broken app.
+- **Permission** must be granted. A browser asks once; a dismissed prompt is not asked
+  again and has to be changed in the site's settings.
+- **Battery savers** on some Android phones delay delivery rather than stopping it.
+
+The app does **not** need to be open, on any platform. If it did, the feature would be
+pointless, and any advice to keep it running in the background is wrong.
+
+**2. Is the scheduler running?**
+
+```powershell
+curl.exe "https://oasax.com/health?token=$env:ADMIN_TOKEN"
+```
+
+`cron.agoSec` should be under 120. If it is null or large, alerts are dead at the source:
+check that `wrangler.toml` still has a `[triggers]` block with `crons`, and that Workers &
+Pages → your Worker → **Settings → Trigger Events** lists them. Redeploy to restore them.
+
+> **The trap this had.** With `CF_API_TOKEN` and `CF_ACCOUNT_ID` set, the Worker narrows
+> its own cron schedule nightly to the hours your rules actually need. If it ever ran with
+> no rules it wrote an *empty* schedule — and the run that would put the triggers back is
+> itself a trigger, so alerts stopped permanently and silently. Since v58 the schedule
+> always contains the daily maintenance minute and an empty one is refused outright. If
+> you are on an older deploy and `Trigger Events` is empty, that is what happened; a
+> redeploy fixes it.
+
+**3. Does the rule match?** `alerts.rules` in `/health` is how many are active, and
+`alerts.dueNow` says whether any window is open at this moment. An alert fires only for a
+vehicle **arriving inside the window you set** — a bus five minutes away at 08:20 does not
+match an 08:30–08:50 rule. Widen the window to test.
 
 ### The logo changed but the installed icon didn't
 

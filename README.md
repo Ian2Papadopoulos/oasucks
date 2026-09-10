@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v57.**
+version: v58.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 648 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 662 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -713,6 +713,30 @@ always did with one more field. One case is worth knowing about: if the stop's d
 cannot be fetched — OASA down, or that direction retired — the rule's own line is kept as
 the selected option and saved back unchanged, rather than being silently switched to
 whichever direction happens to sort first.
+
+**When an alert does not arrive**, the app can now tell you which half is broken. 🔔 →
+**Send test notification** goes straight through `POST /push/test`, so "this device never
+receives notifications" is separated from "no bus has matched your rule yet" in one tap.
+That button was removed once on the reasoning that the first real alert is the test; the
+reasoning was wrong, because a real alert needs a real bus and therefore takes a morning
+to observe and never says why it failed.
+
+The panel also states the two things people get wrong, permanently and in both languages:
+the app does **not** need to be open, and an iPhone will not deliver a notification to a
+Safari tab — it has to be installed to the Home screen. The FAQ carries the long version,
+including permission and Android battery savers.
+
+On the server, `/health?token=…` reports `cron.agoSec` and `alerts.lastSent`. Before
+these, "alerts stopped" and "the scheduler stopped calling us" were indistinguishable from
+outside, and they need opposite fixes.
+
+**The trap that made this necessary.** With the Cloudflare API secrets set, the Worker
+narrows its own cron schedule nightly to the hours the current rules need. Run it once
+with no rules and `cronFor([])` returned an empty list, which was PUT verbatim — removing
+every trigger. The run that would have restored them is itself a trigger, so alerts
+stopped permanently, silently, and unrecoverably without a redeploy. Now every schedule
+carries the daily maintenance minute whatever the rules say, and `applySchedule` refuses
+an empty list outright. Two locks, because one of them is the one that failed.
 
 ### Settings
 

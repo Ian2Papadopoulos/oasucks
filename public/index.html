@@ -723,6 +723,9 @@
      that looks exactly like "New alert" and there is nothing on screen
      saying which of your alerts you are about to overwrite */
   .rule.editing{border-color:var(--toner);border-left:3px solid var(--marker2)}
+  .pushhow{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--marker2);
+    padding:9px 11px;margin-bottom:10px;font-size:10.5px;line-height:1.6;color:var(--ink3);
+    border-radius:2px}
   .fhead{margin-top:12px;color:var(--ink3);font-size:9.5px;letter-spacing:.16em;
     text-transform:uppercase;border-bottom:1px dashed var(--rule);padding-bottom:6px}
   .field{margin-top:11px}
@@ -883,7 +886,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v57</span></div>
+  <div class="foot"><span class="ver">v58</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -908,6 +911,9 @@
 
 <div class="sheet-bg" id="alertbg"><div class="sheet">
   <h3 id="a-h">Ειδοποιήσεις</h3><p id="a-p"></p>
+  <!-- What people get wrong about this is not the app, it is the platform:
+       an iPhone will not deliver a notification to a Safari tab, ever. -->
+  <div class="pushhow" id="a-how"></div>
   <div id="rulelist"></div><div id="ruleform"></div>
 </div></div>
 
@@ -1328,6 +1334,24 @@ const T={
     <b>κατά προσέγγιση</b> — πέφτει μέσα στο τετράγωνο, όχι στην πόρτα.</p>
     <p>Οι χρόνοι με τα πόδια υπολογίζονται σε πραγματικό πεζόδρομο όπου γίνεται· αλλιώς η
     εφαρμογή το λέει ότι είναι εκτίμηση.</p>`,
+  faqAlertQ:"Γιατί δεν ήρθε η ειδοποίηση;",
+  faqAlertA:`<p><b>Η εφαρμογή δεν χρειάζεται να είναι ανοιχτή.</b> Οι ειδοποιήσεις έρχονται
+    από τον διακομιστή, ακόμη κι αν την έχεις κλείσει εντελώς.</p>
+    <p>Τι χρειάζεται όμως:</p>
+    <ul>
+      <li><b>iPhone / iPad:</b> πρέπει να έχεις προσθέσει το OASAx στην <b>αρχική οθόνη</b>
+      και να το ανοίγεις από εκεί. Σε καρτέλα του Safari το iOS δεν στέλνει ειδοποιήσεις
+      ποτέ. Χρειάζεται iOS 16.4 ή νεότερο.</li>
+      <li><b>Άδεια:</b> όταν ρωτηθείς, πάτα «Να επιτρέπεται». Αν την έχεις απορρίψει μία
+      φορά, ο browser δεν ξαναρωτά — άλλαξέ την από τις ρυθμίσεις του site.</li>
+      <li><b>Εξοικονόμηση μπαταρίας</b> σε κάποια Android μπορεί να καθυστερήσει την
+      παράδοση. Βγάλε το OASAx από τη βελτιστοποίηση μπαταρίας αν σε νοιάζει η ακρίβεια.</li>
+    </ul>
+    <p><b>Δοκίμασέ το:</b> 🔔 → <b>Δοκιμαστική ειδοποίηση</b>. Αν αυτή δεν φτάσει, δεν θα
+    φτάσει καμία — το πρόβλημα είναι στη συσκευή ή στην άδεια, όχι στον κανόνα σου.</p>
+    <p>Αν η δοκιμαστική φτάνει αλλά η ειδοποίηση για το λεωφορείο όχι, έλεγξε ότι η
+    <b>ώρα</b> και οι <b>ημέρες</b> του κανόνα καλύπτουν τη στιγμή που το περιμένεις: η
+    ειδοποίηση στέλνεται μόνο για οχήματα που <i>φτάνουν μέσα στο διάστημα</i> που όρισες.</p>`,
   faqReportQ:"Τι είναι οι ζωντανές αναφορές;",
   faqReportA:`<p>Το πορτοκαλί κουμπί δείχνει τι συμβαίνει τώρα: <b>βλάβη, υπερπλήρες,
     χωρίς A/C, ασφάλεια, προσωπικό ΟΑΣΑ</b>, και σε σταθμούς <b>ασανσέρ, κυλιόμενες ή
@@ -1411,6 +1435,12 @@ const T={
   newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
   editAlert:"Επεξεργασία",delAlert:"Διαγραφή",
+  pushHow:"Δεν χρειάζεται να μένει ανοιχτή η εφαρμογή — η ειδοποίηση έρχεται και κλειστή. "+
+    "Στο iPhone πρέπει πρώτα να την προσθέσεις στην αρχική οθόνη· σε καρτέλα Safari οι "+
+    "ειδοποιήσεις δεν δουλεύουν ποτέ.",
+  pushTestOk:"Στάλθηκε. Αν δεν εμφανιστεί μέσα σε λίγα δευτερόλεπτα, η συσκευή σου δεν "+
+    "λαμβάνει ειδοποιήσεις — και οι ειδοποιήσεις για λεωφορεία δεν θα έρθουν ούτε αυτές.",
+  pushTestFail:"Δεν στάλθηκε — οι ειδοποιήσεις δεν είναι ενεργές σε αυτή τη συσκευή.",
   test:"Δοκιμαστική ειδοποίηση",noRules:"Καμία ειδοποίηση ακόμη.",
   needStops:"Φόρτωσε πρώτα στάσεις κοντά σου.",
   findStop:"⌕ Αναζήτηση άλλης στάσης…", noStopHit:"Καμία στάση με αυτό το όνομα.",
@@ -1590,6 +1620,23 @@ const T={
     <b>approximate</b> — it lands on the right block, not the right door.</p>
     <p>Walking times follow real pavements where the router is available; where it is not,
     the app says the time is an estimate.</p>`,
+  faqAlertQ:"Why didn't my alert arrive?",
+  faqAlertA:`<p><b>The app does not need to be open.</b> Alerts are pushed from the server
+    and arrive with the app fully closed.</p>
+    <p>What it does need:</p>
+    <ul>
+      <li><b>iPhone / iPad:</b> you must add OASAx to the <b>Home screen</b> and open it
+      from there. iOS never delivers notifications to a Safari tab. Needs iOS 16.4 or later.</li>
+      <li><b>Permission:</b> tap Allow when asked. If you dismissed it once, the browser
+      will not ask again — change it in the site settings.</li>
+      <li><b>Battery savers</b> on some Android phones delay delivery. Exclude OASAx from
+      battery optimisation if you need it on time.</li>
+    </ul>
+    <p><b>Test it:</b> 🔔 → <b>Send test notification</b>. If that one does not arrive, none
+    will — the problem is the device or the permission, not your alert.</p>
+    <p>If the test arrives but the bus alert does not, check that the rule's <b>time</b> and
+    <b>days</b> cover the moment you expect it: an alert fires only for vehicles
+    <i>arriving inside the window</i> you set.</p>`,
   faqReportQ:"What are live reports?",
   faqReportA:`<p>The orange button shows what is happening right now: <b>breakdown,
     overcrowded, no A/C, security, OASA staff</b>, and at stations <b>lifts, escalators or
@@ -1674,6 +1721,11 @@ const T={
   newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
   editAlert:"Edit",delAlert:"Delete",
+  pushHow:"The app does not need to stay open — alerts arrive with it closed. On iPhone you "+
+    "must add it to the Home screen first; notifications never work in a Safari tab.",
+  pushTestOk:"Sent. If nothing appears within a few seconds, this device is not receiving "+
+    "notifications — and bus alerts will not arrive either.",
+  pushTestFail:"Not sent — notifications are not active on this device.",
   test:"Send test notification",noRules:"No alerts yet.",
   needStops:"Load nearby stops first.",
   findStop:"⌕ Search another stop…", noStopHit:"No stop by that name.",
@@ -4987,6 +5039,7 @@ const FAQ=[
   {q:"faqTimesQ",  a:"faqTimesA"},
   {q:"faqPinQ",    a:"faqPinA"},
   {q:"faqPlanQ",   a:"faqPlanA"},
+  {q:"faqAlertQ",  a:"faqAlertA"},
   {q:"faqReportQ", a:"faqReportA"},
   {q:"faqAccessQ", a:"faqAccessA", warn:true},
   {q:"faqInstallQ",a:"faqInstallA", tour:true},
@@ -5010,7 +5063,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v57</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v58</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5196,6 +5249,7 @@ function openAlerts(){ $("#alertbg").classList.add("on"); renderAlerts(); }
 function closeAlerts(){ $("#alertbg").classList.remove("on"); }
 function renderAlerts(){
   const list=$("#rulelist"),form=$("#ruleform"); list.innerHTML=""; form.innerHTML="";
+  $("#a-how").textContent=t("pushHow");
   if(!hasBackend()){ list.innerHTML=`<div class="note">${t("pushOff")}</div>`; return; }
   if(!state.rules.length) list.innerHTML=`<div class="note">${t("noRules")}</div>`;
   state.rules.forEach(r=>{
@@ -5227,10 +5281,35 @@ function renderAlerts(){
   });
   const add=document.createElement("button"); add.className="primary"; add.textContent=t("newAlert");
   add.onclick=()=>renderForm(); form.appendChild(add);
-  /* The "send a test notification" button lived here. Removed from the
-     UI — the first real alert is the test. POST /push/test is still on
-     the Worker for debugging by hand:
-       curl -X POST <url>/push/test -d '{"sub":"<your sub id>"}' */
+
+  /* This button was removed once, on the reasoning that the first real
+     alert is the test. It is back, because that reasoning was wrong: a
+     real alert only fires when a real bus is a few minutes away, so
+     "nothing arrived" takes a morning to observe and never says WHY.
+     One tap here separates the two things that look identical from the
+     outside — a device that will never receive a notification, and a
+     rule that has not matched a bus yet. */
+  if(state.subId){
+    const tb=document.createElement("button"); tb.className="ghost"; tb.textContent=t("test");
+    const out=document.createElement("div"); out.className="note"; out.hidden=true;
+    tb.onclick=async()=>{
+      tb.disabled=true; out.hidden=false; out.textContent=t("searching");
+      try{
+        const id=await ensurePush();                 // re-asks if permission lapsed
+        const r=await fetch(base()+"/push/test",{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({sub:id})});
+        const j=await r.json().catch(()=>({}));
+        out.textContent=(r.ok&&j.ok)?t("pushTestOk"):t("pushTestFail");
+      }catch(e){
+        /* "unsupported" is the iPhone-in-a-Safari-tab case, and the one
+           worth spelling out — the browser has no push at all there. */
+        out.textContent=e.message==="denied"?t("pushDenied")
+          :e.message==="unsupported"?t("pushHow"):t("pushTestFail");
+      }
+      tb.disabled=false;
+    };
+    form.appendChild(tb); form.appendChild(out);
+  }
 }
 /* With a rule, the same form edits it; without one, it makes a new one.
    One form either way — an "edit" screen that is a near-copy of the "new"

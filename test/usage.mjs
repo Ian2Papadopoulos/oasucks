@@ -327,6 +327,69 @@ console.log("\n— and the documents say so —");
     /Daily opening totals/.test(legal) && /Daily opening totals/.test(priv));
 }
 
+/* An alert that never arrives and a scheduler that stopped calling look
+   identical from outside the Worker. These are the two switches that made
+   the difference visible, and the one that could silently turn the whole
+   thing off. */
+console.log("\n— proof that the scheduler is alive —");
+{
+  const cronFor = vm.runInContext("cronFor", ctx);
+  const applySchedule = vm.runInContext("applySchedule", ctx);
+
+  const none = cronFor([]);
+  ok("no alert rules still leaves a cron running", none.length > 0, JSON.stringify(none));
+  /* The run that widens the schedule again happens at 04:00 Athens. Leave
+     that hour out and a narrowed schedule can never grow back, so the
+     first rule written tomorrow would never fire and nothing would say
+     why. It has to be in every schedule we emit. */
+  const maint = vm.runInContext("maintenanceCron", ctx)();
+  ok("...and it is the daily maintenance minute", none.includes(maint), maint);
+
+  const some = cronFor([{ days: [1, 2, 3, 4, 5], from: 8 * 60 + 30, to: 8 * 60 + 50, lead: 10 }]);
+  ok("a schedule built from real rules covers the window",
+    some.some(c => /^\* /.test(c)), JSON.stringify(some));
+  ok("...and still carries the maintenance minute", some.includes(maint), JSON.stringify(some));
+
+  const env = { CF_API_TOKEN: "t", CF_ACCOUNT_ID: "a" };
+  const empty = await applySchedule(env, []);
+  ok("an empty schedule is refused, never PUT",
+    /refused/.test(empty.skipped || ""), JSON.stringify(empty));
+  ok("...and so is a missing one", /refused/.test((await applySchedule(env, null)).skipped || ""),
+    "one PUT of [] removes every trigger, and only a trigger can put them back");
+}
+{
+  rows = [];
+  const r = await call("/health?token=k", { method: "GET", token: "k", env: { DB } });
+  const j = await body(r);
+  ok("health reports whether the cron is still running",
+    j && j.cron && "agoSec" in j.cron && "healthy" in j.cron, JSON.stringify(j && j.cron));
+  ok("...and a Worker that has never run one says so, rather than looking fine",
+    j.cron.healthy === false && j.cron.lastRun === null, JSON.stringify(j.cron));
+}
+
+/* The wording people read when an alert does not arrive. "Keep the app
+   open" would be the wrong advice as well as untrue — what an iPhone
+   actually needs is the app on the Home screen. */
+console.log("\n— what the app tells people about notifications —");
+{
+  const app = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("both languages say the app need not stay open",
+    /does not need to stay open/.test(app) && /Δεν χρειάζεται να μένει ανοιχτή/.test(app));
+  ok("...and name the one platform that will not deliver to a tab",
+    /Safari tab/.test(app) && /καρτέλα Safari/.test(app),
+    "iOS delivers push only to a home-screen install");
+  ok("the FAQ answers it at length, in both languages",
+    /faqAlertQ/.test(app) && /Why didn't my alert arrive\?/.test(app)
+    && /Γιατί δεν ήρθε η ειδοποίηση;/.test(app));
+  ok("...including the permission and battery-saver cases",
+    /battery optimisation/i.test(app) && /Εξοικονόμηση μπαταρίας/.test(app));
+  ok("...and it is in the FAQ list, not just declared",
+    /\{q:"faqAlertQ",\s*a:"faqAlertA"\}/.test(app));
+  ok("a test notification is offered again",
+    /push\/test/.test(app) && /pushTestOk/.test(app),
+    "a real alert needs a real bus, so it cannot be the test");
+}
+
 await browser.close();
 server.close();
 console.log(`\n${pass} passed, ${fail} failed`);

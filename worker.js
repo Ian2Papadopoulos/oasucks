@@ -38,7 +38,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v57";
+const APP_VERSION = "v58";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -872,8 +872,20 @@ function windowDue(windows, now) {
 }
 /* Athens local minutes → UTC hours, expanded to whole hours (cron's
  * finest useful granularity here) and merged per weekday set. */
+/* The daily maintenance minute, in UTC. Everything else this function
+   emits depends on the rules that exist right now — but the run that
+   RE-WIDENS the schedule when a new rule appears happens at 04:00 Athens,
+   so if that hour is ever left out the schedule can narrow and then never
+   grow back. It has to be in every schedule we write, unconditionally. */
+function maintenanceCron() {
+  const h = ((4 - athensUtcOffsetHours()) % 24 + 24) % 24;
+  return `0-1 ${h} * * *`;
+}
 function cronFor(windows) {
-  if (!windows.length) return [];                 // nothing to do: no cron at all
+  const maint = maintenanceCron();
+  // No rules is not "no cron": something has to be alive to notice the
+  // first rule someone writes tomorrow.
+  if (!windows.length) return [maint];
   const offset = athensUtcOffsetHours();
   const byDay = new Map();                        // utcDay -> Set(utcHour)
   for (const w of windows) {
@@ -894,6 +906,7 @@ function cronFor(windows) {
   for (const [hours, days] of groups) {
     out.push(`* ${hours} * * ${days.sort((a, b) => a - b).join(",")}`);
   }
+  out.push(maint);
   return out;
 }
 // rough "how many times will this fire per day" for the summary
@@ -995,6 +1008,8 @@ async function runAlerts(env) {
               lead: firingLead,
               url: "./",
             }, env);
+            await setMeta(env, "alert_last", Math.floor(Date.now() / 1000));
+            try { await bumpUsage(env, ["alert"]); } catch (_) {}
           }
         } catch (_) { /* keep going */ }
 
@@ -1090,7 +1105,11 @@ async function initSchema(env) {
  * Without a D1 binding the endpoint accepts the beacon and drops it, so
  * an install without a database is not broken, just uncounted.
  * ------------------------------------------------------------------ */
-const USAGE_KINDS = new Set(["open", "open_app", "install"]);
+/* "cron" is every minute the scheduler woke us; "alert" is every push
+   actually handed to a push service. Together they answer the question the
+   app could not answer before: is this thing running, and has it ever
+   delivered anything? */
+const USAGE_KINDS = new Set(["open", "open_app", "install", "cron", "alert"]);
 function dayKey(ms) {
   // Athens, so "yesterday" means what a person in Athens means by it
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens", year: "numeric",
@@ -1106,6 +1125,27 @@ async function bumpUsage(env, kinds) {
     .bind(day, k)));
   return true;
 }
+/* One row, overwritten. D1 allows 100k writes a day and the cron is 1,440
+   of them at most, so a heartbeat is affordable where a KV write (1,000 a
+   day, shared with every filed report) would not be. */
+async function setMeta(env, k, v) {
+  if (!dbReady(env)) return;
+  try {
+    await initSchema(env);
+    await env.DB.prepare(
+      "INSERT INTO meta(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v")
+      .bind(k, String(v)).run();
+  } catch (_) { /* a heartbeat must never break the run it is timing */ }
+}
+async function getMeta(env, k) {
+  if (!dbReady(env)) return null;
+  try {
+    await initSchema(env);
+    const r = await env.DB.prepare("SELECT v FROM meta WHERE k=?").bind(k).first();
+    return r ? r.v : null;
+  } catch (_) { return null; }
+}
+
 async function readUsage(env, days) {
   if (!dbReady(env)) return null;
   await initSchema(env);
@@ -2964,6 +3004,11 @@ async function trackingActive(env) {
 let lastApplied = null;
 async function applySchedule(env, crons) {
   if (!env || !env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return { skipped: "not configured" };
+  /* An empty PUT here removes every trigger, and the handler that would
+     put them back only runs on a trigger. Alerts would stop for everyone,
+     permanently, with nothing to see. cronFor() no longer returns an empty
+     list; this is the second lock on the same door. */
+  if (!Array.isArray(crons) || !crons.length) return { skipped: "refused empty schedule" };
   const script = env.CF_SCRIPT_NAME || "oasa-stop";
   const body = JSON.stringify(crons.map(c => ({ cron: c })));
   if (body === lastApplied) return { skipped: "unchanged" };
@@ -3460,7 +3505,8 @@ export default {
         try {
           const rules = (await readRules(env)).filter(r => r && r.enabled !== false);
           const w = windowsOf(rules);
-          out.alerts = { rules: rules.length, cronSuggestion: cronFor(w),
+          out.alerts = { rules: rules.length, dueNow: windowDue(w, athensNow()),
+            cronSuggestion: cronFor(w),
             estimatedCronRunsPerDay: w.length ? estimateRuns(cronFor(w)) : 0 };
         } catch (_) { }
         try {
@@ -3469,7 +3515,23 @@ export default {
         } catch (_) { }
       }
 
+      /* The two questions "is the scheduler still calling us" and "has a
+         push ever gone out" had no answer at all, which is why an alert
+         that never arrived could not be told from a cron that had stopped.
+         They need different fixes, so they need different answers. Outside
+         the KV block on purpose: this is about the scheduler, not storage,
+         and it must report even when alerts are unconfigured. */
       if (dbReady(env)) {
+        try {
+          const cronLast = Number(await getMeta(env, "cron_last")) || 0;
+          const alertLast = Number(await getMeta(env, "alert_last")) || 0;
+          out.cron = { lastRun: cronLast || null,
+            agoSec: cronLast ? nowS - cronLast : null,
+            healthy: !!cronLast && nowS - cronLast < 15 * 60 };
+          out.alerts = Object.assign(out.alerts || {}, {
+            lastSent: alertLast || null,
+            lastSentAgoSec: alertLast ? nowS - alertLast : null });
+        } catch (_) { }
         try {
           // today and the last 30 days, the two numbers worth a glance
           const u = await readUsage(env, 30);
@@ -3721,6 +3783,12 @@ export default {
       if (pushReady(env)) {
         try { windows = windowsOf(await readRules(env)); } catch (_) { }
       }
+      /* Proof of life, written before anything that can fail. Without it
+         "alerts stopped working" and "the scheduler stopped calling us"
+         look identical from the outside, and they need opposite fixes. */
+      await setMeta(env, "cron_last", Math.floor(Date.now() / 1000));
+      try { await bumpUsage(env, ["cron"]); } catch (_) {}
+
       const alertsDue = windowDue(windows, now);
       if (alertsDue) await runAlerts(env);
       if (await trackingActive(env)) await sampleVehicles(env);
