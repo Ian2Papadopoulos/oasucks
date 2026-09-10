@@ -381,6 +381,15 @@
   .sheet{width:100%;max-width:520px;margin:0 auto;background:var(--paper);
     border-top:2px solid var(--toner);padding:16px 16px calc(18px + env(safe-area-inset-bottom));
     max-height:88vh;overflow:auto}
+  /* The buttons that finish a job stay on screen while the fields above
+     them scroll. Without this the alert form was taller than a laptop
+     window and Save sat below the fold with nothing pointing at it — the
+     form looked half-rendered rather than merely scrolled. Sticky rather
+     than fixed, so it belongs to the sheet and moves with it. */
+  .formact{position:sticky;bottom:0;z-index:2;background:var(--paper);
+    margin-top:6px;padding-top:10px;border-top:1px solid var(--rule)}
+  .formact button{margin-top:0}
+  .formact button+button{margin-top:7px}
   .sheet h3{margin:0 0 3px;font-size:13px;text-transform:uppercase;letter-spacing:.14em}
   .sheet p{margin:0 0 12px;color:var(--ink2);font-size:11.5px;line-height:1.5;font-family:var(--sans)}
   .search{display:flex;gap:7px}
@@ -886,7 +895,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v59</span></div>
+  <div class="foot"><span class="ver">v60</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -5084,7 +5093,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v59</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v60</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5328,8 +5337,9 @@ function renderAlerts(){
       await loadRules(); bellBadge(); renderAlerts(); };
     d.appendChild(ed); d.appendChild(del); list.appendChild(d);
   });
+  const act=document.createElement("div"); act.className="formact";
   const add=document.createElement("button"); add.className="primary"; add.textContent=t("newAlert");
-  add.onclick=()=>renderForm(); form.appendChild(add);
+  add.onclick=()=>renderForm(); act.appendChild(add);
 
   /* This button was removed once, on the reasoning that the first real
      alert is the test. It is back, because that reasoning was wrong: a
@@ -5341,6 +5351,7 @@ function renderAlerts(){
   if(state.subId){
     const tb=document.createElement("button"); tb.className="ghost"; tb.textContent=t("test");
     const out=document.createElement("div"); out.className="note"; out.hidden=true;
+    act.insertBefore(out,act.firstChild);       // results push the buttons down, not off
     tb.onclick=async()=>{
       tb.disabled=true; out.hidden=false; out.textContent=t("searching");
       try{
@@ -5352,8 +5363,9 @@ function renderAlerts(){
       }catch(e){ out.textContent=pushErrMsg(e); }
       tb.disabled=false;
     };
-    form.appendChild(tb); form.appendChild(out);
+    act.appendChild(tb);
   }
+  form.appendChild(act);
 }
 /* With a rule, the same form edits it; without one, it makes a new one.
    One form either way — an "edit" screen that is a near-copy of the "new"
@@ -5525,11 +5537,20 @@ function renderForm(edit){
       if(!r.ok) throw new Error("save");
       await loadRules(); bellBadge(); renderAlerts();
     }catch(e){ const n=document.createElement("div"); n.className="note";
-      n.textContent=pushErrMsg(e); form.appendChild(n); save.disabled=false; }
+      n.textContent=pushErrMsg(e); act.insertBefore(n,act.firstChild); save.disabled=false; }
   };
-  form.appendChild(save);
+  const act=document.createElement("div"); act.className="formact";
+  act.appendChild(save);
   const cancel=document.createElement("button"); cancel.className="ghost"; cancel.textContent=t("cancel");
-  cancel.onclick=renderAlerts; form.appendChild(cancel);
+  cancel.onclick=renderAlerts; act.appendChild(cancel);
+  form.appendChild(act);
+
+  /* Land on the form rather than wherever the list happened to leave the
+     scroll. Opening it used to append 500px below the fold, which read as
+     "the window did not finish rendering" — and on a short laptop window
+     it was the whole form that was missing, not just the buttons. */
+  requestAnimationFrame(()=>{ try{ form.scrollIntoView({block:"start",behavior:"smooth"}); }
+    catch(_){ form.scrollIntoView(true); } });
 }
 
 /* ------------------------------ wire ------------------------------- */

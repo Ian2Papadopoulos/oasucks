@@ -384,6 +384,76 @@ console.log("\n— an alert can be edited, not only deleted —");
   await v.ctx.close();
 }
 
+/* The alert form is taller than a laptop window. It used to open below the
+   fold with nothing scrolled into view, so Save and Cancel were simply not
+   on screen — which reads as "the window didn't finish rendering" rather
+   than "scroll down". Checked at the height that broke, not the one that
+   happened to work. */
+console.log("\n— the alert form fits the window it is opened in —");
+for (const [w, h] of [[1366, 768], [1280, 600], [1024, 560], [390, 844], [360, 640]]) {
+  const c = await browser.newContext({ viewport: { width: w, height: h },
+    permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
+  await c.addInitScript(tf => {
+    try { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", tf); } catch (_) {}
+  }, TOUR_FLAG);
+  const page = await c.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    hasBackend = () => true; state.subId = "s-1";
+    state.rules = [{ id: "r-1", sub: "s-1", stopCode: "9001", stopName: "PANORMOU",
+      lineId: "608", routeCodes: ["rc-9"], routeName: "TO GALATSI", days: [1, 2, 3, 4, 5],
+      from: "08:30", to: "08:50", leads: [10, 5], enabled: true }];
+    openAlerts(); renderForm();
+  });
+  await page.waitForTimeout(500);
+  const m = await page.evaluate(() => {
+    const act = document.querySelector("#ruleform .formact");
+    if (!act) return { missing: true };
+    const seen = [...act.querySelectorAll("button")].map(b => {
+      const r = b.getBoundingClientRect();
+      return { t: b.textContent.trim().slice(0, 8),
+               vis: r.top >= -1 && r.bottom <= innerHeight + 1 && r.height > 0 };
+    });
+    return { sticky: getComputedStyle(act).position, seen };
+  });
+  ok(`${w}x${h}: the finishing buttons are on screen without scrolling`,
+    !m.missing && m.seen.length >= 2 && m.seen.every(b => b.vis),
+    JSON.stringify(m.seen));
+  ok(`${w}x${h}: ...because they are pinned, not merely near the bottom`,
+    m.sticky === "sticky", String(m.sticky));
+  await c.close();
+}
+{
+  /* The other half: the form has to be where you are looking when it
+     opens, not 500px below the list you were just reading. */
+  const c = await browser.newContext({ viewport: { width: 1280, height: 600 } });
+  await c.addInitScript(tf => {
+    try { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", tf); } catch (_) {}
+  }, TOUR_FLAG);
+  const page = await c.newPage();
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    hasBackend = () => true; state.subId = "s-1";
+    state.rules = Array.from({ length: 4 }, (_, i) => ({ id: "r" + i, sub: "s-1",
+      stopCode: "900" + i, stopName: "STOP " + i, lineId: "60" + i, routeCodes: ["rc" + i],
+      routeName: "somewhere", days: [1], from: "08:30", to: "08:50", leads: [5], enabled: true }));
+    openAlerts();
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => renderForm());
+  await page.waitForTimeout(700);                    // the scroll is animated
+  const top = await page.evaluate(() => {
+    const f = document.getElementById("ruleform").getBoundingClientRect();
+    const sh = document.querySelector("#alertbg .sheet").getBoundingClientRect();
+    return Math.round(f.top - sh.top);
+  });
+  ok("opening the form scrolls it into view, past a list of four alerts",
+    top < 120, `form starts ${top}px into the sheet`);
+  await c.close();
+}
+
 console.log("\n— the menu says what each entry does —");
 {
   const v = await open();
