@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v60.**
+version: v61.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 678 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 689 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -247,6 +247,15 @@ the service worker caches relative paths, and no link in the page names a host.
 the app to one domain.
 
 ### The icons
+
+**The tab icon.** A browser asks for `/favicon.ico` by name whatever the markup says, and
+with nothing there every desktop visit took two 404s and showed a blank page icon. Both
+`favicon-32.png` and `favicon.ico` now come out of `npm run icons` with everything else —
+the `.ico` is the same PNG wrapped in a 22-byte header, which is how an `.ico` has been
+allowed to work since Vista and the only sane way to write one. At 32 pixels the four
+letters are a smudge, so the favicon is the half of the mark that survives the size: the
+black block and the two rules crossing it, at the angles they cross at everywhere else.
+
 
 `npm run icons` rebuilds `icon-192`, `icon-512` and `icon-maskable-512` from the CSS mark
 rather than from a separate drawing, because two drawings of one logo drift and the drift
@@ -713,6 +722,13 @@ always did with one more field. One case is worth knowing about: if the stop's d
 cannot be fetched — OASA down, or that direction retired — the rule's own line is kept as
 the selected option and saved back unchanged, rather than being silently switched to
 whichever direction happens to sort first.
+
+**One mode probe per boot, not three.** `ensureMode()` cached the answer but not the
+request, so every caller that arrived before the first probe returned started its own —
+the stop list, the report sweep and the geocoder, all at once on a cold start. It held the
+promise rather than the value from v61 on. Two wasted requests per boot against a 100k-a-day
+budget, found by reading the live log rather than by any test, which is why there is now
+a test.
 
 **The form fits the window it opens in.** It is taller than a laptop viewport, and it used
 to be appended below the fold with nothing scrolled into view — so on a 1366x768 window

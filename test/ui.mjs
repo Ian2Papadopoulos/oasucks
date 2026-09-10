@@ -384,6 +384,38 @@ console.log("\n— an alert can be edited, not only deleted —");
   await v.ctx.close();
 }
 
+/* Three identical mode probes went out on every cold boot, at the same
+   instant, because each caller found MODE still null and started its own.
+   Visible in the live log as three getClosestStops with the same
+   coordinates and the same timestamp — two of them pure waste against a
+   100k-a-day budget. */
+console.log("\n— one probe per boot, not three —");
+{
+  const c = await browser.newContext({ viewport: { width: 390, height: 840 },
+    permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
+  await c.addInitScript(tf => {
+    try { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", tf); } catch (_) {}
+  }, TOUR_FLAG);
+  const page = await c.newPage();
+  const probes = [];
+  page.on("request", r => {
+    // the mode probe is the one with the hardcoded coordinates in resolveMode
+    if (/\/api\?act=getClosestStops&p1=37\.9755&p2=23\.7348/.test(r.url())) probes.push(r.url());
+  });
+  await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(2500);
+  ok("a cold boot asks which mode it is in exactly once", probes.length === 1,
+    `${probes.length} probes`);
+  /* And the callers that arrived while it was in flight still got an
+     answer, rather than an undefined they would each re-probe for. */
+  const settled = await page.evaluate(async () => {
+    const all = await Promise.all([ensureMode(), ensureMode(), ensureMode()]);
+    return all.every(m => m === all[0] && typeof m === "string");
+  });
+  ok("...and everyone waiting on it gets the same answer", settled);
+  await c.close();
+}
+
 /* The alert form is taller than a laptop window. It used to open below the
    fold with nothing scrolled into view, so Save and Cancel were simply not
    on screen — which reads as "the window didn't finish rendering" rather

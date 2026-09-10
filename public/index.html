@@ -17,6 +17,11 @@
 <meta name="google" content="notranslate" />
 <title>OASAx · Live arrivals</title>
 <link rel="manifest" href="manifest.webmanifest" />
+<!-- Without these every desktop tab asks for /favicon.ico, gets a 404 and
+     shows a blank page icon. The .ico is there for the bare request a
+     browser makes whatever the markup says. -->
+<link rel="icon" href="favicon.ico" sizes="any" />
+<link rel="icon" type="image/png" href="favicon-32.png" sizes="32x32" />
 <!-- iOS reads these, not (only) the manifest -->
 <link rel="apple-touch-icon" href="icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -895,7 +900,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v60</span></div>
+  <div class="foot"><span class="ver">v61</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1075,7 +1080,7 @@ const API="https://telematics.oasa.gr/api/";
 const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   u=>`https://corsproxy.io/?url=${encodeURIComponent(u)}`];
 
-let MODE=null;
+let MODE=null, modeProbe=null;
 function apiQS(a,p1,p2){ return `?act=${a}`+(p1!=null?`&p1=${encodeURIComponent(p1)}`:"")+(p2!=null?`&p2=${encodeURIComponent(p2)}`:""); }
 async function resolveMode(){
   if(CONFIG.proxyBase) return "proxy";
@@ -1083,7 +1088,17 @@ async function resolveMode(){
     if(r.ok){ const j=safeJson(await r.text()); if(Array.isArray(j)) return "same"; } }catch(_){}
   return "public";
 }
-async function ensureMode(){ if(MODE==null) MODE=await resolveMode(); return MODE; }
+/* Callers arrive together on a cold boot — the stop list, the report
+   sweep, the geocoder — and each of them used to see MODE still null and
+   start its own probe. Three identical requests per boot, visible in the
+   log as three getClosestStops at the same instant. Hold the promise, not
+   just the answer, so the second caller waits on the first. */
+async function ensureMode(){
+  if(MODE!=null) return MODE;
+  if(!modeProbe) modeProbe=resolveMode().then(m=>{ MODE=m; modeProbe=null; return m; },
+    e=>{ modeProbe=null; throw e; });
+  return modeProbe;
+}
 function base(){ return MODE==="proxy"?CONFIG.proxyBase.replace(/\/$/,""):""; }
 function hasBackend(){ return MODE==="same"||MODE==="proxy"; }
 /* fresh=true bypasses the Worker's edge cache — only the co-movement
@@ -5093,7 +5108,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v60</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v61</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

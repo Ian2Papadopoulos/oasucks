@@ -12,6 +12,7 @@
  * it reads the icons' actual pixels and looks for the strike. */
 import { chromium } from "playwright-core";
 import { writeFileSync } from "node:fs";
+import { Buffer } from "node:buffer";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,6 +51,39 @@ function page(size, scale) {
   </style><div class="mark">OASA</div>`;
 }
 
+/* At 32 pixels the four letters are a grey smudge, so the favicon is the
+   half of the mark that survives the size: the black block and the two
+   white rules crossing it, at the angles they cross at everywhere else.
+   The strike IS the idea; the word is what a tab cannot show. */
+function favicon(size) {
+  const px = n => (n * size).toFixed(2) + "px";
+  // fractions of the square, not of an em: at this size the only thing
+  // that matters is that both strokes survive being 16 pixels wide
+  const T = 0.115;                                     // stroke thickness
+  const rule = `position:absolute;top:50%;height:${px(T)};background:${PAPER_INK};`;
+  return `<style>
+    html,body{margin:0;width:${size}px;height:${size}px;overflow:hidden}
+    .fav{width:${size}px;height:${size}px;background:${TONER};position:relative}
+    .fav::after{content:"";${rule}left:${px(0.08)};right:${px(0.08)};
+      transform:translateY(-${px(T / 2)}) rotate(-7deg)}
+    .fav::before{content:"";${rule}left:50%;width:${px(0.78)};margin-left:-${px(0.39)};
+      transform:translateY(-${px(T / 2)}) rotate(52deg)}
+  </style><div class="fav"></div>`;
+}
+
+/* A .ico is a 22-byte header wrapped around an image, and since Vista that
+   image may be a PNG. Browsers ask for /favicon.ico by name whatever the
+   markup says, so it is worth having a real one rather than a 404. */
+function ico(png) {
+  const h = Buffer.alloc(22);
+  h.writeUInt16LE(0, 0); h.writeUInt16LE(1, 2); h.writeUInt16LE(1, 4);   // dir: 1 image
+  h.writeUInt8(32, 6); h.writeUInt8(32, 7);                              // 32x32
+  h.writeUInt8(0, 8); h.writeUInt8(0, 9);
+  h.writeUInt16LE(1, 10); h.writeUInt16LE(32, 12);                       // 1 plane, 32bpp
+  h.writeUInt32LE(png.length, 14); h.writeUInt32LE(22, 18);
+  return Buffer.concat([h, png]);
+}
+
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 for (const [file, size, scale] of [
   /* The struck lockup is wider and shallower than the one it replaced, so
@@ -67,6 +101,19 @@ for (const [file, size, scale] of [
   const buf = await p.screenshot({ type: "png" });
   writeFileSync(path.join(OUT, file), buf);
   console.log(`${file}  ${size}x${size}  ${buf.length} bytes`);
+  await ctx.close();
+}
+
+{
+  const ctx = await browser.newContext({ viewport: { width: 32, height: 32 } });
+  const p = await ctx.newPage();
+  await p.setContent(favicon(32));
+  await p.waitForTimeout(80);
+  const png = await p.screenshot({ type: "png" });
+  writeFileSync(path.join(OUT, "favicon-32.png"), png);
+  writeFileSync(path.join(OUT, "favicon.ico"), ico(png));
+  console.log(`favicon-32.png  32x32  ${png.length} bytes`);
+  console.log(`favicon.ico     32x32  ${png.length + 22} bytes`);
   await ctx.close();
 }
 await browser.close();

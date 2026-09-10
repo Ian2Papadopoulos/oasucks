@@ -96,6 +96,35 @@ console.log("\n— one mark, struck through, wherever it appears —");
   ok("...and no longer knows what yellow is", !/MARKER|FFE24A/.test(gen));
 }
 
+/* A browser asks for /favicon.ico by name whatever the markup says. With
+   nothing there every desktop tab took a 404 and showed a blank page icon
+   — which is how it turned up: as two 404s per visit in the live log. */
+console.log("\n— the tab has an icon —");
+{
+  const idx = read("public/index.html");
+  ok("the page declares one", /<link rel="icon"[^>]*favicon\.ico/.test(idx));
+  ok("...and a PNG beside it, which is what modern browsers prefer",
+    /<link rel="icon" type="image\/png"[^>]*favicon-32\.png/.test(idx));
+  const png = readFileSync(path.join(REPO, "public", "favicon-32.png"));
+  ok("favicon-32.png is a real PNG", png.slice(1, 4).toString() === "PNG",
+    `${png.length} bytes`);
+  ok("...32x32, as the link says", png.readUInt32BE(16) === 32 && png.readUInt32BE(20) === 32);
+  const ico = readFileSync(path.join(REPO, "public", "favicon.ico"));
+  ok("favicon.ico is a real ICO", ico.readUInt16LE(0) === 0 && ico.readUInt16LE(2) === 1
+    && ico.readUInt16LE(4) === 1, ico.slice(0, 6).toString("hex"));
+  ok("...declaring one 32x32 image", ico.readUInt8(6) === 32 && ico.readUInt8(7) === 32);
+  ok("...whose payload is the PNG, at the offset the header promises",
+    ico.readUInt32LE(18) === 22 && ico.slice(23, 26).toString() === "PNG",
+    "since Vista an .ico may carry a PNG, which is the only sane way to write one");
+  ok("...and the two agree byte for byte",
+    ico.length === png.length + 22 && ico.slice(22).equals(png),
+    "one drawing, wrapped twice");
+  const gen = read("tools/icons.mjs");
+  ok("both come out of `npm run icons` with everything else",
+    /favicon-32\.png/.test(gen) && /favicon\.ico/.test(gen),
+    "a logo maintained in two places drifts");
+}
+
 console.log("\n— the icons were regenerated, not left behind —");
 {
   const png = p => { const b = readFileSync(path.join(REPO, "public", p)); return b; };
