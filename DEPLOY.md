@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v61",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v62",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -289,6 +289,57 @@ not answer yet is worse than no banner.
 
 None of this is recoverable by any means, which is why the honest move is to keep both
 origins alive indefinitely rather than to migrate anybody.
+
+### One host, not two
+
+`oasax.com` and `www.oasax.com` both answer, and to a browser those are **different
+origins**. A PWA installed from one has its own local storage, its own favourites, its own
+anonymous report id and its own push subscription; none of it is visible from the other.
+Ship like this and you get two userbases that can never be merged, split by whether
+someone typed `www`.
+
+Pick one and redirect the other, before anyone installs. Free plan, no code:
+
+1. Rules → **Redirect Rules** → Create rule.
+2. If: `Hostname` **equals** `www.oasax.com`.
+3. Then: **Dynamic** redirect, `concat("https://oasax.com", http.request.uri.path)`,
+   status **301**, preserve query string.
+
+Apex is the better canonical: it is shorter, it is what people will type, and it is what
+the domain is called. Check it with `curl.exe -I https://www.oasax.com/` — you want a 301
+to `https://oasax.com/`.
+
+Cloudflare issues its certificate for both names either way, so nothing breaks at the TLS
+layer while you decide.
+
+### Blocking the scanner noise
+
+A generic vulnerability scanner will sweep any domain within days of it resolving,
+regardless of what is on it, asking for `.env`, `.git/config`, `/actuator/env`,
+`/v2/_catalog`, cPanel, Confluence, Tomcat and forty more. None of it can succeed here —
+the Worker has no filesystem, no framework and no secrets reachable by URL — but each
+probe still spends a request, and they arrive in bursts of sixty.
+
+Security → WAF → Custom rules, free plan allows five:
+
+```
+(http.request.uri.path contains "wp-")
+or (http.request.uri.path contains "xmlrpc.php")
+or (http.request.uri.path contains "/.env")
+or (http.request.uri.path contains "/.git")
+or (http.request.uri.path contains "/actuator")
+or (http.request.uri.path contains "/.vscode")
+or (http.request.uri.path contains "/v2/_catalog")
+or (http.request.uri.path contains "login.action")
+or (http.request.uri.path contains "/console/")
+or (http.request.uri.path contains "info.php")
+```
+
+set to **Block**. Nothing the app serves matches any of those. It drops them at the edge
+before the Worker is invoked, so they cost neither a request nor a log line.
+
+Do **not** add a blanket rule on `/.well-known/`. That path is where certificate
+validation and `security.txt` live, and the app answers the latter with a real address.
 
 ### Closing the `workers.dev` address
 

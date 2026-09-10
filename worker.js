@@ -20,6 +20,7 @@
  *  POST /rules                  → create/update an alert rule
  *  POST /rules/delete           → delete an alert rule
  *  GET  /health                 → liveness; +admin token = usage summary
+ *  GET  /.well-known/security.txt → who to tell about a vulnerability
  *  GET  /stops/search?q=        → find stops by place/stop name
  *  GET  /alerts/windows         → when alerts need the cron (admin)
  *  POST /admin/reports/purge    → wipe reports / history rows (admin)
@@ -38,7 +39,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v61";
+const APP_VERSION = "v62";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -3480,6 +3481,26 @@ export default {
       out.headers.set("Cache-Control", `public, max-age=${WALK_CACHE}`);
       ctx.waitUntil(cache.put(ck, out.clone()));
       return out;
+    }
+
+    /* RFC 9116. Scanners ask for this constantly and so, occasionally, does
+       a person who has found something and wants to tell someone. Without
+       it they have to guess an address or say nothing; the app has exactly
+       one contact and this is where a researcher looks for it. Served from
+       the Worker rather than public/, because a leading-dot directory is
+       not something to trust a static handler with. */
+    if (p.endsWith("/.well-known/security.txt")) {
+      const year = new Date(Date.now() + 350 * 86400e3).toISOString().replace(/\.\d+Z$/, "Z");
+      const body = [
+        "Contact: mailto:oasax@proton.me",
+        `Expires: ${year}`,
+        "Preferred-Languages: el, en",
+        `Canonical: https://${url.host}/.well-known/security.txt`,
+        "",
+      ].join("\n");
+      return new Response(body, { headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "public, max-age=86400", ...CORS } });
     }
 
     if (p.endsWith("/health")) {

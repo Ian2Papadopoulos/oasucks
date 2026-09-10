@@ -370,6 +370,28 @@ console.log("\n— proof that the scheduler is alive —");
 /* The wording people read when an alert does not arrive. "Keep the app
    open" would be the wrong advice as well as untrue — what an iPhone
    actually needs is the app on the Home screen. */
+/* Vulnerability scanners ask for this dozens of times a day, and so, very
+   occasionally, does a person with something to report. One contact
+   address exists; this is where a researcher is trained to look for it. */
+console.log("\n— someone with a bug report can find an address —");
+{
+  const r = await call("/.well-known/security.txt", { method: "GET", env: {} });
+  const txt = await r.text();
+  ok("it answers, with no bindings configured at all", r.status === 200, String(r.status));
+  ok("...as plain text", /text\/plain/.test(r.headers.get("Content-Type") || ""));
+  ok("...naming the app's one contact address",
+    /^Contact: mailto:oasax@proton\.me$/m.test(txt), txt.split("\n")[0]);
+  /* RFC 9116 requires an expiry, and a stale one is worse than none — so
+     it is computed per request rather than typed into a file nobody will
+     remember to edit. */
+  const exp = (txt.match(/^Expires: (.+)$/m) || [])[1];
+  const ahead = (Date.parse(exp) - Date.now()) / 86400e3;
+  ok("...and an expiry that is always in the future, never edited by hand",
+    ahead > 300 && ahead < 366, `${Math.round(ahead)} days ahead`);
+  ok("...and no second identity anywhere in it",
+    !/github|papadop|gmail/i.test(txt), txt.replace(/\n/g, " | "));
+}
+
 console.log("\n— what the app tells people about notifications —");
 {
   const app = readFileSync(path.join(PUB, "index.html"), "utf8");
