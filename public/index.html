@@ -16,6 +16,25 @@
      translation started from the right-click menu. -->
 <meta name="google" content="notranslate" />
 <title>OASAx · Live arrivals</title>
+<meta name="description" content="Ζωντανές αφίξεις σε λεωφορεία, τρόλεϊ και μετρό στην Αθήνα. Χωρίς λογαριασμό, χωρίς διαφημίσεις, χωρίς παρακολούθηση." />
+<!-- The card a link becomes when someone pastes it into Facebook, Signal
+     or a message. Without these a share is a bare blue URL.
+
+     These are the ONE place a fixed host appears, and they are metadata
+     rather than anything the app fetches: every functional path stays
+     relative so the same build serves any origin. Change them together
+     with MOVED_TO if the app ever moves. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="OASAx" />
+<meta property="og:locale" content="el_GR" />
+<meta property="og:title" content="OASAx · Ζωντανές αφίξεις ΟΑΣΑ" />
+<meta property="og:description" content="Πότε έρχεται πραγματικά το λεωφορείο. Αφίξεις σε πραγματικό χρόνο, διαδρομή Α→Β και ζωντανές αναφορές από τον κόσμο." />
+<meta property="og:url" content="https://oasax.com/" />
+<meta property="og:image" content="https://oasax.com/share.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="OASAx" />
+<meta name="twitter:card" content="summary_large_image" />
 <link rel="manifest" href="manifest.webmanifest" />
 <!-- Without these every desktop tab asks for /favicon.ico, gets a 404 and
      shows a blank page icon. The .ico is there for the bare request a
@@ -900,7 +919,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v62</span></div>
+  <div class="foot"><span class="ver">v63</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -5108,7 +5127,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v62</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v63</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

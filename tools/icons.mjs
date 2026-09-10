@@ -84,6 +84,37 @@ function ico(png) {
   return Buffer.concat([h, png]);
 }
 
+/* The card Facebook, Signal, WhatsApp and the rest draw when someone
+   pastes the link. Without one a share is a bare blue URL, which is a poor
+   showing for a launch post — and it is the same lockup as everywhere
+   else, at the one size social crawlers actually want. */
+function share(w, h) {
+  const fs = w * 0.075;                              // the mark's font size
+  const px = n => (n * fs).toFixed(2) + "px";
+  const rule = `position:absolute;top:50%;height:${px(EM.rule)};background:${PAPER_INK};`;
+  return `<style>
+    html,body{margin:0;width:${w}px;height:${h}px;background:${PAPER};overflow:hidden;
+      font-family:${MONO}}
+    .wrap{width:${w}px;height:${h}px;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:${(h * 0.06).toFixed(0)}px}
+    .mark{background:${TONER};color:${PAPER_INK};font-weight:700;font-size:${fs.toFixed(2)}px;
+      line-height:1;letter-spacing:.1em;text-indent:.1em;position:relative;
+      padding:${px(EM.pad)} ${px(EM.padSide)}}
+    .mark::after{content:"";${rule}left:${px(EM.inset)};right:${px(EM.inset)};
+      transform:translateY(${px(-EM.rule / 2)}) rotate(-7deg)}
+    .mark::before{content:"";${rule}left:50%;width:${px(EM.steep)};
+      margin-left:${px(-EM.steep / 2)};transform:translateY(${px(-EM.rule / 2)}) rotate(52deg)}
+    .tag{color:${TONER};font-size:${(w * 0.026).toFixed(1)}px;font-weight:700;
+      letter-spacing:.06em;text-align:center;line-height:1.6}
+    .host{color:${TONER};opacity:.55;font-size:${(w * 0.019).toFixed(1)}px;
+      letter-spacing:.22em;text-transform:uppercase}
+  </style><div class="wrap">
+    <div class="mark">OASA</div>
+    <div class="tag">Ζωντανές αφίξεις σε λεωφορεία, τρόλεϊ και μετρό</div>
+    <div class="host">oasax.com</div>
+  </div>`;
+}
+
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
 for (const [file, size, scale] of [
   /* The struck lockup is wider and shallower than the one it replaced, so
@@ -114,6 +145,17 @@ for (const [file, size, scale] of [
   writeFileSync(path.join(OUT, "favicon.ico"), ico(png));
   console.log(`favicon-32.png  32x32  ${png.length} bytes`);
   console.log(`favicon.ico     32x32  ${png.length + 22} bytes`);
+  await ctx.close();
+}
+{
+  const [w, h] = [1200, 630];                        // what every social crawler wants
+  const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+  const p = await ctx.newPage();
+  await p.setContent(share(w, h));
+  await p.waitForTimeout(150);
+  const buf = await p.screenshot({ type: "png" });
+  writeFileSync(path.join(OUT, "share.png"), buf);
+  console.log(`share.png       ${w}x${h}  ${buf.length} bytes`);
   await ctx.close();
 }
 await browser.close();

@@ -223,6 +223,18 @@ console.log("\n— the app is origin-relative, so a new domain needs no edit —
   const abs = (html.match(/href="https?:\/\/[^"]+"/g) || [])
     .filter(h => !/gnu\.org|openstreetmap|carto/i.test(h));
   ok("no page link points at a fixed host", abs.length === 0, abs.join(" "));
+  /* The share card is the exception, and it has to be: a social crawler
+     resolves og:image against nothing, so a relative one is a coin toss.
+     It is metadata about where the app lives, not something the app
+     fetches — which is why the rule above still holds for everything the
+     running page actually touches. */
+  const meta = html.match(/content="https?:\/\/[^"]+"/g) || [];
+  ok("the only fixed host in the page is the canonical one",
+    meta.length > 0 && meta.every(m => /oasax\.com/.test(m)), meta.join(" "));
+  ok("...and nothing the page loads or links to names it",
+    !/href="https?:\/\/oasax\.com/.test(html) && !/src="https?:\/\/oasax\.com/.test(html)
+    && !/fetch\(\s*["`]https?:\/\/oasax\.com/.test(html),
+    "a fixed host in a fetch is how a new domain ends up talking to the old one");
   const sw = readFileSync(path.join(SRC, "sw.js"), "utf8");
   ok("the service worker caches relative paths", !/https?:\/\/[a-z0-9.-]*workers\.dev/i.test(sw));
 }

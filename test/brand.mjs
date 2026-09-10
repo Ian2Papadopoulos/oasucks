@@ -125,6 +125,35 @@ console.log("\n— the tab has an icon —");
     "a logo maintained in two places drifts");
 }
 
+/* A pasted link becomes a card. With no card it becomes a blue URL, which
+   is a poor showing for the post that launches the thing. */
+console.log("\n— a shared link has a picture —");
+{
+  const idx = read("public/index.html");
+  for (const [what, re] of [
+    ["a description for search results", /<meta name="description" content="[^"]{60,}"/],
+    ["a title for the card", /og:title" content="[^"]{10,}"/],
+    ["a description for the card", /og:description" content="[^"]{40,}"/],
+    ["an image", /og:image" content="[^"]+share\.png"/],
+    ["...with its dimensions declared, so no crawler has to guess",
+      /og:image:width" content="1200"/],
+    ["a large-image card for the ones that read twitter tags",
+      /twitter:card" content="summary_large_image"/],
+  ]) ok(what, re.test(idx));
+  const png = readFileSync(path.join(REPO, "public", "share.png"));
+  ok("share.png is a real PNG", png.slice(1, 4).toString() === "PNG", `${png.length} bytes`);
+  ok("...1200x630, the size every crawler asks for",
+    png.readUInt32BE(16) === 1200 && png.readUInt32BE(20) === 630,
+    `${png.readUInt32BE(16)}x${png.readUInt32BE(20)}`);
+  ok("...and under the 5MB most of them will fetch", png.length < 5e6);
+  ok("it is built by `npm run icons` like every other image",
+    /share\.png/.test(read("tools/icons.mjs")));
+  const robots = read("public/robots.txt");
+  ok("robots.txt lets the app be found", /^Allow: \/$/m.test(robots));
+  ok("...and keeps crawlers out of the API, which would only burn requests",
+    /^Disallow: \/api$/m.test(robots) && /^Disallow: \/nearby$/m.test(robots));
+}
+
 console.log("\n— the icons were regenerated, not left behind —");
 {
   const png = p => { const b = readFileSync(path.join(REPO, "public", p)); return b; };

@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v62.**
+version: v63.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 694 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 708 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -247,6 +247,22 @@ the service worker caches relative paths, and no link in the page names a host.
 the app to one domain.
 
 ### The icons
+
+**The share card.** A link pasted into Facebook, Signal or a message becomes a card, and
+with no Open Graph tags it becomes a bare blue URL instead — a poor showing for the post
+that launches the thing. `share.png` is 1200x630, the size every crawler asks for, and it
+is the same lockup as the icons, built by the same command.
+
+Its `og:image` and `og:url` are the **only** fixed host in the whole page, and that is
+deliberate: a social crawler resolves a relative `og:image` against nothing reliable, so a
+relative one is a coin toss. They are metadata about where the app lives rather than
+anything the running page fetches, which is why every functional path stays relative and
+the same build still serves any origin. `test/origin.mjs` enforces exactly that split:
+the canonical host may appear in `content=`, never in an `href`, a `src` or a `fetch`.
+
+`robots.txt` lets the app be indexed and keeps crawlers out of `/api`, `/nearby` and the
+rest. Nothing links to those, so it is insurance rather than a fence — but a crawler that
+found one would spend requests from a 100k-a-day budget on answers useless to it.
 
 **The tab icon.** A browser asks for `/favicon.ico` by name whatever the markup says, and
 with nothing there every desktop visit took two 404s and showed a blank page icon. Both

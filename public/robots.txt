@@ -1,0 +1,20 @@
+# Crawl the app, not the API. Nothing links to these paths, so this is
+# insurance rather than a fence: a crawler that found one would spend
+# requests from a 100k-a-day budget on answers that are useless to it.
+User-agent: *
+Allow: /
+Disallow: /api
+Disallow: /nearby
+Disallow: /geocode
+Disallow: /reverse
+Disallow: /plan
+Disallow: /walk
+Disallow: /live
+Disallow: /scan
+Disallow: /stops/
+Disallow: /reports
+Disallow: /rules
+Disallow: /push/
+Disallow: /pulse
+Disallow: /stats/
+Disallow: /track/
