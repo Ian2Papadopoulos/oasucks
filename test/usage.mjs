@@ -388,6 +388,22 @@ console.log("\n— what the app tells people about notifications —");
   ok("a test notification is offered again",
     /push\/test/.test(app) && /pushTestOk/.test(app),
     "a real alert needs a real bus, so it cannot be the test");
+
+  /* "Push isn't configured on the server" was shown for four different
+     failures, three of which were the browser's. Someone reading it went
+     looking at the wrong end of the problem every time. */
+  ok("each way this can fail says which way it was",
+    /pushUnsupported/.test(app) && /pushNoSub/.test(app)
+    && /pushNoBackend/.test(app) && /pushServer/.test(app));
+  ok("...through one mapping, used by both the save and the test button",
+    (app.match(/=pushErrMsg\(e\)/g) || []).length === 2,
+    "they used to disagree about what the same failure meant");
+  ok("...and a 501 is the only thing still blamed on the server",
+    /kr\.status===501\) throw new Error\("notconfigured"\)/.test(app));
+  ok("a browser that refuses to register is named as the browser",
+    /Use Google services for push/.test(app) && /brave:\/\/settings\/privacy/.test(app),
+    "Brave ships that off and every permission still looks correct");
+  ok("...in both languages", (app.match(/brave:\/\/settings\/privacy/g) || []).length >= 2);
 }
 
 await browser.close();

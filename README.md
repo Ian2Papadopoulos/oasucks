@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v58.**
+version: v59.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 662 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 667 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -713,6 +713,14 @@ always did with one more field. One case is worth knowing about: if the stop's d
 cannot be fetched — OASA down, or that direction retired — the rule's own line is kept as
 the selected option and saved back unchanged, rather than being silently switched to
 whichever direction happens to sort first.
+
+**Every way this can fail now says which way it was.** One message — "push isn't
+configured on the server" — used to cover four quite different failures, and three of them
+were the browser's: no Push API at all, a `subscribe()` the browser refused, and an
+unreachable backend. Only a 501 from `/push/key` is the server's fault, and only that
+still says so. The refused-registration case names Brave explicitly, because Brave ships
+with Google's push service off, every permission still reads as granted, and the
+registration fails silently — which looked exactly like a broken server.
 
 **When an alert does not arrive**, the app can now tell you which half is broken. 🔔 →
 **Send test notification** goes straight through `POST /push/test`, so "this device never

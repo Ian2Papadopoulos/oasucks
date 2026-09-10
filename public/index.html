@@ -886,7 +886,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v58</span></div>
+  <div class="foot"><span class="ver">v59</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1346,6 +1346,10 @@ const T={
       φορά, ο browser δεν ξαναρωτά — άλλαξέ την από τις ρυθμίσεις του site.</li>
       <li><b>Εξοικονόμηση μπαταρίας</b> σε κάποια Android μπορεί να καθυστερήσει την
       παράδοση. Βγάλε το OASAx από τη βελτιστοποίηση μπαταρίας αν σε νοιάζει η ακρίβεια.</li>
+      <li><b>Brave:</b> έρχεται με την υπηρεσία push της Google <b>απενεργοποιημένη</b>. Οι
+      άδειες φαίνονται εντάξει και η εγγραφή αποτυγχάνει σιωπηλά. Άνοιξε
+      <b>brave://settings/privacy</b>, ενεργοποίησε το <b>«Use Google services for push
+      messaging»</b> και κάνε επανεκκίνηση του browser.</li>
     </ul>
     <p><b>Δοκίμασέ το:</b> 🔔 → <b>Δοκιμαστική ειδοποίηση</b>. Αν αυτή δεν φτάσει, δεν θα
     φτάσει καμία — το πρόβλημα είναι στη συσκευή ή στην άδεια, όχι στον κανόνα σου.</p>
@@ -1446,8 +1450,15 @@ const T={
   findStop:"⌕ Αναζήτηση άλλης στάσης…", noStopHit:"Καμία στάση με αυτό το όνομα.",
   alertHint:"Η στάση μπορεί να είναι οπουδήποτε: διάλεξε από τις κοντινές ή τα αγαπημένα σου, "+
     "ή ψάξε οποιαδήποτε στάση της Αθήνας.",
-  pushOff:"Οι ειδοποιήσεις δεν έχουν ρυθμιστεί στον server.",
+  pushOff:"Οι ειδοποιήσεις δεν έχουν ρυθμιστεί στον server (λείπουν τα κλειδιά VAPID).",
   pushDenied:"Οι ειδοποιήσεις είναι μπλοκαρισμένες στον browser.",
+  pushUnsupported:"Αυτός ο browser δεν υποστηρίζει ειδοποιήσεις. Σε iPhone πρόσθεσε πρώτα "+
+    "την εφαρμογή στην αρχική οθόνη — σε καρτέλα Safari δεν δουλεύουν ποτέ.",
+  pushNoSub:"Ο browser αρνήθηκε να εγγραφεί για ειδοποιήσεις, παρόλο που έδωσες άδεια. "+
+    "Στο Brave: brave://settings/privacy → ενεργοποίησε το «Use Google services for push "+
+    "messaging» και κάνε επανεκκίνηση του browser.",
+  pushNoBackend:"Η εφαρμογή δεν βλέπει τον server της αυτή τη στιγμή. Κάνε ανανέωση.",
+  pushServer:c=>`Ο server απάντησε με σφάλμα (${c}).`,
   dayNames:["Κυ","Δε","Τρ","Τε","Πε","Πα","Σα"]},
  en:{change:"Change",nobus:"No arrivals in the next few minutes",
   now:"now",min:"min",to:"to",err:"Couldn't load data.",retry:"Try again",
@@ -1631,6 +1642,9 @@ const T={
       will not ask again — change it in the site settings.</li>
       <li><b>Battery savers</b> on some Android phones delay delivery. Exclude OASAx from
       battery optimisation if you need it on time.</li>
+      <li><b>Brave</b> ships with Google's push service <b>turned off</b>. Every permission
+      looks correct and registration fails anyway. Open <b>brave://settings/privacy</b>,
+      turn on <b>“Use Google services for push messaging”</b>, then restart the browser.</li>
     </ul>
     <p><b>Test it:</b> 🔔 → <b>Send test notification</b>. If that one does not arrive, none
     will — the problem is the device or the permission, not your alert.</p>
@@ -1731,8 +1745,15 @@ const T={
   findStop:"⌕ Search another stop…", noStopHit:"No stop by that name.",
   alertHint:"The stop can be anywhere. Pick a nearby one or a favourite, or search any stop "+
     "in Athens.",
-  pushOff:"Push isn't configured on the server yet.",
+  pushOff:"Push isn't configured on the server yet — the VAPID keys are missing.",
   pushDenied:"Notifications are blocked in your browser.",
+  pushUnsupported:"This browser can't receive notifications. On iPhone, add the app to the "+
+    "Home screen first — they never work in a Safari tab.",
+  pushNoSub:"Your browser refused to register for notifications even though you allowed "+
+    "them. In Brave: brave://settings/privacy → turn on \u201cUse Google services for push "+
+    "messaging\u201d, then restart the browser.",
+  pushNoBackend:"The app can't reach its server right now. Reload and try again.",
+  pushServer:c=>`The server answered with an error (${c}).`,
   dayNames:["Su","Mo","Tu","We","Th","Fr","Sa"]}
 };
 const t=k=>T[LANG][k];
@@ -5063,7 +5084,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v58</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v59</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5220,21 +5241,49 @@ async function showRouteStats(){
 function u8(b64){ const p="=".repeat((4-b64.length%4)%4);
   const s=(b64+p).replace(/-/g,"+").replace(/_/g,"/"); const raw=atob(s);
   const a=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i); return a; }
+/* Every step of this can fail for a different reason, and they need
+   different answers. Collapsing them into "push isn't configured on the
+   server" — which is only ever true of ONE of them — sent people looking
+   at the wrong end of the problem, most often when the browser was the
+   thing refusing. Each throw below names its own cause. */
 async function ensurePush(){
   if(!hasBackend()) throw new Error("nobackend");
   if(!("serviceWorker" in navigator)||!("PushManager" in window)) throw new Error("unsupported");
-  const kr=await fetch(base()+"/push/key"); if(!kr.ok) throw new Error("notconfigured");
+  let kr;
+  try{ kr=await fetch(base()+"/push/key"); }catch(_){ throw new Error("nobackend"); }
+  if(kr.status===501) throw new Error("notconfigured");   // the server really has no keys
+  if(!kr.ok) throw new Error("server:"+kr.status);
   const {key}=await kr.json();
+  if(!key) throw new Error("notconfigured");
   let perm=Notification.permission;
   if(perm==="default") perm=await Notification.requestPermission();
   if(perm!=="granted") throw new Error("denied");
   const reg=await navigator.serviceWorker.ready;
   let sub=await reg.pushManager.getSubscription();
-  if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u8(key)});
+  if(!sub){
+    /* Permission granted and the page still cannot register. This is the
+       browser's own push service refusing, not ours — Brave ships with
+       Google's push service off, and a subscribe() there rejects with
+       AbortError while every permission looks correct. */
+    try{ sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:u8(key)}); }
+    catch(e){ throw new Error("nosubscribe"); }
+  }
   const id=localStorage.getItem("subId")||null;
   const r=await fetch(base()+"/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({id,subscription:sub.toJSON()})});
+  if(!r.ok) throw new Error("server:"+r.status);
   const j=await r.json(); localStorage.setItem("subId",j.id); state.subId=j.id; return j.id;
+}
+/* One mapping, used by both the save and the test button — they used to
+   disagree about what the same failure meant. */
+function pushErrMsg(e){
+  const m=String((e&&e.message)||"");
+  if(m==="denied") return t("pushDenied");
+  if(m==="unsupported") return t("pushUnsupported");
+  if(m==="nosubscribe") return t("pushNoSub");
+  if(m==="nobackend") return t("pushNoBackend");
+  if(m.startsWith("server:")) return t("pushServer")(m.slice(7));
+  return t("pushOff");
 }
 async function loadRules(){
   if(!hasBackend()||!state.subId){ state.rules=[]; return; }
@@ -5300,12 +5349,7 @@ function renderAlerts(){
           headers:{"Content-Type":"application/json"},body:JSON.stringify({sub:id})});
         const j=await r.json().catch(()=>({}));
         out.textContent=(r.ok&&j.ok)?t("pushTestOk"):t("pushTestFail");
-      }catch(e){
-        /* "unsupported" is the iPhone-in-a-Safari-tab case, and the one
-           worth spelling out — the browser has no push at all there. */
-        out.textContent=e.message==="denied"?t("pushDenied")
-          :e.message==="unsupported"?t("pushHow"):t("pushTestFail");
-      }
+      }catch(e){ out.textContent=pushErrMsg(e); }
       tb.disabled=false;
     };
     form.appendChild(tb); form.appendChild(out);
@@ -5481,7 +5525,7 @@ function renderForm(edit){
       if(!r.ok) throw new Error("save");
       await loadRules(); bellBadge(); renderAlerts();
     }catch(e){ const n=document.createElement("div"); n.className="note";
-      n.textContent=e.message==="denied"?t("pushDenied"):t("pushOff"); form.appendChild(n); save.disabled=false; }
+      n.textContent=pushErrMsg(e); form.appendChild(n); save.disabled=false; }
   };
   form.appendChild(save);
   const cancel=document.createElement("button"); cancel.className="ghost"; cancel.textContent=t("cancel");

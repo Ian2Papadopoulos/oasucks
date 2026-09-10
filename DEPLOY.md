@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v58",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v59",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -385,6 +385,20 @@ eight came from an installed icon. Any "users" number is your own inference from
 
 Work down this list; each step rules out one half of what is left.
 
+**0. Is push configured on the server at all?** This is the one to check first, because it
+is invisible from the app until you try:
+
+```powershell
+curl.exe "https://oasax.com/push/key"
+```
+
+`{"key":"B..."}` means it is set up. `{"error":"push not configured"}` with a **501** means
+the Worker has no VAPID keys, alerts have never worked and never will until you follow
+`PUSH-SETUP.md`: `node genkeys.mjs`, then `npx wrangler secret put VAPID_PUBLIC_KEY`,
+`VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`, then redeploy. `npx wrangler secret list` shows
+which of the three are already there. This is also the only failure the app is entitled to
+blame on the server, and since v59 it is the only one it does.
+
 **1. Does any notification reach the device?** In the app: 🔔 → **Send test notification**.
 If that does not arrive, no bus alert ever will, and the cause is on the phone:
 
@@ -395,6 +409,10 @@ If that does not arrive, no bus alert ever will, and the cause is on the phone:
 - **Permission** must be granted. A browser asks once; a dismissed prompt is not asked
   again and has to be changed in the site's settings.
 - **Battery savers** on some Android phones delay delivery rather than stopping it.
+- **Brave** ships with Google's push service turned off, on desktop and Android alike.
+  Every permission reads as granted and `pushManager.subscribe()` rejects anyway. Open
+  `brave://settings/privacy`, turn on **Use Google services for push messaging**, restart
+  the browser. The app now names this case instead of blaming the server for it.
 
 The app does **not** need to be open, on any platform. If it did, the feature would be
 pointless, and any advice to keep it running in the background is wrong.
