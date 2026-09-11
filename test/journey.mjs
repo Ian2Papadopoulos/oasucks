@@ -60,6 +60,8 @@ let planBody = {
 const json = (r, o) => { r.writeHead(200, { "Content-Type": "application/json" }); r.end(JSON.stringify(o)); };
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
+  // the mode probe: is there a Worker on this origin
+  if (u.pathname === "/health") return json(res, { ok: true, version: "test" });
   if (u.pathname === "/plan") { planCalls.push(u.search); return json(res, planBody); }
   if (u.pathname === "/nearby") return json(res, { origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] });
   if (u.pathname === "/metro") return json(res, [

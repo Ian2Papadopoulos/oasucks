@@ -392,6 +392,11 @@
   .empty{padding:11px 13px;color:var(--ink3);font-size:11px}
   .skel{height:26px;margin:9px 13px;background:linear-gradient(90deg,#F0F0EC,#E4E4DF,#F0F0EC);
     background-size:200% 100%;animation:sh 1.2s infinite}
+  /* The board before the first sweep answers: the shape of a stop card,
+     not a sentence about the street. */
+  .skel-card .hd .skel{height:13px;margin:0}
+  .skel-card .hd{padding:11px 13px 9px}
+  .skel-card .hd .w60{width:60%} .skel-card .hd .w40{width:42%}
   @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
   .msg{text-align:center;color:var(--ink3);padding:38px 20px;font-size:12.5px;line-height:1.7}
   .msg b{color:var(--toner)}
@@ -919,7 +924,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v63</span></div>
+  <div class="foot"><span class="ver">v64</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1099,23 +1104,55 @@ const API="https://telematics.oasa.gr/api/";
 const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   u=>`https://corsproxy.io/?url=${encodeURIComponent(u)}`];
 
-let MODE=null, modeProbe=null;
+let MODE=null, modeProbe=null, modeMissAt=0, modeMissWait=0;
+/* A miss backs off, starting well under a second so a boot that lost one
+   race recovers inside the first retry, and doubling to 15s so a genuinely
+   backend-less page (opened as a file, say) is not probing forever. */
+const MODE_PROBE_MS=3500, MODE_RETRY_MIN=900, MODE_RETRY_MAX=15000;
 function apiQS(a,p1,p2){ return `?act=${a}`+(p1!=null?`&p1=${encodeURIComponent(p1)}`:"")+(p2!=null?`&p2=${encodeURIComponent(p2)}`:""); }
+/* Ask the right question.
+
+   This used to probe /api, which the Worker answers by calling OASA. So
+   "is OASA up" and "is there a Worker on this origin" were the same
+   question, and a slow or grumpy OASA made the app conclude it had no
+   backend at all — then spend the rest of the session on third-party CORS
+   proxies, which is slower and often empty. That is what an apparently
+   fine connection showing no stops and no arrivals looks like, and why a
+   reload fixed it: the reload re-rolled the probe.
+
+   /health is answered by the Worker itself, touches nothing upstream, and
+   says exactly one thing: I am here. */
 async function resolveMode(){
   if(CONFIG.proxyBase) return "proxy";
-  try{ const r=await fetch("/api"+apiQS("getClosestStops",37.9755,23.7348),{cache:"no-store"});
-    if(r.ok){ const j=safeJson(await r.text()); if(Array.isArray(j)) return "same"; } }catch(_){}
+  const ctrl=typeof AbortController!=="undefined"?new AbortController():null;
+  const t0=setTimeout(()=>{ try{ ctrl&&ctrl.abort(); }catch(_){} },MODE_PROBE_MS);
+  try{
+    const r=await fetch("./health",{cache:"no-store",signal:ctrl?ctrl.signal:undefined});
+    if(r.ok){ const j=safeJson(await r.text()); if(j&&j.ok===true) return "same"; }
+  }catch(_){}
+  finally{ clearTimeout(t0); }
   return "public";
 }
 /* Callers arrive together on a cold boot — the stop list, the report
    sweep, the geocoder — and each of them used to see MODE still null and
    start its own probe. Three identical requests per boot, visible in the
-   log as three getClosestStops at the same instant. Hold the promise, not
-   just the answer, so the second caller waits on the first. */
+   log as three health checks at the same instant. Hold the promise, not
+   just the answer, so the second caller waits on the first.
+
+   Only a POSITIVE answer is remembered. "There is a Worker here" is a
+   fact about the deployment and cannot change under you; "there isn't"
+   is a guess made from one request that may simply have lost a race, and
+   caching it condemned the whole session to the slow path. A miss is
+   retried, just not on every call. */
 async function ensureMode(){
   if(MODE!=null) return MODE;
-  if(!modeProbe) modeProbe=resolveMode().then(m=>{ MODE=m; modeProbe=null; return m; },
-    e=>{ modeProbe=null; throw e; });
+  if(modeMissAt && Date.now()-modeMissAt<modeMissWait) return "public";
+  if(!modeProbe) modeProbe=resolveMode().then(m=>{
+    if(m==="same"||m==="proxy"){ MODE=m; modeMissAt=0; modeMissWait=0; }
+    else { modeMissAt=Date.now();
+      modeMissWait=Math.min(MODE_RETRY_MAX, modeMissWait?modeMissWait*2:MODE_RETRY_MIN); }
+    modeProbe=null; return m;
+  }, e=>{ modeProbe=null; throw e; });
   return modeProbe;
 }
 function base(){ return MODE==="proxy"?CONFIG.proxyBase.replace(/\/$/,""):""; }
@@ -2214,7 +2251,15 @@ function renderList(){
   const shown=listStops();
   if(!shown.length){
     cardCache.clear();
-    list.innerHTML=`<div class="msg">${t("nobus")}</div>`;
+    /* Before the first sweep lands there is nothing to say yet, and
+       "no arrivals in the next few minutes" is a claim about the street
+       rather than about us. Show the shape of the answer instead. */
+    list.innerHTML = bootDone
+      ? `<div class="msg">${t("nobus")}</div>`
+      : `<div class="stop skel-card"><div class="hd"><div class="skel w60"></div></div>
+           <div class="rows"><div class="skel"></div><div class="skel"></div></div></div>
+         <div class="stop skel-card"><div class="hd"><div class="skel w40"></div></div>
+           <div class="rows"><div class="skel"></div></div></div>`;
     return;
   }
   if(list.firstElementChild&&list.firstElementChild.classList.contains("msg")) list.innerHTML="";
@@ -2836,13 +2881,34 @@ async function fillVisibleArrivals(){
   if(state.view==="list") renderView();
 }
 
-async function loadStops(){
+/* One blip on the first sweep used to leave an empty board and a button,
+   which is the same thing the app shows when a street genuinely has no
+   buses — so the failure was invisible AND indistinguishable from an
+   answer. It retries itself twice, quietly, before saying anything. */
+const LOAD_RETRY_MS=[600,1500,3200];
+async function loadStops(attempt){
   if(loading) return; loading=true;
+  const n=attempt||0;
   try{
     await ensureMode();
-    if(hasBackend()){ await loadStopsBatch(); loading=false; return; }
-    await loadStopsLegacy();
+    if(hasBackend()) await loadStopsBatch();
+    else {
+      await loadStopsLegacy();
+      /* The fallback path catches its own failures per request and
+         returns whatever survived, so a total wipeout arrives as an
+         empty list rather than an error — an empty board, no message,
+         and nothing retried. If we are here without a confirmed backend,
+         an empty sweep is far more likely to mean the probe was wrong
+         than that this corner of Athens has no stops. */
+      if(!state.stops.length && MODE==null) throw new Error("empty sweep");
+    }
+    bootDone=true;
   }catch(e){
+    loading=false;
+    if(n<LOAD_RETRY_MS.length){
+      setTimeout(()=>loadStops(n+1),LOAD_RETRY_MS[n]);
+      return;
+    }
     if(state.view==="list")
       $("#list").innerHTML=`<div class="msg"><b>${esc(navigator.onLine===false?t("offline"):t("err"))}</b><br><button onclick="startRefresh()">${t("retry")}</button></div>`;
   }
@@ -2883,6 +2949,9 @@ async function loadStopsLegacy(){
 /* Polling pauses when the tab is hidden — a forgotten tab used to keep
    refreshing all night for nobody. Coming back refreshes immediately. */
 let paused=false, lastTouch=Date.now(), sleeping=false;
+/* False until a sweep has actually returned. Everything that wants to say
+   "there is nothing here" has to wait for it. */
+let bootDone=false;
 
 /* Polling is tiered, because an open tab that nobody is looking at used to
    refresh forever:
@@ -5127,7 +5196,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v63</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v64</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

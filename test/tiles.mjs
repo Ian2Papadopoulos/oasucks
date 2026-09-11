@@ -36,6 +36,8 @@ let ROOT = SRC;
 const json = (r, o) => { r.writeHead(200, { "Content-Type": "application/json" }); r.end(JSON.stringify(o)); };
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
+  // the mode probe: is there a Worker on this origin
+  if (u.pathname === "/health") return json(res, { ok: true, version: "test" });
   if (u.pathname === "/nearby") return json(res, { origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] });
   if (u.pathname === "/api" || u.pathname === "/reports" || u.pathname === "/metro") return json(res, []);
   const f = path.join(ROOT, u.pathname === "/" ? "index.html" : u.pathname.slice(1));

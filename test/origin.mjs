@@ -42,6 +42,9 @@ const stops = [{ code: "500", name_el: "ΚΟΝΤΑ", name_en: "NEAR", lat: LAT, 
 let ROOT = SRC;
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
+  // the mode probe: is there a Worker on this origin
+  if (u.pathname === "/health") { res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end('{"ok":true,"version":"test"}'); }
   if (u.pathname === "/nearby") { res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] })); }
   const f = path.join(ROOT, u.pathname === "/" ? "index.html" : u.pathname.slice(1));

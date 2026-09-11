@@ -44,6 +44,8 @@ const GEO = [
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   const J = o => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+  // the mode probe: "is there a Worker on this origin"
+  if (u.pathname === "/health") return J({ ok: true, version: "test" });
   if (u.pathname === "/nearby") return J({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] });
   if (u.pathname === "/geocode") return J(GEO);
   if (u.pathname === "/metro") return J([{ id: "m-syn", name: "Σύνταγμα", name_en: "SYNTAGMA",
@@ -386,10 +388,14 @@ console.log("\n— an alert can be edited, not only deleted —");
 
 /* Three identical mode probes went out on every cold boot, at the same
    instant, because each caller found MODE still null and started its own.
-   Visible in the live log as three getClosestStops with the same
-   coordinates and the same timestamp — two of them pure waste against a
-   100k-a-day budget. */
-console.log("\n— one probe per boot, not three —");
+   Two of them pure waste against a 100k-a-day budget.
+
+   The probe itself used to ask /api, which the Worker answers by calling
+   OASA — so a slow upstream made the app decide it had no backend and
+   spend the session on third-party proxies, which is what "no stops, no
+   arrivals, works after a reload" looked like. It asks /health now: our
+   own Worker, nothing upstream, one question. */
+console.log("\n— one probe per boot, and it asks the right thing —");
 {
   const c = await browser.newContext({ viewport: { width: 390, height: 840 },
     permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
@@ -397,15 +403,18 @@ console.log("\n— one probe per boot, not three —");
     try { localStorage.setItem("lang", "en"); localStorage.setItem("tourSeen", tf); } catch (_) {}
   }, TOUR_FLAG);
   const page = await c.newPage();
-  const probes = [];
+  const probes = [], upstream = [];
   page.on("request", r => {
-    // the mode probe is the one with the hardcoded coordinates in resolveMode
-    if (/\/api\?act=getClosestStops&p1=37\.9755&p2=23\.7348/.test(r.url())) probes.push(r.url());
+    if (/\/health(\?|$)/.test(new URL(r.url()).pathname + (new URL(r.url()).search || ""))
+      || /\/health$/.test(new URL(r.url()).pathname)) probes.push(r.url());
+    if (/getClosestStops&p1=37\.9755&p2=23\.7348/.test(r.url())) upstream.push(r.url());
   });
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(2500);
   ok("a cold boot asks which mode it is in exactly once", probes.length === 1,
     `${probes.length} probes`);
+  ok("...and asks our own Worker, not OASA through it", upstream.length === 0,
+    "whether OASA is up is a different question from whether we are");
   /* And the callers that arrived while it was in flight still got an
      answer, rather than an undefined they would each re-probe for. */
   const settled = await page.evaluate(async () => {

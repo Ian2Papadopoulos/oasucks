@@ -51,10 +51,21 @@ const ROUTED = { min: 6.2, metres: 470, basis: "routed",
   path: [[LAT, LNG], [LAT, LNG + 0.003], [LAT + 0.004, LNG + 0.003], [LAT + 0.004, LNG]] };
 
 let walkCalls = [], walkStatus = 200;
+/* Switches the two tests below flip to make one request fail exactly once. */
+let healthFails = 0, healthHits = 0, nearbyFails = 0;
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   const J = o => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
-  if (u.pathname === "/nearby") return J({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] });
+  // the mode probe: is there a Worker on this origin
+  if (u.pathname === "/health") {
+    healthHits++;
+    if (healthFails > 0) { healthFails--; res.writeHead(503); return res.end("{}"); }
+    return J({ ok: true, version: "test" });
+  }
+  if (u.pathname === "/nearby") {
+    if (nearbyFails > 0) { nearbyFails--; res.writeHead(503); return res.end("{}"); }
+    return J({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] });
+  }
   if (u.pathname === "/plan") return J(JSON.parse(JSON.stringify(PLAN)));
   if (u.pathname === "/walk") {
     walkCalls.push(u.search);
@@ -280,6 +291,63 @@ console.log("\n— served as a secure origin —");
       .filter(u => !/w3\.org\/\d{4}\/svg/.test(u));     // an XML namespace, not a fetch
     ok(`${f} fetches nothing over plain http`, bad.length === 0, bad.join(" "));
   }
+}
+
+/* The morning the board came up empty on a fast connection. One flaky
+   probe decided the app had no backend, that verdict was cached for the
+   session, and everything afterwards went to third-party CORS proxies —
+   slow, often empty, and indistinguishable on screen from a street with
+   no buses. Reloading "fixed" it because a reload re-rolled the probe. */
+console.log("\n— a bad probe must not condemn the session —");
+{
+  healthFails = 1;                                  // the first /health only
+  const v = await open({ geo: true });
+  await v.page.waitForTimeout(3000);
+  const state = await v.page.evaluate(() => ({
+    mode: MODE, backend: hasBackend(), stops: state.stops.length,
+    rows: document.querySelectorAll("#list .stop").length,
+  }));
+  ok("the first probe failing does not latch the slow path",
+    state.backend === true && state.mode === "same", JSON.stringify(state));
+  ok("...and the board fills without anyone reloading", state.stops > 0 && state.rows > 0,
+    `${state.stops} stops, ${state.rows} rows`);
+  ok("...having asked more than once", healthHits >= 2, `${healthHits} health requests`);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+  healthFails = 0;
+}
+{
+  /* And while it is still deciding, the board must not claim the street
+     is empty — that is a statement about Athens, not about us. */
+  healthFails = 0; nearbyFails = 1;
+  const v = await open({ geo: true });
+  await v.page.waitForTimeout(3000);
+  /* Deterministic rather than a race: put the board back into the state
+     it is in before the first sweep answers, and look at what it says. */
+  const early = await v.page.evaluate(() => {
+    bootDone = false; state.stops = []; renderList();
+    const l = document.querySelector("#list");
+    return { txt: l.innerText || "", skel: l.querySelectorAll(".skel").length };
+  });
+  ok("before the first answer the board shows loading, not 'no arrivals'",
+    !/No arrivals/i.test(early.txt) && early.skel > 0,
+    `${early.skel} placeholders, "${early.txt.replace(/\n/g, " ").slice(0, 40)}"`);
+  ok("...and says it plainly once the sweep has actually answered",
+    await v.page.evaluate(() => { bootDone = true; state.stops = []; renderList();
+      return /No arrivals/i.test(document.querySelector("#list").innerText); }),
+    "an empty street is a real answer; an unanswered request is not");
+  await v.page.evaluate(() => { bootDone = true; });
+  await v.page.evaluate(() => loadStops());
+  await v.page.waitForTimeout(1500);
+  const late = await v.page.evaluate(() => ({
+    rows: document.querySelectorAll("#list .stop").length,
+    txt: (document.querySelector("#list") || {}).innerText || "",
+  }));
+  ok("...and a failed sweep retries itself rather than waiting for a tap",
+    late.rows > 0, `${late.rows} rows, "${late.txt.replace(/\n/g, " ").slice(0, 40)}"`);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+  nearbyFails = 0;
 }
 
 await browser.close();

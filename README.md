@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v63.**
+version: v64.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 708 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 717 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -738,6 +738,30 @@ always did with one more field. One case is worth knowing about: if the stop's d
 cannot be fetched — OASA down, or that direction retired — the rule's own line is kept as
 the selected option and saved back unchanged, rather than being silently switched to
 whichever direction happens to sort first.
+
+**The probe asks the right question now.** It used to hit `/api`, which the Worker answers
+by calling OASA — so "is OASA up" and "is there a Worker on this origin" were the same
+question. A slow or grumpy upstream made the app conclude it had no backend at all, cache
+that verdict for the session, and spend the rest of it on third-party CORS proxies: no
+stops, no arrivals, no error, and a board that reads "no arrivals in the next few minutes"
+whatever the reason. Reloading fixed it only because a reload re-rolled the probe.
+
+Three changes, each closing one link in that chain:
+
+- It probes **`/health`**, which the Worker answers itself and which touches nothing
+  upstream, with a 3.5s fuse so a slow answer cannot hold the boot.
+- Only a **positive** answer is cached. "There is a Worker here" is a fact about the
+  deployment; "there isn't" is a guess from one request that may have lost a race, and
+  caching it condemned the session. A miss backs off from under a second, doubling to 15s.
+- The fallback sweep catches its own per-request failures, so a total wipeout arrived as
+  an **empty list rather than an error** — nothing thrown, nothing retried. An empty sweep
+  without a confirmed backend is now treated as a failed one.
+
+The first sweep also retries itself twice before saying anything, and an unanswered board
+shows loading placeholders rather than claiming the street is empty. That claim is about
+Athens; an unanswered request is about us. Measured on a stubbed origin: a clean boot
+fills in ~100ms, and a boot whose first probe fails recovers by itself in ~1.1s where it
+previously needed a manual reload.
 
 **One mode probe per boot, not three.** `ensureMode()` cached the answer but not the
 request, so every caller that arrived before the first probe returned started its own —

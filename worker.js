@@ -39,7 +39,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v63";
+const APP_VERSION = "v64";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";

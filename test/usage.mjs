@@ -186,6 +186,9 @@ const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   if (u.pathname === "/pulse") { pulses.push(u.search); res.writeHead(200,
     { "Content-Type": "application/json" }); return res.end('{"ok":true}'); }
+  // the mode probe: is there a Worker on this origin
+  if (u.pathname === "/health") { res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end('{"ok":true,"version":"test"}'); }
   if (u.pathname === "/nearby") {
     if (stall) await new Promise(r => setTimeout(r, stall));
     res.writeHead(200, { "Content-Type": "application/json" });
