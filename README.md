@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v65.**
+version: v66.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 718 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 726 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -755,6 +755,18 @@ genuinely is no Worker, a `public/` folder on a dumb static host or the file ope
 disk, and both answer 404 or are not http at all, immediately.
 
 That also removes a request from every cold start.
+
+**An upstream outage is not an empty street.** When every sample point of a sweep fails,
+`/nearby` used to return `200` with an empty `stops` array — indistinguishable from a
+corner of Athens with no bus stops on it. The board then said "no arrivals in the next few
+minutes", a confident claim about the street made on no information whatsoever. It returns
+`503` with `upstream: "down"` now, uncached, and the app says **OASA is not responding**
+and that the rider's connection is fine. That answer is also definite rather than a blip,
+so it shows after one retry instead of sitting on placeholders through the whole ladder.
+
+`/health?token=…&probe=1` asks the same question from outside, opt-in because it spends a
+real call on a slow upstream — a health check that goes slow when the upstream does is
+backwards.
 
 **Three empty boards, and they must not look alike.** We have not heard back yet, the
 sweep answered and the street has nothing coming, or we failed and gave up. Only the

@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v65",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v66",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -431,6 +431,35 @@ and stores nothing but a running daily total: no id, no session, no coordinates.
 distinguish two opens by one person from one open each by two, and that is the design, not
 a gap. Twenty `open` and eight `open_app` on a Tuesday means twenty openings, of which
 eight came from an installed icon. Any "users" number is your own inference from that.
+
+### The board is empty, or stuck on loading
+
+The app's own screen answers most of this now: it distinguishes "still waiting", "nothing
+due on this street" and "we failed, here is why". If it says **OASA is not responding**,
+that is the whole story and there is nothing to do but wait — OASA's telematics API goes
+down, and no amount of redeploying will bring it back.
+
+To confirm from outside, run these three in order. Each rules out one layer:
+
+```powershell
+curl.exe -i https://oasax.com/health
+curl.exe -i "https://oasax.com/nearby?lat=37.9755&lng=23.7348&radius=450&limit=14&markers=120"
+curl.exe -i "https://oasax.com/health?token=$env:ADMIN_TOKEN&probe=1"
+```
+
+| What you see | What it means |
+|---|---|
+| `/health` not 200 | Cloudflare or your Worker. Check Redirect Rules and WAF first, not the code. |
+| `/health` fine, `/nearby` returns `503` with `"upstream":"down"` | OASA is not answering the Worker. Nothing to fix. |
+| `/nearby` returns `200` with a non-empty `stops` array | The backend is healthy; the problem is on the device. |
+| `probe=1` shows `oasa.ok: false` | Same as the 503, stated directly, with the time it waited. |
+
+`probe=1` is opt-in because it spends a real call on a slow upstream. Without it `/health`
+stays instant, which is the point of a health check.
+
+**A 502 from `/api`** with `{"error":"upstream timeout"}` is the same diagnosis from the
+raw proxy: OASA took longer than 8 seconds, twice. It is the clearest single signal that
+the fault is upstream and not yours.
 
 ### An alert didn't arrive
 

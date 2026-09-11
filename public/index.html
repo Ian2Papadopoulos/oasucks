@@ -924,7 +924,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v65</span></div>
+  <div class="foot"><span class="ver">v66</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1224,6 +1224,7 @@ const T={
  el:{change:"Αλλαγή",nobus:"Καμία άφιξη τα επόμενα λεπτά",
   now:"τώρα",min:"λεπτά",to:"προς",err:"Δεν φορτώθηκαν δεδομένα.",retry:"Δοκίμασε ξανά",
   errCode:c=>`Ο διακομιστής απάντησε με σφάλμα (${c}).`,
+  oasaDown:"Ο ΟΑΣΑ δεν απαντά αυτή τη στιγμή. Δεν φταίει η σύνδεσή σου — δοκίμασε σε λίγο.",
   locating:"Εντοπισμός τοποθεσίας…",denied:"Δεν δόθηκε πρόσβαση στην τοποθεσία.",sheetH:"Τοποθεσία",
   /* Ο browser ρωτάει μία φορά. Μετά το «όχι», η εφαρμογή ΔΕΝ μπορεί να
      ξαναρωτήσει — μόνο ο χρήστης, από τις ρυθμίσεις. Άρα το κείμενο εδώ
@@ -1522,6 +1523,7 @@ const T={
  en:{change:"Change",nobus:"No arrivals in the next few minutes",
   now:"now",min:"min",to:"to",err:"Couldn't load data.",retry:"Try again",
   errCode:c=>`The server answered with an error (${c}).`,
+  oasaDown:"OASA is not responding right now. Nothing wrong with your connection — try again shortly.",
   locating:"Getting your location…",denied:"Location access was blocked.",sheetH:"Location",
   /* The browser asks once. After a "no", the app CANNOT ask again — only
      the person can, in site settings. So this text has to say exactly
@@ -2818,6 +2820,13 @@ async function loadStopsBatch(){
   const u=`${base()}/nearby?lat=${here.lat}&lng=${here.lng}&radius=${state.radius}`
         +`&limit=${CONFIG.listPool}&markers=${CONFIG.maxMarkers}${favQ}`;
   const r=await fetch(u,{cache:"no-store"});
+  /* 503 + upstream:"down" is the Worker telling us OASA is not answering
+     it. That is worth its own sentence: nothing the rider can do, nothing
+     wrong with their connection, and it will come back on its own. */
+  if(r.status===503){
+    const j0=safeJson(await r.text());
+    if(j0&&j0.upstream==="down") throw new Error("upstream-down");
+  }
   if(!r.ok){ downgradeMode(r.status); throw new Error("HTTP "+r.status); }
   const j=await r.json();
   if(Array.isArray(j.reports)){ state.reports=j.reports; repBadge(); }
@@ -2888,7 +2897,12 @@ async function loadStops(attempt){
     bootDone=true; bootFail=null;
   }catch(e){
     loading=false;
-    if(n<LOAD_RETRY_MS.length){
+    /* "OASA is not answering" is a definite answer, not a blip: the Worker
+       reached us and told us so. One more try in case it was a single bad
+       minute, then say it — sitting on placeholders for the full ladder
+       only makes the app look broken for longer than it has to. */
+    const definite=String((e&&e.message)||"")==="upstream-down";
+    if(n<LOAD_RETRY_MS.length && !(definite&&n>=1)){
       setTimeout(()=>loadStops(n+1),LOAD_RETRY_MS[n]);
       return;
     }
@@ -2946,8 +2960,10 @@ let bootDone=false, bootFail=null;
 /* Name the failure. "Couldn't load data" is true of every one of these and
    useful for none of them. */
 function loadFailMsg(e){
+  const m=String((e&&e.message)||"");
+  if(m==="upstream-down") return t("oasaDown");
   if(navigator.onLine===false) return t("offline");
-  const code=(String((e&&e.message)||"").match(/\b(\d{3})\b/)||[])[1];
+  const code=(m.match(/\b(\d{3})\b/)||[])[1];
   return code ? t("errCode")(code) : t("netErr");
 }
 
@@ -5194,7 +5210,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v65</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v66</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

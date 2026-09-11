@@ -376,6 +376,19 @@ console.log("\n— proof that the scheduler is alive —");
 /* Vulnerability scanners ask for this dozens of times a day, and so, very
    occasionally, does a person with something to report. One contact
    address exists; this is where a researcher is trained to look for it. */
+/* The question /health could not answer, on the morning it mattered: the
+   Worker was fine, /nearby was fine, and OASA was timing out behind both. */
+console.log("\n— health can be asked about the upstream too —");
+{
+  rows = [];
+  const plain = await body(await call("/health?token=k", { method: "GET", token: "k", env: { DB } }));
+  ok("it does not spend an upstream call unless asked", !("oasa" in plain),
+    "a slow upstream would make the health check slow, which is backwards");
+  ok("...and the flag is there to ask with",
+    /searchParams\.get\("probe"\) === "1"/.test(readFileSync(path.join(REPO, "worker.js"), "utf8")),
+    "curl /health?token=...&probe=1");
+}
+
 console.log("\n— someone with a bug report can find an address —");
 {
   const r = await call("/.well-known/security.txt", { method: "GET", env: {} });

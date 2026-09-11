@@ -52,7 +52,7 @@ const ROUTED = { min: 6.2, metres: 470, basis: "routed",
 
 let walkCalls = [], walkStatus = 200;
 /* Switches the two tests below flip to make one request fail exactly once. */
-let healthFails = 0, healthHits = 0, nearbyFails = 0;
+let healthFails = 0, healthHits = 0, nearbyFails = 0, oasaDown = false;
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   const J = o => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
@@ -64,6 +64,9 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === "/nearby") {
     if (nearbyFails > 0) { nearbyFails--; res.writeHead(503); return res.end("{}"); }
+    if (oasaDown) { res.writeHead(503, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ origin: {}, radius: 600, generated: NOW, hidden: 0,
+        stops: [], reports: [], upstream: "down" })); }
     return J({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] });
   }
   if (u.pathname === "/plan") return J(JSON.parse(JSON.stringify(PLAN)));
@@ -358,6 +361,34 @@ console.log("\n— a bad minute must not take the app down —");
     "this is exactly how v64 turned a visible failure into an invisible one");
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
+}
+
+/* The morning it actually happened. /health fine, /nearby fine, and OASA
+   itself timing out behind them — so the sweep came back with an empty
+   list and a 200, and the board announced "no arrivals in the next few
+   minutes": a confident claim about the street, made on no information. */
+console.log("\n— when OASA is the thing that is down —");
+{
+  oasaDown = true;
+  const v = await open({ geo: true });
+  await v.page.waitForTimeout(2600);
+  const txt = await v.page.evaluate(() =>
+    (document.querySelector("#list") || {}).innerText || "");
+  ok("the board says OASA is not answering", /OASA is not responding/i.test(txt),
+    txt.replace(/\n/g, " ").slice(0, 70));
+  ok("...and does not blame the rider's connection",
+    !/your connection/i.test(txt.replace(/Nothing wrong with your connection[^.]*\./i, "")),
+    "it says the opposite, on purpose");
+  ok("...and never claims the street is empty", !/No arrivals/i.test(txt));
+  ok("...offering a way to try again", await v.page.evaluate(() =>
+    document.querySelectorAll("#list .msg button").length === 1));
+  /* One retry, not the full ladder — the Worker already told us. */
+  ok("...without sitting on placeholders for five seconds first",
+    await v.page.evaluate(() => bootFail !== null),
+    "a definite answer is not a blip to wait out");
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+  oasaDown = false;
 }
 
 await browser.close();

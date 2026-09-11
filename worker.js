@@ -39,7 +39,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v65";
+const APP_VERSION = "v66";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1538,6 +1538,17 @@ async function handleNearby(url, env, ctx) {
 
   const lists = await Promise.all(samplePts(lat, lng, radius).map(p =>
     getJSON(`${OASA}?act=getClosestStops&p1=${p[0]}&p2=${p[1]}`, ACT_TTL.getClosestStops)));
+
+  /* Every sample point failed. That is OASA being unreachable, not a
+     corner of Athens with no bus stops on it — and the two used to arrive
+     at the client looking identical, as an empty list with a 200 on it.
+     The app then said "no arrivals in the next few minutes", which is a
+     confident statement about the street, made on no information at all.
+     Say what actually happened, and do not cache it. */
+  if (!lists.some(Array.isArray)) {
+    return json({ origin: { lat, lng }, radius, generated: Math.floor(Date.now() / 1000),
+      hidden: 0, stops: [], reports: [], upstream: "down" }, 503);
+  }
 
   const seen = {};
   for (const arr of lists) {
@@ -3508,6 +3519,16 @@ export default {
       const nowS = Math.floor(Date.now() / 1000);
       const out = { ok: true, version: APP_VERSION, time: nowS };
       if (!full) return json(out);
+
+      /* Opt-in, because it spends a real call on a slow upstream: the one
+         question /health could not answer was "is OASA talking to us",
+         which is the question every dead-looking morning turns out to be. */
+      if (url.searchParams.get("probe") === "1") {
+        const t0 = Date.now();
+        const probe = await getJSON(`${OASA}?act=getClosestStops&p1=37.9755&p2=23.7348`, 0);
+        out.oasa = { ok: Array.isArray(probe), stops: Array.isArray(probe) ? probe.length : 0,
+          ms: Date.now() - t0 };
+      }
 
       out.bindings = { kv: !!env.ALERTS, d1: !!env.DB,
         // ORS drives BOTH the walking geometry and the address autocomplete,
