@@ -924,7 +924,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v66</span></div>
+  <div class="foot"><span class="ver">v67</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1091,14 +1091,20 @@
 </div></div>
 
 <script>
-const CONFIG={proxyBase:"",refreshMs:30000,idleMs:45000,idleAfter:240000,sleepAfter:900000,
+const CONFIG={proxyBase:"",refreshMs:45000,idleMs:75000,idleAfter:240000,sleepAfter:900000,
   // listStops is a HARD cap on how many rows the list shows; listPool is how
   // many the server details, and it is wider on purpose — the extra stops are
   // the candidates that get promoted when a nearer one has nothing coming
   // (see listStops()). Every row shown has its arrivals loaded (see
   // fillVisibleArrivals). Arrivals are the expensive call, so listPool is the
   // number that governs cost per refresh.
-  listStops:10,listPool:14,imminentMin:15,maxMarkers:120,maxRows:6,
+  /* listPool came down from 14 and refreshMs went up from 30s in v67, to
+     roughly halve what reaches OASA. Arrivals are the only call that is
+     not cached for an hour or a day, so these two numbers ARE the upstream
+     load: one rider with the app open cost ~28 calls a minute, which is
+     enough to look like an attack to a public API. Both are safe to tune
+     back if OASA ever stops minding. */
+  listStops:10,listPool:11,imminentMin:15,maxMarkers:120,maxRows:6,
   walkSpeed:80,detour:1.35,onward:9};
 const API="https://telematics.oasa.gr/api/";
 const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
@@ -2829,6 +2835,12 @@ async function loadStopsBatch(){
   }
   if(!r.ok){ downgradeMode(r.status); throw new Error("HTTP "+r.status); }
   const j=await r.json();
+  /* A board the Worker kept from before the upstream went quiet. Show it,
+     but date it honestly: the freshness line already counts up from when
+     the data was generated and turns red past the stale threshold, so the
+     rider sees "4 min ago" in red rather than a number pretending to be
+     current. */
+  staleBoard = j.stale === true;
   if(Array.isArray(j.reports)){ state.reports=j.reports; repBadge(); }
   farFavsFromSweep(Array.isArray(j.favs)?j.favs:null);
   const prev={}; state.stops.forEach(s=>prev[s.code]=s);
@@ -2849,11 +2861,11 @@ async function loadStopsBatch(){
   });
   state._mapCodes=null;
   fetchedFrom={lat:here.lat,lng:here.lng};
-  markLoaded();
+  markLoaded(j.generated);
   updateRadiusLabel(); renderView();
   warmMap();
   loadFarFavs();
-  fillVisibleArrivals();
+  if(!staleBoard) fillVisibleArrivals();   // nothing to fill from, and it would only fail
 }
 
 /* The guarantee behind the cap: whatever the list is about to SHOW, it
@@ -2930,7 +2942,7 @@ async function loadStopsLegacy(){
       s.arrivals=p.arrivals; s.arrLoaded=p.arrLoaded; } });
     state.stops=stops; state._mapCodes=null;
     fetchedFrom={lat:here.lat,lng:here.lng};
-    markLoaded();
+    staleBoard=false; markLoaded();
     updateRadiusLabel(); renderView();
     warmMap();
 
@@ -2979,7 +2991,13 @@ function stopTimers(){ clearInterval(timer); timer=null; }
    for information nobody reads mid-sweep. One line of text, updated every
    20 s, says the same thing and costs nothing. */
 let lastLoad=0;
-function markLoaded(){ lastLoad=Date.now(); paintFresh(); }
+let staleBoard=false;
+/* Normally "when did we last refresh"; on a board served from the Worker's
+   last good sweep, "when was this true", which is the number that matters. */
+function markLoaded(gen){
+  lastLoad = (staleBoard && gen) ? gen*1000 : Date.now();
+  paintFresh();
+}
 function paintFresh(){
   const el=$("#fresh"); if(!el) return;
   if(!lastLoad){ if(el.textContent){ el.textContent=""; el.classList.remove("stale"); } return; }
@@ -5210,7 +5228,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v66</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v67</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

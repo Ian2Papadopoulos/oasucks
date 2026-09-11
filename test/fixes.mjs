@@ -52,7 +52,7 @@ const ROUTED = { min: 6.2, metres: 470, basis: "routed",
 
 let walkCalls = [], walkStatus = 200;
 /* Switches the two tests below flip to make one request fail exactly once. */
-let healthFails = 0, healthHits = 0, nearbyFails = 0, oasaDown = false;
+let healthFails = 0, healthHits = 0, nearbyFails = 0, oasaDown = false, oasaStale = false;
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   const J = o => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
@@ -64,6 +64,8 @@ const server = http.createServer((req, res) => {
   }
   if (u.pathname === "/nearby") {
     if (nearbyFails > 0) { nearbyFails--; res.writeHead(503); return res.end("{}"); }
+    if (oasaStale) { return J({ origin: {}, radius: 600, generated: NOW - 260, hidden: 0,
+      stops, reports: [], stale: true, upstream: "down" }); }
     if (oasaDown) { res.writeHead(503, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ origin: {}, radius: 600, generated: NOW, hidden: 0,
         stops: [], reports: [], upstream: "down" })); }
@@ -389,6 +391,35 @@ console.log("\n— when OASA is the thing that is down —");
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
   oasaDown = false;
+}
+
+/* A board from four minutes ago beats an error. The stops have not moved
+   and the lines have not changed; only the minutes are old, and the app
+   already knows how to say so. */
+console.log("\n— the last good board, honestly dated —");
+{
+  oasaStale = true;
+  const v = await open({ geo: true });
+  await v.page.waitForTimeout(2500);
+  const st = await v.page.evaluate(() => ({
+    rows: document.querySelectorAll("#list .stop:not(.skel-card)").length,
+    fresh: (document.getElementById("fresh") || {}).textContent || "",
+    red: (document.getElementById("fresh") || {}).classList
+      ? document.getElementById("fresh").classList.contains("stale") : false,
+    fail: bootFail,
+  }));
+  ok("the stops are still on screen", st.rows > 0, `${st.rows} rows`);
+  ok("...instead of an error", st.fail === null);
+  /* The age comes from when the sweep was generated, not from when we
+     received it — otherwise a four-minute-old board would claim to be
+     seconds fresh, which is the one lie that matters here. */
+  const mins = Number((st.fresh.match(/(\d+)\s*m/) || [])[1] || 0);
+  ok("...dated from when it was true, not when it arrived", mins >= 3,
+    `"${st.fresh}" — dating it from arrival would have read "just now"`);
+  ok("...and flagged as stale, in red", st.red, `"${st.fresh}"`);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+  oasaStale = false;
 }
 
 await browser.close();

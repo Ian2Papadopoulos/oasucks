@@ -39,12 +39,14 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v66";
+const APP_VERSION = "v67";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
 const TIMEOUT_MS = 8000;
 const OASA_CACHE = 12;
+// How long a sweep stays worth showing after the upstream stops answering
+const STALE_KEEP = 900;
 const GEO_CACHE = 86400;
 // Bias geocoding toward Attica (left,top,right,bottom)
 const VIEWBOX = "23.40,38.40,24.10,37.70";
@@ -52,7 +54,9 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 // act → edge cache seconds. Live positions/arrivals must stay fresh;
 // route geometry and stop lists never change, so cache them for a day.
 const ACT_TTL = {
-  getStopArrivals: 12,
+  // above the app's refresh interval on purpose: two people waiting at the
+  // same stop should cost OASA one call, not two
+  getStopArrivals: 50,
   getBusLocation: 12,
   getClosestStops: 3600,
   webRoutesForStop: 86400,
@@ -168,12 +172,52 @@ async function proxy(targetUrl, cacheSeconds, skipCache) {
   return res;
 }
 
+/* ---------------------- the upstream circuit ----------------------- *
+ * When OASA stops answering, every rider request used to fan out into a
+ * dozen calls that each waited 8 seconds and then retried — so the moment
+ * the upstream was least able to cope was the moment we hit it hardest,
+ * and every rider waited 16 seconds to be told nothing.
+ *
+ * After OPEN_AFTER consecutive failures the circuit opens: calls return
+ * null immediately, for OPEN_MS, and then ONE request is allowed through
+ * to see whether the weather has changed. A success closes it.
+ *
+ * This is worth having even when the fault is entirely theirs. A client
+ * that backs off when refused is the difference between a rate limit and
+ * a ban, and it costs a blocked rider seconds instead of minutes.
+ * ------------------------------------------------------------------- */
+const CIRCUIT = { openAfter: 6, openMs: 120000, probeEveryMs: 20000 };
+const circuit = { fails: 0, openedAt: 0, lastProbe: 0 };
+function circuitOpen() {
+  if (!circuit.openedAt) return false;
+  const since = Date.now() - circuit.openedAt;
+  if (since > CIRCUIT.openMs) {                     // time to look again
+    if (Date.now() - circuit.lastProbe < CIRCUIT.probeEveryMs) return true;
+    circuit.lastProbe = Date.now();
+    return false;                                    // let exactly one through
+  }
+  return true;
+}
+function circuitNote(ok) {
+  if (ok) { circuit.fails = 0; circuit.openedAt = 0; return; }
+  circuit.fails++;
+  if (circuit.fails >= CIRCUIT.openAfter && !circuit.openedAt) circuit.openedAt = Date.now();
+}
+function circuitState() {
+  return { open: !!circuit.openedAt, fails: circuit.fails,
+    openForSec: circuit.openedAt ? Math.round((Date.now() - circuit.openedAt) / 1000) : 0 };
+}
+
 async function getJSON(urlStr, cacheTtl, opts) {
+  const upstream = urlStr.startsWith(OASA);
+  if (upstream && circuitOpen()) return null;        // refusing to pile on
   try {
     const r = await timedFetch(urlStr, cacheTtl, opts);
-    if (!r.ok) return null;
-    return await r.json();
-  } catch { return null; }
+    if (!r.ok) { if (upstream) circuitNote(false); return null; }
+    const j = await r.json();
+    if (upstream) circuitNote(true);
+    return j;
+  } catch { if (upstream) circuitNote(false); return null; }
 }
 
 /* ======================= greeklish → greek ======================== */
@@ -1525,6 +1569,10 @@ async function handleNearby(url, env, ctx) {
 
   // ~110m cache granularity, so a whole street corner shares one response
   const ck = `https://nearby/?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}&r=${radius}&l=${limit}&m=${markers}`;
+  /* The same answer kept far longer, under its own key, for one purpose:
+     to have something to show when the upstream stops answering. It is
+     never served while a fresh sweep is possible. */
+  const ckStale = ck.replace("https://nearby/", "https://nearby-last/");
   const cache = caches.default;
   const hit = await cache.match(new Request(ck));
   if (hit) {
@@ -1544,8 +1592,22 @@ async function handleNearby(url, env, ctx) {
      at the client looking identical, as an empty list with a 200 on it.
      The app then said "no arrivals in the next few minutes", which is a
      confident statement about the street, made on no information at all.
-     Say what actually happened, and do not cache it. */
+
+     Before admitting defeat, offer the last good sweep for this corner.
+     A board from four minutes ago is worth a great deal more than an
+     error: the stops have not moved, the lines have not changed, and the
+     app already knows how to show its own age in red. */
   if (!lists.some(Array.isArray)) {
+    const old = await cache.match(new Request(ckStale));
+    if (old) {
+      let body = null;
+      try { body = await old.json(); } catch (_) { }
+      if (body && Array.isArray(body.stops) && body.stops.length) {
+        body.stale = true; body.upstream = "down";
+        if (favCodes.length) body.favs = await farFavourites(favCodes, body.stops, lat, lng);
+        return json(body);
+      }
+    }
     return json({ origin: { lat, lng }, radius, generated: Math.floor(Date.now() / 1000),
       hidden: 0, stops: [], reports: [], upstream: "down" }, 503);
   }
@@ -1653,6 +1715,9 @@ async function handleNearby(url, env, ctx) {
     },
   });
   await cache.put(new Request(ck), res.clone());
+  if (ctx) ctx.waitUntil(cache.put(new Request(ckStale), new Response(await res.clone().text(), {
+    headers: { "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": `public, max-age=${STALE_KEEP}`, ...CORS } })));
   if (!favCodes.length) return res;
   // the shared body goes in the cache; the personal one goes back to you
   const body = JSON.parse(await res.clone().text());
@@ -3563,6 +3628,8 @@ export default {
          They need different fixes, so they need different answers. Outside
          the KV block on purpose: this is about the scheduler, not storage,
          and it must report even when alerts are unconfigured. */
+      out.upstream = circuitState();
+
       if (dbReady(env)) {
         try {
           const cronLast = Number(await getMeta(env, "cron_last")) || 0;

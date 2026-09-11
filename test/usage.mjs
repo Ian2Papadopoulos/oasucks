@@ -376,6 +376,32 @@ console.log("\n— proof that the scheduler is alive —");
 /* Vulnerability scanners ask for this dozens of times a day, and so, very
    occasionally, does a person with something to report. One contact
    address exists; this is where a researcher is trained to look for it. */
+/* A client that keeps hammering a host which has stopped answering turns
+   a rate limit into a ban, and makes every rider wait 16 seconds to be
+   told nothing. */
+console.log("\n— backing off when the upstream stops answering —");
+{
+  const note = vm.runInContext("circuitNote", ctx);
+  const open = vm.runInContext("circuitOpen", ctx);
+  const stateOf = vm.runInContext("circuitState", ctx);
+  note(true);                                   // start closed
+  ok("a healthy upstream keeps the circuit closed", !open());
+  for (let i = 0; i < 5; i++) note(false);
+  ok("...and a handful of failures is still not a verdict", !open(),
+    `${stateOf().fails} failures`);
+  note(false);
+  ok("six in a row opens it", open() && stateOf().open, JSON.stringify(stateOf()));
+  ok("...so the next call costs nothing instead of two 8s attempts", open());
+  note(true);
+  ok("one success closes it again", !open() && stateOf().fails === 0);
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("...and it reopens on its own, letting one request through to look",
+    /probeEveryMs/.test(w) && /let exactly one through/.test(w),
+    "a circuit that never retries is just an outage you inflicted on yourself");
+  ok("only OASA calls are gated by it, not the geocoders",
+    /const upstream = urlStr\.startsWith\(OASA\)/.test(w));
+}
+
 /* The question /health could not answer, on the morning it mattered: the
    Worker was fine, /nearby was fine, and OASA was timing out behind both. */
 console.log("\n— health can be asked about the upstream too —");

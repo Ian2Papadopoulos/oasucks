@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v66 defaults** — if you edit the
+breaks if you change it. Values here are the **v67 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -409,6 +409,33 @@ it. Everything about those rules is in em, so `.splash .mark` sets a font size a
 else. The splash is painted from markup rather than added by script, so it is up in the
 first frame instead of after a white flash. The first-run carousel waits for it to clear
 before opening.
+
+### Not being blocked by OASA
+
+`worker.js` → `CIRCUIT`, `ACT_TTL`, `STALE_KEEP`; `public/index.html` → `CONFIG`
+
+OASA's telematics API has no key and no documented limits, and it blocks by address
+range. Everything your riders ask for reaches it from a handful of Cloudflare addresses,
+so it sees one client, not a thousand people. Live arrivals are the only call not cached
+for an hour or a day, which makes them the whole of the upstream load.
+
+| Parameter | Was | Now | Why |
+|---|---|---|---|
+| `CONFIG.refreshMs` | 30 s | **45 s** | Sweeps per rider per minute. A countdown in whole minutes barely moves in fifteen seconds. |
+| `CONFIG.listPool` | 14 | **11** | Stops that get an arrivals call per sweep. |
+| `ACT_TTL.getStopArrivals` | 12 s | **50 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. |
+| `CIRCUIT.openAfter` | — | **6** | Consecutive upstream failures before the Worker stops calling. |
+| `CIRCUIT.openMs` | — | **120 s** | How long it stays shut, after which one request is let through to look. |
+| `STALE_KEEP` | — | **900 s** | How long a good sweep stays worth showing once the upstream goes quiet. |
+
+Together the first three take one rider with the app open from roughly **28 upstream calls
+a minute to about 11**. Tune them back if OASA ever stops minding.
+
+The circuit matters more than the numbers. Without it, an upstream that stops answering
+turns every rider request into a dozen calls that each wait 8 s and retry — the moment
+OASA is least able to cope is the moment it gets hit hardest, and every rider waits 16 s
+to be told nothing. A client that backs off when refused is the difference between a rate
+limit and a ban. `/health?token=…` reports the circuit under `upstream`.
 
 ### Address search
 
