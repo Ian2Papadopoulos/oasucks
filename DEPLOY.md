@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v67",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v68",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -431,6 +431,29 @@ and stores nothing but a running daily total: no id, no session, no coordinates.
 distinguish two opens by one person from one open each by two, and that is the design, not
 a gap. Twenty `open` and eight `open_app` on a Tuesday means twenty openings, of which
 eight came from an installed icon. Any "users" number is your own inference from that.
+
+### Telling everyone something, for a while
+
+One line at the top of the app, in your own words. In `public/index.html`:
+
+```js
+const NOTICE={
+  id:"oasa-block-2026-09",
+  el:"Ο ΟΑΣΑ έχει μπλοκάρει προσωρινά την πρόσβαση. Δουλεύουμε πάνω σε λύση.",
+  en:"OASA has temporarily blocked our access. We're working on a fix.",
+};
+```
+
+Redeploy and it appears. Empty strings or an empty `id` mean nothing renders
+at all, which is the default.
+
+**`id` is what dismissal is remembered against.** Someone who closes the bar does
+not see it again, so change the `id` when the message is genuinely new — editing only
+the text leaves it dismissed for everyone who already closed the old one. Set `id` back
+to `""` to take it down.
+
+Write it in both languages. The bar follows the language in Settings, and falls back to
+whichever string is filled in if only one is.
 
 ### The board is empty, or stuck on loading
 

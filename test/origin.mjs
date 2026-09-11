@@ -242,6 +242,41 @@ console.log("\n— the app is origin-relative, so a new domain needs no edit —
   ok("the service worker caches relative paths", !/https?:\/\/[a-z0-9.-]*workers\.dev/i.test(sw));
 }
 
+/* One line the operator can put at the top of the app without touching
+   anything else. "The app looks broken" and "we know the app looks broken"
+   are very different experiences for someone who came to find their bus. */
+console.log("\n— a notice the operator controls —");
+{
+  const v = await open({});
+  await v.page.waitForTimeout(600);
+  ok("nothing renders when no notice is set",
+    await v.page.evaluate(() => document.getElementById("notice").hidden),
+    "an empty NOTICE must cost nothing and say nothing");
+  const shown = await v.page.evaluate(() => {
+    NOTICE.id = "t1"; NOTICE.el = "Δοκιμή"; NOTICE.en = "Under construction";
+    showNotice();
+    const b = document.getElementById("notice");
+    return { hidden: b.hidden, txt: b.innerText.trim() };
+  });
+  ok("...and a line appears once one is", !shown.hidden && /Under construction/.test(shown.txt),
+    shown.txt.replace(/\n/g, " "));
+  const gone = await v.page.evaluate(() => {
+    document.getElementById("notice-x").click();
+    const after = document.getElementById("notice").hidden;
+    showNotice();                                   // a repaint must not bring it back
+    return after && document.getElementById("notice").hidden
+      && localStorage.getItem("noticeSeen") === "t1";
+  });
+  ok("...dismissible, and it stays dismissed", gone);
+  ok("...until the id changes, which is what makes a NEW notice new",
+    await v.page.evaluate(() => {
+      NOTICE.id = "t2"; showNotice();
+      return !document.getElementById("notice").hidden;
+    }), "editing the text without bumping the id leaves it dismissed, on purpose");
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+
 await browser.close();
 server.close();
 console.log(`\n${pass} passed, ${fail} failed`);

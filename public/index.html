@@ -826,6 +826,10 @@
   .moved-go{color:var(--toner);font-weight:700;text-decoration:underline;white-space:nowrap}
   .moved-x{background:none;border:none;color:var(--toner);font-family:var(--mono);
     font-size:13px;cursor:pointer;padding:2px 4px;flex:none}
+  /* Same bar, said in the app's own voice rather than the alert colour —
+     "we know, we are working on it" is not an emergency. */
+  .notice{background:var(--card);border-bottom:1px solid var(--toner)}
+  .notice .moved-t{color:var(--ink2)}
 
   /* ------------------------------- splash ------------------------------- */
   /* Two rules keep this from being an annoyance rather than a moment:
@@ -868,6 +872,11 @@
      look at yet. Painted from markup rather than added by script so it is
      up in the first frame, before any JavaScript has run. -->
 <div class="splash" id="splash"><div class="mark">OASA</div></div>
+<!-- Operator notice. Empty NOTICE means this never renders; see NOTICE. -->
+<div class="moved notice" id="notice" hidden>
+  <div class="moved-t" id="notice-t"></div>
+  <button class="moved-x" id="notice-x" aria-label="dismiss">✕</button>
+</div>
 <!-- Only ever shown on the origin the app has moved away from; see MOVED_TO. -->
 <div class="moved" id="moved" hidden>
   <div class="moved-t" id="moved-t"></div>
@@ -924,7 +933,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v67</span></div>
+  <div class="foot"><span class="ver">v68</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -2167,6 +2176,35 @@ if(isStandalone()){
 }
 
 function renderView(){ state.view==="map"?renderMap():renderList(); splashReady(); }
+
+/* ------------------------- operator notice -------------------------- *
+ * One line at the top of the app, written by whoever runs it. Set the two
+ * strings and redeploy; empty means nothing renders and nothing is
+ * measured. `id` is what dismissal is remembered against, so changing the
+ * text without changing the id leaves it dismissed — bump the id when the
+ * message is genuinely new.
+ *
+ * This exists because "the app looks broken" and "we know the app looks
+ * broken" are very different experiences for someone who came to find
+ * their bus, and the second one keeps them.
+ * ------------------------------------------------------------------- */
+const NOTICE={
+  id:"",                                 // e.g. "oasa-block-2026-09"
+  el:"",                                 // e.g. "Ο ΟΑΣΑ έχει μπλοκάρει προσωρινά…"
+  en:"",
+};
+function showNotice(){
+  const txt=(LANG==="en"?NOTICE.en:NOTICE.el)||NOTICE.el||NOTICE.en;
+  if(!NOTICE.id||!txt) return;
+  try{ if(localStorage.getItem("noticeSeen")===NOTICE.id) return; }catch(_){}
+  const bar=$("#notice");
+  $("#notice-t").textContent=txt;
+  $("#notice-x").onclick=()=>{
+    bar.hidden=true;
+    try{ localStorage.setItem("noticeSeen",NOTICE.id); }catch(_){}
+  };
+  bar.hidden=false;
+}
 
 /* ---------------------- moving to a new address --------------------- */
 const MOVED_KEY="movedSeen";
@@ -5228,7 +5266,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v67</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v68</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5800,6 +5838,7 @@ $("#locwhere").textContent=here.label;
 updateRadiusLabel();
 startRefresh();
 dismissSplash();
+showNotice();
 showMovedNotice();
 maybeTour();
 watchGeoPermission();
