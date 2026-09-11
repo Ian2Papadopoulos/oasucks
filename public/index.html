@@ -924,7 +924,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v64</span></div>
+  <div class="foot"><span class="ver">v65</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1104,56 +1104,34 @@ const API="https://telematics.oasa.gr/api/";
 const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
   u=>`https://corsproxy.io/?url=${encodeURIComponent(u)}`];
 
-let MODE=null, modeProbe=null, modeMissAt=0, modeMissWait=0;
-/* A miss backs off, starting well under a second so a boot that lost one
-   race recovers inside the first retry, and doubling to 15s so a genuinely
-   backend-less page (opened as a file, say) is not probing forever. */
-const MODE_PROBE_MS=3500, MODE_RETRY_MIN=900, MODE_RETRY_MAX=15000;
-function apiQS(a,p1,p2){ return `?act=${a}`+(p1!=null?`&p1=${encodeURIComponent(p1)}`:"")+(p2!=null?`&p2=${encodeURIComponent(p2)}`:""); }
-/* Ask the right question.
+/* No probe on the boot path, at all.
 
-   This used to probe /api, which the Worker answers by calling OASA. So
-   "is OASA up" and "is there a Worker on this origin" were the same
-   question, and a slow or grumpy OASA made the app conclude it had no
-   backend at all — then spend the rest of the session on third-party CORS
-   proxies, which is slower and often empty. That is what an apparently
-   fine connection showing no stops and no arrivals looks like, and why a
-   reload fixed it: the reload re-rolled the probe.
+   Every deployment of this app has a Worker on its own origin — that is
+   what deploying it means. The old code proved that before trusting it,
+   which cost a request on every start and, far worse, made the entire
+   session depend on that one request winning. It lost one morning and the
+   app showed an empty board on a fast connection; the version after that
+   asked a better question and still hung the whole boot on the answer.
 
-   /health is answered by the Worker itself, touches nothing upstream, and
-   says exactly one thing: I am here. */
-async function resolveMode(){
+   So: assume the backend and let a real 404 from a real request be the
+   only thing that says otherwise. The fallback exists for the two cases
+   where there genuinely is no Worker — a public/ folder on a dumb static
+   host, or the file opened from disk — and both of those answer 404 or
+   fail to be http at all, immediately and unambiguously. */
+function initialMode(){
   if(CONFIG.proxyBase) return "proxy";
-  const ctrl=typeof AbortController!=="undefined"?new AbortController():null;
-  const t0=setTimeout(()=>{ try{ ctrl&&ctrl.abort(); }catch(_){} },MODE_PROBE_MS);
-  try{
-    const r=await fetch("./health",{cache:"no-store",signal:ctrl?ctrl.signal:undefined});
-    if(r.ok){ const j=safeJson(await r.text()); if(j&&j.ok===true) return "same"; }
-  }catch(_){}
-  finally{ clearTimeout(t0); }
-  return "public";
+  return /^https?:$/.test(location.protocol) ? "same" : "public";
 }
-/* Callers arrive together on a cold boot — the stop list, the report
-   sweep, the geocoder — and each of them used to see MODE still null and
-   start its own probe. Three identical requests per boot, visible in the
-   log as three health checks at the same instant. Hold the promise, not
-   just the answer, so the second caller waits on the first.
-
-   Only a POSITIVE answer is remembered. "There is a Worker here" is a
-   fact about the deployment and cannot change under you; "there isn't"
-   is a guess made from one request that may simply have lost a race, and
-   caching it condemned the whole session to the slow path. A miss is
-   retried, just not on every call. */
-async function ensureMode(){
-  if(MODE!=null) return MODE;
-  if(modeMissAt && Date.now()-modeMissAt<modeMissWait) return "public";
-  if(!modeProbe) modeProbe=resolveMode().then(m=>{
-    if(m==="same"||m==="proxy"){ MODE=m; modeMissAt=0; modeMissWait=0; }
-    else { modeMissAt=Date.now();
-      modeMissWait=Math.min(MODE_RETRY_MAX, modeMissWait?modeMissWait*2:MODE_RETRY_MIN); }
-    modeProbe=null; return m;
-  }, e=>{ modeProbe=null; throw e; });
-  return modeProbe;
+let MODE=initialMode();
+function apiQS(a,p1,p2){ return `?act=${a}`+(p1!=null?`&p1=${encodeURIComponent(p1)}`:"")+(p2!=null?`&p2=${encodeURIComponent(p2)}`:""); }
+// kept async: every caller awaits it, and it used to do real work
+async function ensureMode(){ return MODE; }
+/* 404 means this origin serves the files but not the API. Anything else —
+   a 5xx, a timeout, a blocked request, a redirect loop — is a bad minute
+   on a real backend, and must not talk the app out of using it. */
+function downgradeMode(status){
+  if(MODE==="same" && status===404){ MODE="public"; return true; }
+  return false;
 }
 function base(){ return MODE==="proxy"?CONFIG.proxyBase.replace(/\/$/,""):""; }
 function hasBackend(){ return MODE==="same"||MODE==="proxy"; }
@@ -1245,6 +1223,7 @@ try{ const v=localStorage.getItem("lang"); if(v==="el"||v==="en") LANG=v; }catch
 const T={
  el:{change:"Αλλαγή",nobus:"Καμία άφιξη τα επόμενα λεπτά",
   now:"τώρα",min:"λεπτά",to:"προς",err:"Δεν φορτώθηκαν δεδομένα.",retry:"Δοκίμασε ξανά",
+  errCode:c=>`Ο διακομιστής απάντησε με σφάλμα (${c}).`,
   locating:"Εντοπισμός τοποθεσίας…",denied:"Δεν δόθηκε πρόσβαση στην τοποθεσία.",sheetH:"Τοποθεσία",
   /* Ο browser ρωτάει μία φορά. Μετά το «όχι», η εφαρμογή ΔΕΝ μπορεί να
      ξαναρωτήσει — μόνο ο χρήστης, από τις ρυθμίσεις. Άρα το κείμενο εδώ
@@ -1542,6 +1521,7 @@ const T={
   dayNames:["Κυ","Δε","Τρ","Τε","Πε","Πα","Σα"]},
  en:{change:"Change",nobus:"No arrivals in the next few minutes",
   now:"now",min:"min",to:"to",err:"Couldn't load data.",retry:"Try again",
+  errCode:c=>`The server answered with an error (${c}).`,
   locating:"Getting your location…",denied:"Location access was blocked.",sheetH:"Location",
   /* The browser asks once. After a "no", the app CANNOT ask again — only
      the person can, in site settings. So this text has to say exactly
@@ -2251,11 +2231,14 @@ function renderList(){
   const shown=listStops();
   if(!shown.length){
     cardCache.clear();
-    /* Before the first sweep lands there is nothing to say yet, and
-       "no arrivals in the next few minutes" is a claim about the street
-       rather than about us. Show the shape of the answer instead. */
-    list.innerHTML = bootDone
-      ? `<div class="msg">${t("nobus")}</div>`
+    /* Three different empty boards, and they must not look alike:
+       we failed and gave up, we have not heard back yet, or the street
+       really has nothing coming. Only the last is a claim about Athens. */
+    list.innerHTML = bootFail
+      ? `<div class="msg"><b>${esc(bootFail)}</b><br>
+           <button onclick="retryBoot()">${esc(t("retry"))}</button></div>`
+      : bootDone
+      ? `<div class="msg">${esc(t("nobus"))}</div>`
       : `<div class="stop skel-card"><div class="hd"><div class="skel w60"></div></div>
            <div class="rows"><div class="skel"></div><div class="skel"></div></div></div>
          <div class="stop skel-card"><div class="hd"><div class="skel w40"></div></div>
@@ -2835,7 +2818,7 @@ async function loadStopsBatch(){
   const u=`${base()}/nearby?lat=${here.lat}&lng=${here.lng}&radius=${state.radius}`
         +`&limit=${CONFIG.listPool}&markers=${CONFIG.maxMarkers}${favQ}`;
   const r=await fetch(u,{cache:"no-store"});
-  if(!r.ok) throw new Error("nearby "+r.status);
+  if(!r.ok){ downgradeMode(r.status); throw new Error("HTTP "+r.status); }
   const j=await r.json();
   if(Array.isArray(j.reports)){ state.reports=j.reports; repBadge(); }
   farFavsFromSweep(Array.isArray(j.favs)?j.favs:null);
@@ -2902,18 +2885,20 @@ async function loadStops(attempt){
          than that this corner of Athens has no stops. */
       if(!state.stops.length && MODE==null) throw new Error("empty sweep");
     }
-    bootDone=true;
+    bootDone=true; bootFail=null;
   }catch(e){
     loading=false;
     if(n<LOAD_RETRY_MS.length){
       setTimeout(()=>loadStops(n+1),LOAD_RETRY_MS[n]);
       return;
     }
-    if(state.view==="list")
-      $("#list").innerHTML=`<div class="msg"><b>${esc(navigator.onLine===false?t("offline"):t("err"))}</b><br><button onclick="startRefresh()">${t("retry")}</button></div>`;
+    // out of retries: say so, and say which so, through renderView so the
+    // next repaint cannot quietly replace it with a loading animation
+    bootFail=loadFailMsg(e); renderView();
   }
   loading=false;
 }
+function retryBoot(){ bootFail=null; renderView(); startRefresh(); }
 
 /* Fallback path (no backend — e.g. opened as a local file via CORS proxies). */
 async function loadStopsLegacy(){
@@ -2950,8 +2935,21 @@ async function loadStopsLegacy(){
    refreshing all night for nobody. Coming back refreshes immediately. */
 let paused=false, lastTouch=Date.now(), sleeping=false;
 /* False until a sweep has actually returned. Everything that wants to say
-   "there is nothing here" has to wait for it. */
-let bootDone=false;
+   "there is nothing here" has to wait for it.
+
+   bootFail holds WHY the board is empty, and it lives here rather than in
+   the DOM because the previous version wrote the error straight into the
+   list — where the next repaint, from a GPS fix or a refresh tick, put the
+   loading placeholders back over it. The screen then said "loading"
+   forever and never once said what had gone wrong. */
+let bootDone=false, bootFail=null;
+/* Name the failure. "Couldn't load data" is true of every one of these and
+   useful for none of them. */
+function loadFailMsg(e){
+  if(navigator.onLine===false) return t("offline");
+  const code=(String((e&&e.message)||"").match(/\b(\d{3})\b/)||[])[1];
+  return code ? t("errCode")(code) : t("netErr");
+}
 
 /* Polling is tiered, because an open tab that nobody is looking at used to
    refresh forever:
@@ -5196,7 +5194,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v64</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v65</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

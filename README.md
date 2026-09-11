@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v64.**
+version: v65.**
 
 **The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
 holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 717 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 718 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
@@ -739,36 +739,37 @@ cannot be fetched — OASA down, or that direction retired — the rule's own li
 the selected option and saved back unchanged, rather than being silently switched to
 whichever direction happens to sort first.
 
-**The probe asks the right question now.** It used to hit `/api`, which the Worker answers
-by calling OASA — so "is OASA up" and "is there a Worker on this origin" were the same
-question. A slow or grumpy upstream made the app conclude it had no backend at all, cache
-that verdict for the session, and spend the rest of it on third-party CORS proxies: no
-stops, no arrivals, no error, and a board that reads "no arrivals in the next few minutes"
-whatever the reason. Reloading fixed it only because a reload re-rolled the probe.
+**There is no probe on the boot path, and that is the fix.** The app used to prove a
+Worker was there before trusting it. First by calling `/api`, which the Worker answers by
+calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
+the rest of the session on third-party CORS proxies: no stops, no markers, no error.
+Then, briefly, by calling `/health`, which asked the right question but still hung the
+entire boot on one request winning. Both failed in production. Both looked to the rider
+like an app that simply does not work.
 
-Three changes, each closing one link in that chain:
+A deployment has a Worker on its own origin — that is what deploying it means. So the app
+assumes it, and only an **unambiguous 404** from a real request says otherwise. A 5xx, a
+timeout, a blocked request or a redirect loop is a bad minute on a real backend and must
+not talk the app out of using it. The fallback exists for the two cases where there
+genuinely is no Worker, a `public/` folder on a dumb static host or the file opened from
+disk, and both answer 404 or are not http at all, immediately.
 
-- It probes **`/health`**, which the Worker answers itself and which touches nothing
-  upstream, with a 3.5s fuse so a slow answer cannot hold the boot.
-- Only a **positive** answer is cached. "There is a Worker here" is a fact about the
-  deployment; "there isn't" is a guess from one request that may have lost a race, and
-  caching it condemned the session. A miss backs off from under a second, doubling to 15s.
-- The fallback sweep catches its own per-request failures, so a total wipeout arrived as
-  an **empty list rather than an error** — nothing thrown, nothing retried. An empty sweep
-  without a confirmed backend is now treated as a failed one.
+That also removes a request from every cold start.
 
-The first sweep also retries itself twice before saying anything, and an unanswered board
-shows loading placeholders rather than claiming the street is empty. That claim is about
-Athens; an unanswered request is about us. Measured on a stubbed origin: a clean boot
-fills in ~100ms, and a boot whose first probe fails recovers by itself in ~1.1s where it
-previously needed a manual reload.
+**Three empty boards, and they must not look alike.** We have not heard back yet, the
+sweep answered and the street has nothing coming, or we failed and gave up. Only the
+middle one is a claim about Athens. The first shows placeholders, the last names the
+failure and offers a retry.
 
-**One mode probe per boot, not three.** `ensureMode()` cached the answer but not the
-request, so every caller that arrived before the first probe returned started its own —
-the stop list, the report sweep and the geocoder, all at once on a cold start. It held the
-promise rather than the value from v61 on. Two wasted requests per boot against a 100k-a-day
-budget, found by reading the live log rather than by any test, which is why there is now
-a test.
+Getting that wrong is what turned a visible failure into an invisible one: the error was
+written straight into the list, and the next repaint — a GPS fix, a refresh tick — put the
+loading animation back over it. The screen then said "loading" forever and never once said
+what had gone wrong. The failure lives in state now, so a repaint renders it rather than
+erasing it, and `test/fixes.mjs` checks precisely that.
+
+The first sweep also retries itself twice before saying anything. Measured against a
+stubbed origin: a clean boot fills in ~150ms, and a boot with `/health` dead fills in the
+same ~150ms, because nothing waits on it any more.
 
 **The form fits the window it opens in.** It is taller than a laptop viewport, and it used
 to be appended below the fold with nothing scrolled into view — so on a 1366x768 window

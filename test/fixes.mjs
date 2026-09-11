@@ -293,61 +293,71 @@ console.log("\n— served as a secure origin —");
   }
 }
 
-/* The morning the board came up empty on a fast connection. One flaky
-   probe decided the app had no backend, that verdict was cached for the
-   session, and everything afterwards went to third-party CORS proxies —
-   slow, often empty, and indistinguishable on screen from a street with
-   no buses. Reloading "fixed" it because a reload re-rolled the probe. */
-console.log("\n— a bad probe must not condemn the session —");
+/* The morning the board came up empty on a fast connection, and the
+   morning after that when it showed loading placeholders forever. Both
+   were the same root cause — a boot that could not proceed until one
+   request succeeded — and the second was worse because the fix for the
+   first hid the error behind an animation. */
+console.log("\n— a bad minute must not take the app down —");
 {
-  healthFails = 1;                                  // the first /health only
+  healthFails = 99;                     // /health never answers at all
   const v = await open({ geo: true });
-  await v.page.waitForTimeout(3000);
-  const state = await v.page.evaluate(() => ({
-    mode: MODE, backend: hasBackend(), stops: state.stops.length,
-    rows: document.querySelectorAll("#list .stop").length,
+  await v.page.waitForTimeout(2500);
+  const st = await v.page.evaluate(() => ({
+    mode: MODE, stops: state.stops.length,
+    rows: document.querySelectorAll("#list .stop:not(.skel-card)").length,
   }));
-  ok("the first probe failing does not latch the slow path",
-    state.backend === true && state.mode === "same", JSON.stringify(state));
-  ok("...and the board fills without anyone reloading", state.stops > 0 && state.rows > 0,
-    `${state.stops} stops, ${state.rows} rows`);
-  ok("...having asked more than once", healthHits >= 2, `${healthHits} health requests`);
+  ok("the board fills even with /health dead, because nothing waits on it",
+    st.mode === "same" && st.stops > 0 && st.rows > 0, JSON.stringify(st));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
   healthFails = 0;
 }
 {
-  /* And while it is still deciding, the board must not claim the street
-     is empty — that is a statement about Athens, not about us. */
-  healthFails = 0; nearbyFails = 1;
+  nearbyFails = 1;                      // one blip, then fine
   const v = await open({ geo: true });
   await v.page.waitForTimeout(3000);
-  /* Deterministic rather than a race: put the board back into the state
-     it is in before the first sweep answers, and look at what it says. */
-  const early = await v.page.evaluate(() => {
-    bootDone = false; state.stops = []; renderList();
-    const l = document.querySelector("#list");
-    return { txt: l.innerText || "", skel: l.querySelectorAll(".skel").length };
-  });
-  ok("before the first answer the board shows loading, not 'no arrivals'",
-    !/No arrivals/i.test(early.txt) && early.skel > 0,
-    `${early.skel} placeholders, "${early.txt.replace(/\n/g, " ").slice(0, 40)}"`);
-  ok("...and says it plainly once the sweep has actually answered",
-    await v.page.evaluate(() => { bootDone = true; state.stops = []; renderList();
-      return /No arrivals/i.test(document.querySelector("#list").innerText); }),
-    "an empty street is a real answer; an unanswered request is not");
-  await v.page.evaluate(() => { bootDone = true; });
-  await v.page.evaluate(() => loadStops());
-  await v.page.waitForTimeout(1500);
-  const late = await v.page.evaluate(() => ({
-    rows: document.querySelectorAll("#list .stop").length,
-    txt: (document.querySelector("#list") || {}).innerText || "",
-  }));
-  ok("...and a failed sweep retries itself rather than waiting for a tap",
-    late.rows > 0, `${late.rows} rows, "${late.txt.replace(/\n/g, " ").slice(0, 40)}"`);
-  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  ok("a failed first sweep retries itself rather than waiting for a tap",
+    await v.page.evaluate(() =>
+      document.querySelectorAll("#list .stop:not(.skel-card)").length > 0),
+    "one blip used to leave an empty board and a button");
   await v.ctx.close();
   nearbyFails = 0;
+}
+{
+  const v = await open({ geo: true });
+  await v.page.waitForTimeout(2000);
+  /* Deterministic rather than a race: put the board into each of its three
+     empty states and read what it says. They must not look alike. */
+  const says = await v.page.evaluate(() => {
+    const l = document.querySelector("#list"), out = {};
+    state.stops = [];
+    bootFail = null; bootDone = false; renderList();
+    out.waiting = { txt: l.innerText.trim(), skel: l.querySelectorAll(".skel").length };
+    bootDone = true; renderList();
+    out.empty = { txt: l.innerText.trim(), skel: l.querySelectorAll(".skel").length };
+    bootFail = "The server answered with an error (503)."; renderList();
+    out.failed = { txt: l.innerText.trim(), btn: l.querySelectorAll("button").length };
+    return out;
+  });
+  ok("waiting shows placeholders, not a claim about the street",
+    says.waiting.skel > 0 && !/No arrivals/i.test(says.waiting.txt),
+    `${says.waiting.skel} placeholders`);
+  ok("...an answered-but-empty street says so plainly",
+    /No arrivals/i.test(says.empty.txt) && says.empty.skel === 0, says.empty.txt);
+  ok("...and a failure names itself, with a way out",
+    /503/.test(says.failed.txt) && says.failed.btn === 1, says.failed.txt);
+  /* The bug in the fix: the error used to be written straight into the
+     list, so the next repaint — a GPS fix, a refresh tick — put the
+     loading animation back over it and the app said "loading" forever. */
+  const survives = await v.page.evaluate(() => {
+    renderView(); renderView();
+    return /503/.test(document.querySelector("#list").innerText);
+  });
+  ok("...which a later repaint cannot quietly paint over", survives,
+    "this is exactly how v64 turned a visible failure into an invisible one");
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
 }
 
 await browser.close();

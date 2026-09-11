@@ -386,16 +386,19 @@ console.log("\n— an alert can be edited, not only deleted —");
   await v.ctx.close();
 }
 
-/* Three identical mode probes went out on every cold boot, at the same
-   instant, because each caller found MODE still null and started its own.
-   Two of them pure waste against a 100k-a-day budget.
+/* There is no probe now, and that is the fix.
 
-   The probe itself used to ask /api, which the Worker answers by calling
-   OASA — so a slow upstream made the app decide it had no backend and
-   spend the session on third-party proxies, which is what "no stops, no
-   arrivals, works after a reload" looked like. It asks /health now: our
-   own Worker, nothing upstream, one question. */
-console.log("\n— one probe per boot, and it asks the right thing —");
+   The app used to prove a Worker was there before trusting it: first by
+   calling /api, which the Worker answers by calling OASA, so a slow
+   upstream convinced it there was no backend at all; then by calling
+   /health, which asked the right question but still hung the whole boot on
+   one request winning. Both failed in production, and both looked to the
+   rider like an app that simply does not work.
+
+   A deployment has a Worker on its own origin — that is what deploying it
+   means. Assume it, and let an unambiguous 404 be the only thing that says
+   otherwise. */
+console.log("\n— no probe at all —");
 {
   const c = await browser.newContext({ viewport: { width: 390, height: 840 },
     permissions: ["geolocation"], geolocation: { latitude: LAT, longitude: LNG, accuracy: 12 } });
@@ -405,23 +408,30 @@ console.log("\n— one probe per boot, and it asks the right thing —");
   const page = await c.newPage();
   const probes = [], upstream = [];
   page.on("request", r => {
-    if (/\/health(\?|$)/.test(new URL(r.url()).pathname + (new URL(r.url()).search || ""))
-      || /\/health$/.test(new URL(r.url()).pathname)) probes.push(r.url());
+    if (/\/health$/.test(new URL(r.url()).pathname)) probes.push(r.url());
     if (/getClosestStops&p1=37\.9755&p2=23\.7348/.test(r.url())) upstream.push(r.url());
   });
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(2500);
-  ok("a cold boot asks which mode it is in exactly once", probes.length === 1,
-    `${probes.length} probes`);
-  ok("...and asks our own Worker, not OASA through it", upstream.length === 0,
-    "whether OASA is up is a different question from whether we are");
-  /* And the callers that arrived while it was in flight still got an
-     answer, rather than an undefined they would each re-probe for. */
+  ok("a cold boot spends no request finding out where it is",
+    probes.length === 0 && upstream.length === 0,
+    `${probes.length} health, ${upstream.length} upstream`);
+  ok("...it assumes the backend it was deployed with",
+    await page.evaluate(() => MODE === "same" && hasBackend()));
   const settled = await page.evaluate(async () => {
     const all = await Promise.all([ensureMode(), ensureMode(), ensureMode()]);
-    return all.every(m => m === all[0] && typeof m === "string");
+    return all.every(m => m === "same");
   });
-  ok("...and everyone waiting on it gets the same answer", settled);
+  ok("...and every caller gets that answer without waiting on anything", settled);
+  ok("only an unambiguous 404 talks it out of it",
+    await page.evaluate(() => {
+      const before = MODE;
+      const a = downgradeMode(500), b = downgradeMode(0), c = downgradeMode(502);
+      const held = MODE === before && !a && !b && !c;
+      const gone = downgradeMode(404) && MODE === "public";
+      MODE = before;
+      return held && gone;
+    }), "a 5xx or a timeout is a bad minute, not a missing backend");
   await c.close();
 }
 
