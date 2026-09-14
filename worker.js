@@ -19,6 +19,8 @@
  *  GET  /rules?sub=ID           → list alert rules
  *  POST /rules                  → create/update an alert rule
  *  POST /rules/delete           → delete an alert rule
+ *  GET  /notice                 → operator notice, if one is set
+ *  POST /notice                 → set or clear it (admin)
  *  GET  /health                 → liveness; +admin token = usage summary
  *  GET  /.well-known/security.txt → who to tell about a vulnerability
  *  GET  /stops/search?q=        → find stops by place/stop name
@@ -39,7 +41,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v68";
+const APP_VERSION = "v69";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1770,6 +1772,11 @@ async function farFavourites(codes, stops, lat, lng) {
  * read with a plain get and pruned on every touch — zero list ops.
  * ------------------------------------------------------------------ */
 const REPORTS_KEY = "reports:index";
+/* The one thing the operator can change without shipping a version. Kept
+   in KV rather than in the bundle so "we are doing maintenance" does not
+   need a deploy, a cache purge and a wait — which is exactly the moment
+   when deploying is least appealing. */
+const NOTICE_KEY = "notice:current";
 /* What may be flagged, and with what. A rider reports from inside a
  * surface vehicle — bus or trolley, both the "bus" kind here — or
  * standing at a metro station. Those are the two TARGET kinds.
@@ -3577,6 +3584,34 @@ export default {
       return new Response(body, { headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "public, max-age=86400", ...CORS } });
+    }
+
+    /* GET is public and deliberately uncached: when this is set, it is
+       because something is wrong, and waiting out an edge TTL before
+       anyone is told is the opposite of the point. One KV read against a
+       100k-a-day allowance, on a boot that already costs four requests. */
+    if (p.endsWith("/notice")) {
+      if (!env.ALERTS) return json({});
+      if (req.method === "GET") {
+        const rec = await env.ALERTS.get(NOTICE_KEY, "json").catch(() => null);
+        return json(rec && rec.id ? rec : {});
+      }
+      if (req.method === "POST") {
+        if (!adminOK(req, env)) return json({ error: "admin token required" }, 403);
+        const b = await req.json().catch(() => null) || {};
+        if (b.clear === true || !b.id) {
+          await env.ALERTS.delete(NOTICE_KEY);
+          return json({ ok: true, cleared: true });
+        }
+        const rec = {
+          id: String(b.id).slice(0, 60),
+          el: String(b.el || "").slice(0, 400),
+          en: String(b.en || "").slice(0, 400),
+        };
+        if (!rec.el && !rec.en) return json({ error: "el or en required" }, 400);
+        await env.ALERTS.put(NOTICE_KEY, JSON.stringify(rec));
+        return json({ ok: true, notice: rec });
+      }
     }
 
     if (p.endsWith("/health")) {

@@ -40,11 +40,14 @@ const stops = [{ code: "500", name_el: "ΚΟΝΤΑ", name_en: "NEAR", lat: LAT, 
   arrivals: [{ code: "r1", veh: "V1", min: 4 }] }];
 
 let ROOT = SRC;
+let notice = null;                     // what /notice hands back, per test
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
   // the mode probe: is there a Worker on this origin
   if (u.pathname === "/health") { res.writeHead(200, { "Content-Type": "application/json" });
     return res.end('{"ok":true,"version":"test"}'); }
+  if (u.pathname === "/notice") { res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify(notice || {})); }
   if (u.pathname === "/nearby") { res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] })); }
   const f = path.join(ROOT, u.pathname === "/" ? "index.html" : u.pathname.slice(1));
@@ -242,39 +245,56 @@ console.log("\n— the app is origin-relative, so a new domain needs no edit —
   ok("the service worker caches relative paths", !/https?:\/\/[a-z0-9.-]*workers\.dev/i.test(sw));
 }
 
-/* One line the operator can put at the top of the app without touching
-   anything else. "The app looks broken" and "we know the app looks broken"
-   are very different experiences for someone who came to find their bus. */
-console.log("\n— a notice the operator controls —");
+/* Saying "we are doing maintenance" should not need a deploy, a cache
+   purge and a wait, at exactly the moment when deploying is least
+   appealing. The Worker holds the text; the app asks for it. */
+console.log("\n— a notice the operator can set without shipping —");
 {
+  notice = null;
   const v = await open({});
-  await v.page.waitForTimeout(600);
-  ok("nothing renders when no notice is set",
-    await v.page.evaluate(() => document.getElementById("notice").hidden),
-    "an empty NOTICE must cost nothing and say nothing");
-  const shown = await v.page.evaluate(() => {
-    NOTICE.id = "t1"; NOTICE.el = "Δοκιμή"; NOTICE.en = "Under construction";
-    showNotice();
-    const b = document.getElementById("notice");
-    return { hidden: b.hidden, txt: b.innerText.trim() };
+  await v.page.waitForTimeout(900);
+  ok("nothing renders when none is set",
+    await v.page.evaluate(() => document.getElementById("noticebg").hidden),
+    "an unset notice must cost nothing and say nothing");
+  await v.ctx.close();
+}
+{
+  notice = { id: "m1", el: "Κάνουμε εργασίες.", en: "We're doing some work." };
+  const v = await open({ lang: "en" });
+  await v.page.waitForTimeout(1200);
+  const card = await v.page.evaluate(() => {
+    const b = document.getElementById("noticebg");
+    const r = document.querySelector(".noticecard").getBoundingClientRect();
+    return { hidden: b.hidden, txt: b.innerText.replace(/\s+/g, " ").trim(),
+      // centred, not a line hugging the top edge
+      middle: Math.abs((r.top + r.height / 2) - innerHeight / 2) < 60 };
   });
-  ok("...and a line appears once one is", !shown.hidden && /Under construction/.test(shown.txt),
-    shown.txt.replace(/\n/g, " "));
+  ok("...and a card appears in the middle of the screen once one is",
+    !card.hidden && card.middle, `${card.middle ? "centred" : "not centred"}`);
+  ok("...carrying the operator's words", /doing some work/i.test(card.txt), card.txt);
+  ok("...under a heading about maintenance, and nothing else",
+    /MAINTENANCE/i.test(card.txt) && !/OASA is|blocked/i.test(card.txt),
+    "the heading is the app's, so the tone cannot drift with the message");
   const gone = await v.page.evaluate(() => {
-    document.getElementById("notice-x").click();
-    const after = document.getElementById("notice").hidden;
-    showNotice();                                   // a repaint must not bring it back
-    return after && document.getElementById("notice").hidden
-      && localStorage.getItem("noticeSeen") === "t1";
+    document.getElementById("notice-ok").click();
+    return document.getElementById("noticebg").hidden
+      && localStorage.getItem("noticeSeen") === "m1";
   });
-  ok("...dismissible, and it stays dismissed", gone);
-  ok("...until the id changes, which is what makes a NEW notice new",
-    await v.page.evaluate(() => {
-      NOTICE.id = "t2"; showNotice();
-      return !document.getElementById("notice").hidden;
-    }), "editing the text without bumping the id leaves it dismissed, on purpose");
+  ok("...dismissed once, and remembered", gone);
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
+}
+{
+  notice = { id: "m1", el: "Κάνουμε εργασίες.", en: "" };
+  const v = await open({ lang: "en" });
+  await v.page.waitForTimeout(1200);
+  ok("a notice written in only one language still reaches the other reader",
+    await v.page.evaluate(() =>
+      !document.getElementById("noticebg").hidden
+      && /εργασίες/i.test(document.getElementById("notice-p").textContent)),
+    "showing an English reader nothing would be worse than showing them Greek");
+  await v.ctx.close();
+  notice = null;
 }
 
 await browser.close();

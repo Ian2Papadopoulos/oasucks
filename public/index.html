@@ -826,10 +826,21 @@
   .moved-go{color:var(--toner);font-weight:700;text-decoration:underline;white-space:nowrap}
   .moved-x{background:none;border:none;color:var(--toner);font-family:var(--mono);
     font-size:13px;cursor:pointer;padding:2px 4px;flex:none}
-  /* Same bar, said in the app's own voice rather than the alert colour —
-     "we know, we are working on it" is not an emergency. */
-  .notice{background:var(--card);border-bottom:1px solid var(--toner)}
-  .notice .moved-t{color:var(--ink2)}
+  /* A thin line at the top was too easy to miss, and the whole purpose of
+     this is to be read before someone decides the app is broken. Centred,
+     over everything, once. */
+  .noticebg{position:fixed;inset:0;z-index:4200;background:rgba(23,23,26,.45);
+    display:grid;place-items:center;padding:22px}
+  .noticebg[hidden]{display:none}
+  .noticecard{width:100%;max-width:360px;background:var(--paper);
+    border:2px solid var(--toner);border-radius:2px;padding:22px 20px 18px;
+    box-shadow:6px 6px 0 rgba(23,23,26,.2);text-align:center;
+    animation:pop .18s ease-out}
+  .notice-ico{font-size:34px;line-height:1;margin-bottom:12px}
+  .notice-h{font-family:var(--mono);font-weight:700;font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--toner);margin-bottom:9px}
+  .notice-p{margin:0 0 16px;color:var(--ink2);font-family:var(--sans);
+    font-size:12.5px;line-height:1.65}
 
   /* ------------------------------- splash ------------------------------- */
   /* Two rules keep this from being an annoyance rather than a moment:
@@ -872,10 +883,15 @@
      look at yet. Painted from markup rather than added by script so it is
      up in the first frame, before any JavaScript has run. -->
 <div class="splash" id="splash"><div class="mark">OASA</div></div>
-<!-- Operator notice. Empty NOTICE means this never renders; see NOTICE. -->
-<div class="moved notice" id="notice" hidden>
-  <div class="moved-t" id="notice-t"></div>
-  <button class="moved-x" id="notice-x" aria-label="dismiss">✕</button>
+<!-- Operator notice, fetched from /notice. Nothing renders unless one is
+     set, and setting one takes an admin POST rather than a deploy. -->
+<div class="noticebg" id="noticebg" hidden>
+  <div class="noticecard">
+    <div class="notice-ico">🛠</div>
+    <div class="notice-h" id="notice-h"></div>
+    <p class="notice-p" id="notice-p"></p>
+    <button class="primary" id="notice-ok"></button>
+  </div>
 </div>
 <!-- Only ever shown on the origin the app has moved away from; see MOVED_TO. -->
 <div class="moved" id="moved" hidden>
@@ -933,7 +949,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v68</span></div>
+  <div class="foot"><span class="ver">v69</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1514,6 +1530,7 @@ const T={
   newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
   editAlert:"Επεξεργασία",delAlert:"Διαγραφή",
+  noticeH:"Εργασίες συντήρησης",noticeOk:"Εντάξει",
   pushHow:"Δεν χρειάζεται να μένει ανοιχτή η εφαρμογή — η ειδοποίηση έρχεται και κλειστή. "+
     "Στο iPhone πρέπει πρώτα να την προσθέσεις στην αρχική οθόνη· σε καρτέλα Safari οι "+
     "ειδοποιήσεις δεν δουλεύουν ποτέ.",
@@ -1812,6 +1829,7 @@ const T={
   newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
   editAlert:"Edit",delAlert:"Delete",
+  noticeH:"Maintenance",noticeOk:"Got it",
   pushHow:"The app does not need to stay open — alerts arrive with it closed. On iPhone you "+
     "must add it to the Home screen first; notifications never work in a Safari tab.",
   pushTestOk:"Sent. If nothing appears within a few seconds, this device is not receiving "+
@@ -2178,32 +2196,39 @@ if(isStandalone()){
 function renderView(){ state.view==="map"?renderMap():renderList(); splashReady(); }
 
 /* ------------------------- operator notice -------------------------- *
- * One line at the top of the app, written by whoever runs it. Set the two
- * strings and redeploy; empty means nothing renders and nothing is
- * measured. `id` is what dismissal is remembered against, so changing the
- * text without changing the id leaves it dismissed — bump the id when the
- * message is genuinely new.
+ * One card, in the middle of the screen, written by whoever runs the app
+ * and fetched from the Worker rather than baked into this file. That is
+ * the whole point: saying "we are doing maintenance" should not require
+ * shipping a version, purging a cache and waiting, at exactly the moment
+ * when shipping a version is least appealing.
  *
- * This exists because "the app looks broken" and "we know the app looks
- * broken" are very different experiences for someone who came to find
- * their bus, and the second one keeps them.
+ * Shown once per notice. Dismissal is remembered against the id, so a new
+ * message needs a new id — editing the words leaves it dismissed for
+ * everyone who already closed it, which is the correct default.
  * ------------------------------------------------------------------- */
-const NOTICE={
-  id:"",                                 // e.g. "oasa-block-2026-09"
-  el:"",                                 // e.g. "Ο ΟΑΣΑ έχει μπλοκάρει προσωρινά…"
-  en:"",
-};
-function showNotice(){
-  const txt=(LANG==="en"?NOTICE.en:NOTICE.el)||NOTICE.el||NOTICE.en;
-  if(!NOTICE.id||!txt) return;
-  try{ if(localStorage.getItem("noticeSeen")===NOTICE.id) return; }catch(_){}
-  const bar=$("#notice");
-  $("#notice-t").textContent=txt;
-  $("#notice-x").onclick=()=>{
-    bar.hidden=true;
-    try{ localStorage.setItem("noticeSeen",NOTICE.id); }catch(_){}
-  };
-  bar.hidden=false;
+const NOTICE_SEEN="noticeSeen";
+async function loadNotice(){
+  try{
+    await ensureMode();
+    if(!hasBackend()) return;
+    const r=await fetch(base()+"/notice",{cache:"no-store"});
+    if(!r.ok) return;
+    const n=await r.json();
+    if(!n||!n.id) return;
+    let seen=null;
+    try{ seen=localStorage.getItem(NOTICE_SEEN); }catch(_){}
+    if(seen===n.id) return;
+    const txt=(LANG==="en"?n.en:n.el)||n.el||n.en;
+    if(!txt) return;
+    $("#notice-h").textContent=t("noticeH");
+    $("#notice-p").textContent=txt;
+    $("#notice-ok").textContent=t("noticeOk");
+    $("#notice-ok").onclick=()=>{
+      $("#noticebg").hidden=true;
+      try{ localStorage.setItem(NOTICE_SEEN,n.id); }catch(_){}
+    };
+    $("#noticebg").hidden=false;
+  }catch(_){ /* a notice that cannot be fetched is not worth an error */ }
 }
 
 /* ---------------------- moving to a new address --------------------- */
@@ -5266,7 +5291,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v68</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v69</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5838,8 +5863,8 @@ $("#locwhere").textContent=here.label;
 updateRadiusLabel();
 startRefresh();
 dismissSplash();
-showNotice();
 showMovedNotice();
+loadNotice();
 maybeTour();
 watchGeoPermission();
 pulse();

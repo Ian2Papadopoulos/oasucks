@@ -415,6 +415,47 @@ console.log("\n— health can be asked about the upstream too —");
     "curl /health?token=...&probe=1");
 }
 
+/* The notice has to be settable by exactly one person and readable by
+   everyone, which is the whole security model of it. */
+console.log("\n— setting the notice takes a token; reading it does not —");
+{
+  const KV = (() => {
+    let v = null;
+    return { async get() { return v; }, async put(_k, s) { v = JSON.parse(s); },
+             async delete() { v = null; } };
+  })();
+  const env = { ALERTS: KV, DB };
+  ctx.__body = null;
+  const post = async (obj, token) => {
+    const e = { ...env }; if (token) e.ADMIN_TOKEN = token;
+    ctx.__req = new Request("https://x/notice", { method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { "X-Admin-Token": token } : {}) },
+      body: JSON.stringify(obj) });
+    ctx.__env = e;
+    return vm.runInContext(`__handler.fetch(__req, __env, { waitUntil(){}, passThroughOnException(){} })`, ctx);
+  };
+  const get = async () => {
+    ctx.__req = new Request("https://x/notice", { method: "GET" });
+    ctx.__env = env;
+    return body(await vm.runInContext(`__handler.fetch(__req, __env, { waitUntil(){}, passThroughOnException(){} })`, ctx));
+  };
+
+  ok("nothing is set to begin with", JSON.stringify(await get()) === "{}");
+  const noAuth = await post({ id: "m1", en: "hi" });
+  ok("a stranger cannot set one", noAuth.status === 403, String(noAuth.status));
+  ok("...and nothing was written", JSON.stringify(await get()) === "{}");
+  const okRes = await post({ id: "m1", el: "Εργασίες", en: "Maintenance" }, "k");
+  ok("the operator can", okRes.status === 200, String(okRes.status));
+  const shown = await get();
+  ok("...and anyone may read it, with no token at all",
+    shown.id === "m1" && shown.en === "Maintenance", JSON.stringify(shown));
+  await post({ clear: true }, "k");
+  ok("...and clear it again", JSON.stringify(await get()) === "{}",
+    "taking it down must be as easy as putting it up");
+  const empty = await post({ id: "m2" }, "k");
+  ok("a notice with no words in it is refused", empty.status === 400, String(empty.status));
+}
+
 console.log("\n— someone with a bug report can find an address —");
 {
   const r = await call("/.well-known/security.txt", { method: "GET", env: {} });

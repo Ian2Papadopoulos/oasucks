@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v68",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v69",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -432,28 +432,40 @@ distinguish two opens by one person from one open each by two, and that is the d
 a gap. Twenty `open` and eight `open_app` on a Tuesday means twenty openings, of which
 eight came from an installed icon. Any "users" number is your own inference from that.
 
-### Telling everyone something, for a while
+### Telling everyone something, without shipping a version
 
-One line at the top of the app, in your own words. In `public/index.html`:
+One card in the middle of the app, in your own words, switched on and off with a
+request. No deploy, no cache purge, no wait — which matters, because the moment you
+need this is the moment deploying is least appealing.
 
-```js
-const NOTICE={
-  id:"oasa-block-2026-09",
-  el:"Ο ΟΑΣΑ έχει μπλοκάρει προσωρινά την πρόσβαση. Δουλεύουμε πάνω σε λύση.",
-  en:"OASA has temporarily blocked our access. We're working on a fix.",
-};
+**Put one up:**
+
+```powershell
+curl.exe -X POST "https://oasax.com/notice" `
+  -H "X-Admin-Token: $env:ADMIN_TOKEN" -H "Content-Type: application/json" `
+  -d '{\"id\":\"maint-2026-09-14\",\"el\":\"Κάνουμε εργασίες συντήρησης. Κάποια στοιχεία μπορεί να λείπουν για λίγο.\",\"en\":\"We are doing maintenance. Some information may be missing for a while.\"}'
 ```
 
-Redeploy and it appears. Empty strings or an empty `id` mean nothing renders
-at all, which is the default.
+**Take it down:**
 
-**`id` is what dismissal is remembered against.** Someone who closes the bar does
-not see it again, so change the `id` when the message is genuinely new — editing only
-the text leaves it dismissed for everyone who already closed the old one. Set `id` back
-to `""` to take it down.
+```powershell
+curl.exe -X POST "https://oasax.com/notice" `
+  -H "X-Admin-Token: $env:ADMIN_TOKEN" -H "Content-Type: application/json" -d '{\"clear\":true}'
+```
 
-Write it in both languages. The bar follows the language in Settings, and falls back to
-whichever string is filled in if only one is.
+**See what is live:** `curl.exe https://oasax.com/notice` — public, no token, `{}` when
+nothing is set.
+
+Three things worth knowing:
+
+- **The heading is the app's, not yours.** Every notice appears under *Maintenance* /
+  *Εργασίες συντήρησης* with a 🛠. You supply the sentence underneath, so the tone stays
+  the same however hurried you are when you write it.
+- **`id` is what dismissal is remembered against.** Each reader sees a given notice once.
+  Change the `id` for a genuinely new message; editing only the words leaves it dismissed
+  for everyone who already closed the old one.
+- **Write both languages.** It follows the language in Settings and falls back to
+  whichever one is filled in, so a Greek-only notice still reaches an English reader.
 
 ### The board is empty, or stuck on loading
 
