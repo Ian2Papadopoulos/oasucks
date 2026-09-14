@@ -434,27 +434,57 @@ eight came from an installed icon. Any "users" number is your own inference from
 
 ### Telling everyone something, without shipping a version
 
-One card in the middle of the app, in your own words, switched on and off with a
-request. No deploy, no cache purge, no wait — which matters, because the moment you
-need this is the moment deploying is least appealing.
+One card in the middle of the app, in your own words, switched on and off with a request.
+No deploy, no cache purge, no wait — which matters, because the moment you need this is
+the moment deploying is least appealing.
 
-**Put one up:**
+**Once, if you have not already:**
+
+```powershell
+npx wrangler secret put ADMIN_TOKEN      # any long random string; keep a copy
+$env:ADMIN_TOKEN = "the-string-you-just-set"
+```
+
+**Step 1 — write the message to a file.** Do not try to put Greek inside a PowerShell
+command line; the quoting and the encoding will both bite you. Make `notice.json` in the
+project folder, saved as **UTF-8**:
+
+```json
+{
+  "id": "maint-2026-09-14",
+  "el": "Κάνουμε εργασίες συντήρησης. Κάποια στοιχεία μπορεί να λείπουν για λίγο.",
+  "en": "We are doing maintenance. Some information may be missing for a while."
+}
+```
+
+In VS Code the encoding is in the status bar, bottom right — it should say UTF-8, not
+UTF-8 with BOM.
+
+**Step 2 — put it up.**
 
 ```powershell
 curl.exe -X POST "https://oasax.com/notice" `
-  -H "X-Admin-Token: $env:ADMIN_TOKEN" -H "Content-Type: application/json" `
-  -d '{\"id\":\"maint-2026-09-14\",\"el\":\"Κάνουμε εργασίες συντήρησης. Κάποια στοιχεία μπορεί να λείπουν για λίγο.\",\"en\":\"We are doing maintenance. Some information may be missing for a while.\"}'
+  -H "X-Admin-Token: $env:ADMIN_TOKEN" `
+  -H "Content-Type: application/json" `
+  --data-binary "@notice.json"
 ```
 
-**Take it down:**
+You want `{"ok":true,"notice":{...}}` back. Reload the app and the card is there.
+
+**Step 3 — check what is live.** Public, no token:
 
 ```powershell
-curl.exe -X POST "https://oasax.com/notice" `
-  -H "X-Admin-Token: $env:ADMIN_TOKEN" -H "Content-Type: application/json" -d '{\"clear\":true}'
+curl.exe https://oasax.com/notice
 ```
 
-**See what is live:** `curl.exe https://oasax.com/notice` — public, no token, `{}` when
-nothing is set.
+`{}` means nothing is showing.
+
+**Step 4 — take it down.** This one is plain ASCII, so inline is fine:
+
+```powershell
+curl.exe -X POST "https://oasax.com/notice" -H "X-Admin-Token: $env:ADMIN_TOKEN" `
+  -H "Content-Type: application/json" -d "{\"clear\":true}"
+```
 
 Three things worth knowing:
 
@@ -466,6 +496,48 @@ Three things worth knowing:
   for everyone who already closed the old one.
 - **Write both languages.** It follows the language in Settings and falls back to
   whichever one is filled in, so a Greek-only notice still reaches an English reader.
+
+### Reading the numbers
+
+The dashboard draws a graph and gives you no figures, so "is that spike real people or a
+scanner" cannot be answered by looking at it. `npm run metrics` prints the figures.
+
+**Step 1 — make a token.** dash.cloudflare.com → the account menu, top right → **Profile**
+→ **API Tokens** → **Create Token** → **Create Custom Token**.
+
+- Permissions: **Zone** → **Analytics** → **Read**. That one row, nothing else.
+- Zone Resources: **Include** → **Specific zone** → `oasax.com`.
+- Create, then copy the token. It is shown once.
+
+**Step 2 — find the zone id.** dash.cloudflare.com → `oasax.com` → **Overview**. It is in
+the right-hand column, under API, labelled **Zone ID**.
+
+**Step 3 — run it.**
+
+```powershell
+$env:CF_API_TOKEN = "the-token"
+$env:CF_ZONE_ID   = "the-zone-id"
+npm run metrics            # last 30 days
+node tools/metrics.mjs 7   # or any number of days
+```
+
+You get one row per day: requests, how many were served from cache, Cloudflare's own
+unique-visitor estimate, and how many requests it blocked outright as threats.
+
+That `uniques` column is the closest thing to a userbase figure that exists without
+tracking anyone. It is computed at the edge from addresses, with no cookie and no script,
+and it over-counts a phone moving between wifi and mobile data while under-counting a
+household behind one address. Read it as a shape, not a headcount.
+
+Paste the whole table when you want it read. The other half worth sending is your own
+counter, which sees people rather than requests:
+
+```powershell
+curl.exe "https://oasax.com/stats/usage?token=$env:ADMIN_TOKEN&days=30"
+```
+
+Comparing the two is what separates users from bots: scanners generate requests and never
+send an `open`.
 
 ### The board is empty, or stuck on loading
 

@@ -37,6 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
 | `test/` | `npm test` — 752 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
+| `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The menu, and the FAQ
