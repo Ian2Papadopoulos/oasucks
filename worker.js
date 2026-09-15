@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v79";
+const APP_VERSION = "v80";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -216,6 +216,20 @@ function circuitNote(ok, why) {
   circuit.fails++;
   circuit.lastFail = { at: Date.now(), why: String(why || "unknown").slice(0, 160) };
   if (circuit.fails >= CIRCUIT.openAfter && !circuit.openedAt) circuit.openedAt = Date.now();
+}
+/* What to tell a rider whose board is thin, in one word the app can turn
+   into one sentence. The distinction matters to them: "OASA is not
+   answering anyone" is a different thing from "your connection is bad",
+   and both are different from "OASA answered, and said it is too busy".
+   Only these three, because a fourth would be a shrug with extra steps. */
+function upstreamState() {
+  const c = circuitState();
+  const why = (c.lastFail && c.lastFail.why) || "";
+  if (!c.open && !/^HTTP (429|50[0-9])/.test(why)) return { ok: true };
+  // OASA answering with a refusal is load; OASA not answering is an outage
+  if (/^HTTP (429|503)/.test(why)) return { ok: false, reason: "busy", detail: why };
+  if (/^HTTP 5/.test(why)) return { ok: false, reason: "busy", detail: why };
+  return { ok: false, reason: "down", detail: why || "no answer" };
 }
 function circuitState() {
   return { open: !!circuit.openedAt, fails: circuit.fails,
@@ -1935,13 +1949,13 @@ async function handleNearby(url, env, ctx) {
       let body = null;
       try { body = await old.json(); } catch (_) { }
       if (body && Array.isArray(body.stops) && body.stops.length) {
-        body.stale = true; body.upstream = "down";
+        body.stale = true; body.upstream = upstreamState();
         if (favCodes.length) body.favs = await farFavourites(favCodes, body.stops, lat, lng);
         return json(body);
       }
     }
     return json({ origin: { lat, lng }, radius, generated: Math.floor(Date.now() / 1000),
-      hidden: 0, stops: [], reports: [], upstream: "down" }, 503);
+      hidden: 0, stops: [], reports: [], upstream: upstreamState() }, 503);
   }
 
   const seen = {};
@@ -2046,6 +2060,11 @@ async function handleNearby(url, env, ctx) {
 
   const res = new Response(JSON.stringify({
     origin: { lat, lng }, radius, generated: now, hidden, stops, reports,
+    /* Not only on the 503 path. A board can come back half-filled — some
+       stops answered, some timed out — and that is the case where the
+       rider most needs telling, because the numbers look fine and are
+       simply missing the bus they were waiting for. */
+    upstream: upstreamState(),
   }), {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
@@ -4421,7 +4440,20 @@ export default {
    because it is the one that works on a deployment whose origin we have
    never seen (a fresh Worker nobody has visited yet), and because a
    fallback that has never been exercised is not a fallback. */
+/* A Worker reaching its own hostname is not guaranteed to work — on this
+   zone it answers HTTP 522, Cloudflare's "could not connect to origin".
+   Finding that out costs a subrequest and eight seconds of a minute that
+   has alerts to send, so a failure buys half an hour of not trying again.
+   The in-process path is the fallback, and on a healthy upstream it is
+   perfectly good; the self-call is an attempt at a better one, not a
+   dependency. */
+const SELF_POKE_COOLDOWN_MS = 30 * 60 * 1000;
+let selfPokeBlockedUntil = 0, selfPokeWhy = "";
 async function runAlertsViaRequest(env, T) {
+  if (Date.now() < selfPokeBlockedUntil) {
+    T.via = `in-process (self-call held off after ${selfPokeWhy})`;
+    return runAlerts(env, T);
+  }
   const origin = await knownOrigin(env);
   const token = env.ADMIN_TOKEN;
   if (!origin || !token) {
@@ -4431,13 +4463,15 @@ async function runAlertsViaRequest(env, T) {
   }
   try {
     const r = await timedFetch(`${origin}/alerts/run`, 0,
-      { timeoutMs: 20000, tries: 1, headers: { "X-Admin-Token": token } });
+      { timeoutMs: 8000, tries: 1, headers: { "X-Admin-Token": token } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const got = await r.json();
     Object.assign(T, got, { via: "request" });
     return T;
   } catch (e) {
-    T.viaError = String((e && e.message) || e).slice(0, 160);
+    selfPokeWhy = String((e && e.message) || e).slice(0, 60);
+    selfPokeBlockedUntil = Date.now() + SELF_POKE_COOLDOWN_MS;
+    T.viaError = selfPokeWhy;
     T.via = "in-process (the self-call failed)";
     return runAlerts(env, T);
   }

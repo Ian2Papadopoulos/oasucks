@@ -715,6 +715,79 @@ console.log("\n— the header row, and a ☰ that is just Settings —");
   await v.ctx.close();
 }
 
+/* A rider whose board is thin always asks "is it me?", and the honest
+   answer is usually no. Three states, one line each, dismissible. */
+console.log("\n— it says whose fault it is —");
+{
+  const v = await open();
+  const clean = await v.page.evaluate(() => document.getElementById("sysbar").hidden);
+  ok("a healthy board says nothing at all", clean, "silence is the normal state");
+
+  const down = await v.page.evaluate(async () => {
+    showSys(sysFromResponse({ upstream: { ok: false, reason: "down" } }));
+    const b = document.getElementById("sysbar");
+    return { shown: !b.hidden, text: document.getElementById("sys-t").textContent };
+  });
+  ok("OASA not answering is named as OASA not answering",
+    down.shown && /OASA is not responding/i.test(down.text), down.text);
+  ok("...and says it is not the rider's connection",
+    /your connection/i.test(down.text), down.text);
+
+  const busy = await v.page.evaluate(() => {
+    showSys(sysFromResponse({ upstream: { ok: false, reason: "busy" } }));
+    return document.getElementById("sys-t").textContent;
+  });
+  ok("being turned away for load is a different sentence",
+    /overloaded|turning requests away/i.test(busy), busy);
+
+  const stale = await v.page.evaluate(() => {
+    showSys(sysFromResponse({ stale: true, upstream: { ok: false, reason: "down" } }));
+    return document.getElementById("sys-t").textContent;
+  });
+  ok("...and old-but-real numbers say so, rather than claiming an outage",
+    /last arrivals/i.test(stale), stale);
+
+  /* Dismissing is per reason and it expires: being told about an outage is
+     not consent to be told nothing when it turns into something else. */
+  const after = await v.page.evaluate(() => {
+    document.getElementById("sys-x").click();
+    const hid = document.getElementById("sysbar").hidden;
+    showSys("stale");
+    const stillHid = document.getElementById("sysbar").hidden;
+    showSys("busy");
+    const other = !document.getElementById("sysbar").hidden;
+    return { hid, stillHid, other };
+  });
+  ok("✕ dismisses it", after.hid);
+  ok("...and it stays dismissed for that reason", after.stillHid);
+  ok("...but a different fault still gets to speak", after.other);
+
+  const healed = await v.page.evaluate(() => {
+    hideSys();
+    return { hidden: document.getElementById("sysbar").hidden, reason: sysReason };
+  });
+  ok("a good sweep takes it away again", healed.hidden && healed.reason === null);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+{
+  const v = await open({ lang: "el" });
+  const el = await v.page.evaluate(() => {
+    showSys("down");
+    return document.getElementById("sys-t").textContent;
+  });
+  ok("el: it is translated, like everything else", /ΟΑΣΑ/.test(el), el);
+  await v.ctx.close();
+}
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("the Worker sends the state on every sweep, not only on a 503",
+    /upstream: upstreamState\(\),/.test(w),
+    "a half-filled board is the case where the rider most needs telling");
+  ok("...and separates 'not answering' from 'answering with a refusal'",
+    /reason: "busy"/.test(w) && /reason: "down"/.test(w));
+}
+
 /* "Two minutes have passed and it does not update promptly." A refresh is
    45 seconds, 75 if you have not touched the screen, and the board did not
    move between them — so a bus shown as 4 minutes sat there saying four

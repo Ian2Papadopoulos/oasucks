@@ -847,6 +847,17 @@
   .sm-cancel{width:100%;background:none;border:none;color:var(--ink3);padding:8px;
     font-family:var(--mono);font-size:10.5px;cursor:pointer;
     text-transform:uppercase;letter-spacing:.1em}
+  /* Deliberately not a modal. A maintenance notice interrupts; this one
+     reports weather, and the board underneath it is still worth reading. */
+  .sysbar{display:flex;align-items:center;gap:8px;margin:8px 0 0;
+    background:var(--card);border:1px solid var(--toner);border-left:4px solid var(--flag);
+    border-radius:2px;padding:8px 8px 8px 10px}
+  .sysbar[hidden]{display:none}
+  .sys-t{flex:1;min-width:0;font-family:var(--mono);font-size:11px;line-height:1.45;
+    letter-spacing:.02em;color:var(--toner)}
+  .sys-x{flex:none;background:none;border:none;color:var(--ink3);cursor:pointer;
+    font-size:13px;line-height:1;padding:4px 6px}
+  .sys-x:active{color:var(--toner)}
   .noticebg{position:fixed;inset:0;z-index:4200;background:rgba(23,23,26,.45);
     display:grid;place-items:center;padding:22px}
   .noticebg[hidden]{display:none}
@@ -954,6 +965,12 @@
     </div>
   </header>
 
+  <!-- What is wrong, when it is not the rider's fault. One line, and a ✕
+       that means it. -->
+  <div class="sysbar" id="sysbar" hidden>
+    <span class="sys-t" id="sys-t"></span>
+    <button class="sys-x" id="sys-x" aria-label="dismiss">✕</button>
+  </div>
   <div class="radwrap" id="radwrap" style="display:none">
     <div class="radhd"><span id="t-rad">Ακτίνα</span> <b id="rval">600 m</b><span class="cnt" id="rcount"></span></div>
     <input type="range" id="radius" min="200" max="1000" step="50" value="600" />
@@ -966,7 +983,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v79</span></div>
+  <div class="foot"><span class="ver">v80</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1289,6 +1306,9 @@ const T={
   now:"τώρα",min:"λεπτά",to:"προς",err:"Δεν φορτώθηκαν δεδομένα.",retry:"Δοκίμασε ξανά",
   errCode:c=>`Ο διακομιστής απάντησε με σφάλμα (${c}).`,
   oasaDown:"Ο ΟΑΣΑ δεν απαντά αυτή τη στιγμή. Δεν φταίει η σύνδεσή σου — δοκίμασε σε λίγο.",
+  sysDown:"Ο ΟΑΣΑ δεν απαντά. Δεν φταίει η σύνδεσή σου — οι αφίξεις θα γυρίσουν μόνες τους.",
+  sysBusy:"Ο ΟΑΣΑ είναι υπερφορτωμένος και απορρίπτει αιτήματα. Δοκίμασε σε λίγο.",
+  sysStale:"Δείχνουμε τα τελευταία στοιχεία που έχουμε — ο ΟΑΣΑ δεν απαντά αυτή τη στιγμή.",
   locating:"Εντοπισμός τοποθεσίας…",denied:"Δεν δόθηκε πρόσβαση στην τοποθεσία.",sheetH:"Τοποθεσία",
   /* Ο browser ρωτάει μία φορά. Μετά το «όχι», η εφαρμογή ΔΕΝ μπορεί να
      ξαναρωτήσει — μόνο ο χρήστης, από τις ρυθμίσεις. Άρα το κείμενο εδώ
@@ -1581,6 +1601,9 @@ const T={
   now:"now",min:"min",to:"to",err:"Couldn't load data.",retry:"Try again",
   errCode:c=>`The server answered with an error (${c}).`,
   oasaDown:"OASA is not responding right now. Nothing wrong with your connection — try again shortly.",
+  sysDown:"OASA is not responding. Nothing wrong with your connection — arrivals will come back on their own.",
+  sysBusy:"OASA is overloaded and is turning requests away. Try again shortly.",
+  sysStale:"Showing the last arrivals we have — OASA is not responding right now.",
   locating:"Getting your location…",denied:"Location access was blocked.",sheetH:"Location",
   /* The browser asks once. After a "no", the app CANNOT ask again — only
      the person can, in site settings. So this text has to say exactly
@@ -1943,6 +1966,8 @@ const TAP_GUARD=440;
 
 /* --------------------------- static UI ----------------------------- */
 function applyStatics(){
+  // a bar already on screen must change language with everything else
+  if(sysReason && !$("#sysbar").hidden) $("#sys-t").textContent=sysMsg(sysReason);
   document.documentElement.lang=LANG;
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
   $("#findbtn").title=t("mLine"); $("#findbtn").setAttribute("aria-label",t("mLine"));
@@ -2878,6 +2903,7 @@ async function loadStopsBatch(){
      rider sees "4 min ago" in red rather than a number pretending to be
      current. */
   staleBoard = j.stale === true;
+  showSys(sysFromResponse(j));
   if(Array.isArray(j.reports)){ state.reports=j.reports; repBadge(); }
   farFavsFromSweep(Array.isArray(j.favs)?j.favs:null);
   const prev={}; state.stops.forEach(s=>prev[s.code]=s);
@@ -2951,6 +2977,10 @@ async function loadStops(attempt){
        minute, then say it — sitting on placeholders for the full ladder
        only makes the app look broken for longer than it has to. */
     const definite=String((e&&e.message)||"")==="upstream-down";
+    /* Say it on the first failure, not after the retry ladder. The bar
+       costs nothing to be wrong about for two seconds, and a rider
+       staring at placeholders has already started wondering. */
+    if(definite) showSys("down");
     if(n<LOAD_RETRY_MS.length && !(definite&&n>=1)){
       setTimeout(()=>loadStops(n+1),LOAD_RETRY_MS[n]);
       return;
@@ -2979,7 +3009,7 @@ async function loadStopsLegacy(){
       s.arrivals=p.arrivals; s.arrLoaded=p.arrLoaded; } });
     state.stops=stops; state._mapCodes=null;
     fetchedFrom={lat:here.lat,lng:here.lng};
-    staleBoard=false; markLoaded();
+    staleBoard=false; markLoaded(); hideSys();
     updateRadiusLabel(); renderView();
     warmMap();
 
@@ -3029,6 +3059,44 @@ function stopTimers(){ clearInterval(timer); timer=null; }
    20 s, says the same thing and costs nothing. */
 let lastLoad=0;
 let staleBoard=false;
+/* ------------------------- the status bar --------------------------- *
+ * The rider's question when the board is thin is always "is it me?", and
+ * the honest answer is usually no. This says which, in one line, and can
+ * be dismissed — because someone who has read it once does not need it
+ * every forty-five seconds for the rest of the outage.
+ *
+ * A dismissal is per REASON, not global: being told about an outage is
+ * not consent to be told nothing when the outage turns into something
+ * else. It also expires, so a fault that comes back an hour later is
+ * news again. */
+const SYS_SNOOZE_MS=15*60*1000;
+let sysReason=null, sysDismissed={};
+function sysMsg(reason){
+  return reason==="busy" ? t("sysBusy") : reason==="stale" ? t("sysStale") : t("sysDown");
+}
+function showSys(reason){
+  if(!reason) return hideSys();
+  const until=sysDismissed[reason]||0;
+  if(Date.now()<until){ sysReason=reason; $("#sysbar").hidden=true; return; }
+  sysReason=reason;
+  const bar=$("#sysbar"); if(!bar) return;
+  $("#sys-t").textContent=sysMsg(reason);
+  bar.hidden=false;
+}
+function hideSys(){
+  sysReason=null;
+  const bar=$("#sysbar"); if(bar) bar.hidden=true;
+}
+/* Which of the three, from a response. Stale wins over down: if we have
+   something to show, "these are old" is the more useful sentence. */
+function sysFromResponse(j){
+  if(!j) return null;
+  const u=j.upstream;
+  const reason=(u&&typeof u==="object")?(u.ok?null:(u.reason||"down"))
+    :(u==="down"?"down":null);
+  if(j.stale===true) return "stale";
+  return reason;
+}
 /* Normally "when did we last refresh"; on a board served from the Worker's
    last good sweep, "when was this true", which is the number that matters. */
 /* When the numbers on the board were true. The Worker takes its own cache
@@ -5301,7 +5369,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v79</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v80</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5721,6 +5789,13 @@ $("#pickok").onclick=()=>{ const c=pmap.getCenter(); closePicker();
 $("#sheetbg").onclick=e=>{ if(e.target.id==="sheetbg") closeSheet(); };
 $("#alertbg").onclick=e=>{ if(e.target.id==="alertbg") closeAlerts(); };
 $("#set-alerts").onclick=()=>{ closeSettings(); openAlerts(); };
+/* Dismissing snoozes THIS reason. A different fault still gets to speak,
+   and this one speaks again if it is still going a quarter of an hour
+   later — which is the point at which "still broken" is news again. */
+$("#sys-x").onclick=()=>{
+  if(sysReason) sysDismissed[sysReason]=Date.now()+SYS_SNOOZE_MS;
+  $("#sysbar").hidden=true;
+};
 $("#reportbtn").onclick=openReports;
 $("#rep-x").onclick=closeReports;
 $("#wake").onclick=wake;

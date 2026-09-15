@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v79 defaults** — if you edit the
+breaks if you change it. Values here are the **v80 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -167,6 +167,24 @@ failure. Raise this with the plan, not before.
 The alert path is exempt from the upstream circuit breaker
 (`ALERT_FETCH = { ignoreCircuit: true }`) — one call per stop per minute is not the load
 the breaker exists to shed, and being refused by it loses the bus.
+
+### The upstream status bar
+
+`public/index.html` → `SYS_SNOOZE_MS`: **15 min**. How long dismissing the status strip
+keeps that particular reason quiet. Dismissal is per reason (`down` / `busy` / `stale`),
+never global — a different fault still gets to speak, and the same one speaks again after
+the snooze because "still broken" is news again by then. A successful sweep clears it
+outright.
+
+`worker.js` → `upstreamState()` turns the circuit breaker's last recorded failure into one
+of those three words. `HTTP 429` and `HTTP 5xx` mean OASA answered and refused, so `busy`;
+anything else while the circuit is open means it did not answer at all, so `down`. It is
+attached to every `/nearby` response, not just the 503 path.
+
+`worker.js` → `SELF_POKE_COOLDOWN_MS`: **30 min**. After the cron's self-call fails (this
+zone answers `HTTP 522` — a Worker reaching its own hostname is not guaranteed to work),
+it stops trying for this long and runs the alerts in-process instead. Finding out costs a
+subrequest and eight seconds of a minute that has alerts to send.
 
 ### Why the board no longer freezes between sweeps
 
