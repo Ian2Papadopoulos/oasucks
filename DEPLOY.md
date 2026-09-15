@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v70",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v71",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -633,7 +633,26 @@ Pages → your Worker → **Settings → Trigger Events** lists them. Redeploy t
 > you are on an older deploy and `Trigger Events` is empty, that is what happened; a
 > redeploy fixes it.
 
-**3. Does the rule match?** `alerts.rules` in `/health` is how many are active, and
+**3. The test arrives but a real alert never does.** That sentence describes a chain with
+eight links in it. Ask the Worker which one broke:
+
+```powershell
+curl.exe "https://oasax.com/alerts/why?token=$env:ADMIN_TOKEN"
+```
+
+It walks the same gates the cron walks, for every stored rule, and sends nothing. Read
+two fields per rule:
+
+| Field | What to look for |
+|---|---|
+| `subscription` | `found`, or `MISSING — no sub:… in KV`. **Missing is the common one:** a rule saved on one device names that device's subscription, so testing on a second device proves nothing about it. Delete the rule and set it again from the phone you expect to be notified on. |
+| `blocked` | The rule never got as far as looking at buses. It names the day or the window, with the hours the rule is actually live — which include the lead time, so a 08:30 rule with a 10-minute lead goes live at 08:19. |
+| `verdict` | It looked. Each line says what it found: `WOULD FIRE`, a route that is not yours, a bus further away than any lead, a bus arriving outside your window, or `no arrivals at this stop at all`. |
+
+Run it **inside the window you set**, with a bus actually due. Outside the window every
+rule reports `blocked`, correctly and uselessly.
+
+**4. Does the rule match?** `alerts.rules` in `/health` is how many are active, and
 `alerts.dueNow` says whether any window is open at this moment. An alert fires only for a
 vehicle **arriving inside the window you set** — a bus five minutes away at 08:20 does not
 match an 08:30–08:50 rule. Widen the window to test.

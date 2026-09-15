@@ -25,6 +25,7 @@
  *  GET  /.well-known/security.txt → who to tell about a vulnerability
  *  GET  /stops/search?q=        → find stops by place/stop name
  *  GET  /alerts/windows         → when alerts need the cron (admin)
+ *  GET  /alerts/why             → why each alert did or didn't fire (admin)
  *  POST /admin/reports/purge    → wipe reports / history rows (admin)
  *  POST /stops/dead             → verify+record a stop that has no lines
  *  GET  /reports?by=ID          → active community flags on buses and stations
@@ -41,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v70";
+const APP_VERSION = "v71";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -898,6 +899,10 @@ function athensNow() {
   const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
   const days = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return { day: days[p.weekday], minutes: (+p.hour) * 60 + (+p.minute) };
+}
+function minToHhmm(m) {
+  const t = ((m % 1440) + 1440) % 1440;
+  return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0");
 }
 function hhmmToMin(s) {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || "").trim());
@@ -3439,6 +3444,92 @@ export default {
         if (!rateLimit(ip, del ? "reports-del" : "reports", del ? 30 : 8, 60)) return tooMany();
       }
       return handleReports(req, url, env, ctx);
+    }
+
+    /* Why an alert did or did not fire, rule by rule, right now.
+     *
+     * "The test notification arrives but a real one never does" is a
+     * sentence about a chain with eight links in it, and the app can see
+     * none of them. This walks the same gates runAlerts walks, in the same
+     * order, and reports which one stopped each rule. It sends nothing.
+     *
+     * The order below IS the order in runAlerts; when that changes, this
+     * has to change with it, which is the price of a diagnostic that tells
+     * the truth rather than a second opinion. */
+    if (p.endsWith("/alerts/why")) {
+      if (!adminOK(req, env)) return json({ error: "admin token required" }, 403);
+      if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      const now = athensNow();
+      const all = await readRules(env);
+      const out = [];
+      for (const r of all || []) {
+        const w = { id: r.id, stop: r.stopCode, line: r.lineId,
+          window: `${r.from}–${r.to}`, days: r.days, leads: r.leads };
+        if (r.enabled === false) { w.blocked = "rule is disabled"; out.push(w); continue; }
+        if (!Array.isArray(r.days) || !r.days.includes(now.day)) {
+          w.blocked = `today is day ${now.day}, rule runs on ${JSON.stringify(r.days)}`;
+          out.push(w); continue;
+        }
+        const from = hhmmToMin(r.from), to = hhmmToMin(r.to);
+        if (from == null || to == null) {
+          w.blocked = `unreadable time (from=${r.from} to=${r.to})`; out.push(w); continue;
+        }
+        const maxLead = Math.max(...(r.leads || [10]));
+        const opens = from - maxLead - 1;
+        if (!(now.minutes >= opens && now.minutes <= to)) {
+          w.blocked = `outside the window: it is ${minToHhmm(now.minutes)}, `
+            + `this rule is live ${minToHhmm(opens)}–${minToHhmm(to)}`;
+          out.push(w); continue;
+        }
+        /* The subscription the push would go to. A rule saved on one
+           device names that device; testing on another proves nothing
+           about it, and this is the check that says so. */
+        const sub = await env.ALERTS.get(`sub:${r.sub}`, "json").catch(() => null);
+        w.subscription = sub ? "found" : `MISSING — no sub:${r.sub} in KV`;
+        const arrivals = await getJSON(
+          `${OASA}?act=getStopArrivals&p1=${encodeURIComponent(r.stopCode)}`, 0);
+        if (!Array.isArray(arrivals)) {
+          w.blocked = "OASA returned nothing for this stop"; out.push(w); continue;
+        }
+        const codes = (r.routeCodes || []).map(String);
+        w.arrivals = arrivals.map(a => ({
+          route: String(a.route_code ?? a.RouteCode ?? ""),
+          veh: String(a.veh_code ?? a.VEH_NO ?? ""),
+          min: parseInt(a.btime2 ?? a.btime ?? "", 10),
+        }));
+        w.wantRoutes = codes;
+        const leads = (r.leads || [10, 5]).slice().sort((a, b) => b - a);
+        const reasons = [];
+        for (const a of w.arrivals) {
+          if (codes.length && !codes.includes(a.route)) {
+            reasons.push(`route ${a.route} is not one of ${codes.join(",")}`); continue;
+          }
+          if (!isFinite(a.min)) { reasons.push(`route ${a.route} has no readable time`); continue; }
+          const eta = now.minutes + a.min;
+          if (eta < from - 1 || eta > to) {
+            reasons.push(`${a.route} arrives ${minToHhmm(eta)}, outside ${r.from}–${r.to}`);
+            continue;
+          }
+          const applicable = leads.filter(L => a.min <= L);
+          if (!applicable.length) {
+            reasons.push(`${a.route} is ${a.min}′ away, further than any lead (${leads.join(",")})`);
+            continue;
+          }
+          const already = [];
+          for (const L of applicable) {
+            if (await env.ALERTS.get(`sent:${r.id}:${a.veh}:${L}`)) already.push(L);
+          }
+          if (already.length === applicable.length) {
+            reasons.push(`${a.route} already alerted at ${already.join(",")}′ (expires within the hour)`);
+            continue;
+          }
+          reasons.push(`WOULD FIRE: ${a.route} in ${a.min}′`);
+        }
+        w.verdict = reasons.length ? reasons : ["no arrivals at this stop at all"];
+        out.push(w);
+      }
+      return json({ athensTime: minToHhmm(now.minutes), athensDay: now.day,
+        upstream: circuitState(), rules: out.length ? out : "no rules stored" });
     }
 
     /* What the cron schedule *should* be, from the live rules. Admin —

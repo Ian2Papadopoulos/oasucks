@@ -421,6 +421,91 @@ console.log("\n— health can be asked about the upstream too —");
    wrong, and the answer is usually in a response body we were throwing
    away. 401/403 is the VAPID keys, 404/410 a dead subscription, 400 the
    encryption — four different jobs behind one "not sent". */
+/* "The test notification arrives but a real one never does" is a sentence
+   about a chain with eight links in it, and until now the app could see
+   none of them. This walks the same gates runAlerts walks and names the
+   one that stopped each rule. It sends nothing. */
+console.log("\n— why an alert did not fire —");
+{
+  const store = new Map();
+  const KV = {
+    async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
+    async put(k, v) { store.set(k, v); }, async delete(k) { store.delete(k); },
+  };
+  let arrivals = [];
+  ctx.__arr = () => arrivals;
+  const realGet = vm.runInContext("getJSON", ctx);
+  vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr() : null;`, ctx);
+
+  const now = vm.runInContext("athensNow", ctx)();
+  const hhmm = vm.runInContext("minToHhmm", ctx);
+  const env = { ALERTS: KV, VAPID_PUBLIC_KEY: "p", VAPID_PRIVATE_KEY: "q", ADMIN_TOKEN: "k" };
+  const ask = async () => {
+    ctx.__req = new Request("https://x/alerts/why?token=k", { method: "GET" });
+    ctx.__env = env;
+    return (await vm.runInContext(
+      `__handler.fetch(__req, __env, { waitUntil(){}, passThroughOnException(){} })`, ctx)).json();
+  };
+  const rule = { id: "r1", sub: "s1", enabled: true, stopCode: "10361", lineId: "608",
+    routeCodes: ["2045"], days: [0, 1, 2, 3, 4, 5, 6],
+    from: hhmm(now.minutes), to: hhmm(now.minutes + 20), leads: [10, 5] };
+  const setup = (r, arr, sub = true) => {
+    store.clear(); store.set("rules:index", JSON.stringify([r]));
+    if (sub) store.set("sub:s1", JSON.stringify({ endpoint: "https://p/x", keys: {} }));
+    arrivals = arr;
+  };
+
+  {
+    ctx.__req = new Request("https://x/alerts/why", { method: "GET" });
+    ctx.__env = { ALERTS: KV, VAPID_PUBLIC_KEY: "p", VAPID_PRIVATE_KEY: "q" };
+    const r = await vm.runInContext(
+      `__handler.fetch(__req, __env, { waitUntil(){}, passThroughOnException(){} })`, ctx);
+    ok("it needs the admin token", r.status === 403, String(r.status));
+  }
+  setup(rule, [{ route_code: "2045", veh_code: "V1", btime2: "4" }]);
+  let j = await ask();
+  ok("a rule that should fire says so",
+    /WOULD FIRE/.test(JSON.stringify(j.rules[0].verdict)), JSON.stringify(j.rules[0].verdict));
+  ok("...and confirms the subscription it would go to exists",
+    j.rules[0].subscription === "found", j.rules[0].subscription);
+
+  /* The suspect that matches the symptom exactly: a rule saved on one
+     device names that device, and testing on another proves nothing. */
+  setup({ ...rule, sub: "elsewhere" }, [{ route_code: "2045", veh_code: "V1", btime2: "4" }]);
+  j = await ask();
+  ok("a rule pointing at a subscription that is gone says which",
+    /MISSING/.test(j.rules[0].subscription) && /elsewhere/.test(j.rules[0].subscription),
+    j.rules[0].subscription);
+
+  setup({ ...rule, days: [(now.day + 1) % 7] }, []);
+  j = await ask();
+  ok("the wrong day is named as the wrong day",
+    /today is day/.test(j.rules[0].blocked), j.rules[0].blocked);
+
+  setup({ ...rule, from: hhmm(now.minutes - 120), to: hhmm(now.minutes - 100) }, []);
+  j = await ask();
+  ok("...and a window that has passed gives the hours it is live",
+    /outside the window/.test(j.rules[0].blocked) && /live \d\d:\d\d/.test(j.rules[0].blocked),
+    j.rules[0].blocked);
+
+  setup(rule, [{ route_code: "9999", veh_code: "V2", btime2: "3" }]);
+  j = await ask();
+  ok("another line at the same stop is named, not ignored",
+    /not one of 2045/.test(JSON.stringify(j.rules[0].verdict)),
+    JSON.stringify(j.rules[0].verdict));
+
+  setup(rule, []);
+  j = await ask();
+  ok("a stop with nothing due says exactly that",
+    /no arrivals at this stop/.test(JSON.stringify(j.rules[0].verdict)));
+
+  store.clear();
+  j = await ask();
+  ok("no rules at all is not an error", j.rules === "no rules stored", JSON.stringify(j.rules));
+
+  vm.runInContext(`getJSON = __realGet;`, Object.assign(ctx, { __realGet: realGet }));
+}
+
 console.log("\n— the push service's own verdict, kept —");
 {
   const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
