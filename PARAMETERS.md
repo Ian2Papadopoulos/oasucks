@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v78 defaults** — if you edit the
+breaks if you change it. Values here are the **v79 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -167,6 +167,25 @@ failure. Raise this with the plan, not before.
 The alert path is exempt from the upstream circuit breaker
 (`ALERT_FETCH = { ignoreCircuit: true }`) — one call per stop per minute is not the load
 the breaker exists to shed, and being refused by it loses the bus.
+
+### Why the board no longer freezes between sweeps
+
+A refresh is `refreshMs` (45 s), or `idleMs` (75 s) if you have not touched the screen,
+and arrivals are shared through a **50-second edge cache**. Those stack: a rider could be
+looking at a number that was true 95 seconds ago, and it did not move in between — a bus
+shown as "4 min" sat there saying four until the next fetch landed, by which time it had
+gone. Two changes, neither of which costs a request:
+
+- **The Worker takes its own cache age out of the minutes** before sending them
+  (`getJSONAged` reads the response's `Age` header; `ageArrivals` subtracts it and drops
+  anything the correction puts in the past). So `generated` is honest again.
+- **The client counts down from `generated`.** `etaOf(a)` is `a.min` minus the elapsed
+  minutes, `stillDue(a)` drops a bus more than a minute past due, and the 250 ms tick
+  repaints only when the displayed minute actually changes — once a minute, not four
+  times a second.
+
+The alert path shares both: a three-minute lead has no room for a fifty-second-old
+"3 minutes".
 
 `public/index.html` → `WIN_BACK` / `WIN_AHEAD`: **5** and **30** minutes. The window a
 new alert opens on, measured from the clock — `now − 5 → now + 30`. It used to be a

@@ -445,8 +445,10 @@ console.log("\n— why an alert did not fire —");
   ctx.__arr = () => arrivals;
   ctx.__routes = () => stopRoutes;
   const realGet = vm.runInContext("getJSON", ctx);
+  const realAged = vm.runInContext("getJSONAged", ctx);
   vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
-    : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
+    : u.includes("webRoutesForStop") ? __routes() : null;
+    getJSONAged = async (u) => ({ data: await getJSON(u), ageS: 0 });`, ctx);
 
   const now = vm.runInContext("athensNow", ctx)();
   const hhmm = vm.runInContext("minToHhmm", ctx);
@@ -528,7 +530,8 @@ console.log("\n— why an alert did not fire —");
   j = await ask();
   ok("no rules at all is not an error", j.rules === "no rules stored", JSON.stringify(j.rules));
 
-  vm.runInContext(`getJSON = __realGet;`, Object.assign(ctx, { __realGet: realGet }));
+  vm.runInContext(`getJSON = __realGet; getJSONAged = __realAged;`,
+    Object.assign(ctx, { __realGet: realGet, __realAged: realAged }));
 }
 
 /* /alerts/why can prove a rule SHOULD fire and still tell you nothing
@@ -542,6 +545,7 @@ console.log("\n— what runAlerts does when the push fails —");
     async put(k, v) { store.set(k, v); }, async delete(k) { store.delete(k); },
   };
   const realGet = vm.runInContext("getJSON", ctx);
+  const realAged = vm.runInContext("getJSONAged", ctx);
   const realPush = vm.runInContext("sendPush", ctx);
   const now = vm.runInContext("athensNow", ctx)();
   const hhmm = vm.runInContext("minToHhmm", ctx);
@@ -551,7 +555,8 @@ console.log("\n— what runAlerts does when the push fails —");
   ctx.__arr = () => arrivals; ctx.__routes = () => routes;
   ctx.__reply = () => { calls++; return reply; };
   vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
-    : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
+    : u.includes("webRoutesForStop") ? __routes() : null;
+    getJSONAged = async (u) => ({ data: await getJSON(u), ageS: 0 });`, ctx);
   vm.runInContext(`sendPush = async () => __reply();`, ctx);
 
   const rule = { id: "r1", sub: "s1", enabled: true, stopCode: "10361", lineId: "608",
@@ -606,12 +611,13 @@ console.log("\n— what runAlerts does when the push fails —");
   {
     const T = {}; ctx.__env = env; ctx.__T = T;
     EDGE.clear();                    // nothing stamped: no fallback to reach for
-    vm.runInContext(`getJSON = async () => null;`, ctx);
+    vm.runInContext(`getJSON = async () => null; getJSONAged = async () => ({ data: null, ageS: 0 });`, ctx);
     await vm.runInContext(`runAlerts(__env, __T)`, ctx);
     ok("...and OASA not answering at all says so, rather than passing quietly",
       /NO ANSWER/.test(String((T.stops || {})["10361"])), JSON.stringify(T.stops));
     vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
-      : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
+      : u.includes("webRoutesForStop") ? __routes() : null;
+      getJSONAged = async (u) => ({ data: await getJSON(u), ageS: 0 });`, ctx);
   }
   /* "The operation was aborted": the cron's fetch to OASA times out where
      the rider path, hitting the same host at the same moment, succeeds. So
@@ -623,12 +629,12 @@ console.log("\n— what runAlerts does when the push fails —");
     reply = { status: 201, detail: "", gone: false };
     await vm.runInContext(`runAlerts(__env, __T)`, ctx);
     ok("a live fetch is used and stamped for later",
-      /live or edge cache/.test(String((T.stops || {})["10361"])), JSON.stringify(T.stops));
+      /\(live\)/.test(String((T.stops || {})["10361"])), JSON.stringify(T.stops));
 
     /* Now OASA goes dark. The bus is still coming; the last answer still
        knows roughly where it is. */
     const T2 = {}; ctx.__T = T2;
-    vm.runInContext(`getJSON = async () => null;`, ctx);
+    vm.runInContext(`getJSON = async () => null; getJSONAged = async () => ({ data: null, ageS: 0 });`, ctx);
     store.delete("sent:r1:V1:10"); store.delete("sent:r1:V1:5");
     const before = calls;
     await vm.runInContext(`runAlerts(__env, __T2)`,
@@ -640,12 +646,13 @@ console.log("\n— what runAlerts does when the push fails —");
     ok("...so the alert still goes out instead of being lost",
       calls > before, `${calls - before} pushes`);
     vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
-      : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
+      : u.includes("webRoutesForStop") ? __routes() : null;
+      getJSONAged = async (u) => ({ data: await getJSON(u), ageS: 0 });`, ctx);
   }
   {
     const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
     ok("the alert fetch shares the rider's edge cache rather than bypassing it",
-      /getJSON\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
+      /getJSONAged\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
       "a stop somebody is watching costs OASA nothing");
     ok("...and gets a longer rope than a rider does",
       /ALERT_FETCH = \{ ignoreCircuit: true, timeoutMs: 12000, tries: 3 \}/.test(w));
@@ -665,7 +672,7 @@ console.log("\n— what runAlerts does when the push fails —");
     const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
     ok("the breaker cannot refuse the alert cron",
       /const ALERT_FETCH = \{ ignoreCircuit: true,/.test(w)
-      && /getJSON\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
+      && /getJSONAged\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
       "one call per stop per minute is not what a breaker is for");
     ok("...and the line lookup behind it is exempt too",
       /fetchStopRoutes\(stopCode, ALERT_FETCH\)/.test(w));
@@ -686,8 +693,8 @@ console.log("\n— what runAlerts does when the push fails —");
       /window is open/.test(String(T.stopped)), String(T.stopped));
   }
 
-  vm.runInContext(`getJSON = __realGet; sendPush = __realPush;`,
-    Object.assign(ctx, { __realGet: realGet, __realPush: realPush }));
+  vm.runInContext(`getJSON = __realGet; getJSONAged = __realAged; sendPush = __realPush;`,
+    Object.assign(ctx, { __realGet: realGet, __realAged: realAged, __realPush: realPush }));
 }
 
 /* The identical OASA call succeeds every time from `fetch` and aborts

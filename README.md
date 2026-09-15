@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v78.**
+version: v79.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -22,7 +22,7 @@ becomes one marker carrying the head count.
 See [Live reports](#live-reports) for the exact rules.
 
 > The service-stats **screen** (line reliability, bunching, missing trips) was retired in
-> v18 to make room for reports, and its client code was deleted in v78 — it had been
+> v18 to make room for reports, and its client code was deleted in v79 — it had been
 > shipping in every page load for sixty versions with nothing able to open it. The
 > tracking **backend** is untouched and still collects the data, so the screen can come
 > back from `/track/*` whenever it earns its place. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 844 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 852 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
@@ -128,7 +128,7 @@ The app auto-detects its backend at startup:
   used to be a third mode here that routed every call through free open CORS relays, so
   one 404 from the Worker could silently start sending riders' coordinates to a
   stranger's server for the rest of the session, with nothing on screen to say so.
-  Removed in v78 — a missing backend is now a missing backend.
+  Removed in v79 — a missing backend is now a missing backend.
 
 ## Deploy in ~5 minutes
 
@@ -822,6 +822,27 @@ Three changes close it:
 `/alerts/why` returns the last trace from a minute that actually had a rule due, as
 `lastCronWithWork`. Quiet minutes do not overwrite it.
 
+#### The board counts down now
+
+Reported after the split above was fixed: *"between the last refreshes 2 minutes have
+passed and it does not update promptly."* Correct, and it affected alerts for the same
+reason. A refresh is 45 s (75 s idle) and arrivals are shared through a 50-second edge
+cache, so a rider could be reading a number that was true 95 seconds ago — **and it did
+not move in between**. A bus shown as "4 min" said four until the next fetch landed.
+
+Two fixes, neither costing a request:
+
+- The **Worker subtracts its own cache age** from the minutes before sending them
+  (`getJSONAged` reads the response's `Age` header), so `generated` means what it says.
+- The **client counts down from `generated`** instead of freezing. `etaOf()` is the one
+  clock every screen reads — list rows, map popups, the stop card, and the "is a bus
+  worth waiting for" test. `stillDue()` drops a bus more than a minute past due, because
+  keeping its row is worse than showing nothing: that is the row people step out to the
+  kerb for.
+
+The repaint happens on the existing 250 ms tick but only when the displayed minute
+actually changes — once a minute.
+
 #### The fetch/scheduled split
 
 Then the trace said `NO ANSWER from OASA on this run — The operation was aborted`, and
@@ -908,7 +929,7 @@ instead of only a tally, and `circuitState().lastFail` carries it into every dia
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by
 calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
 the rest of the session on third-party CORS proxies: no stops, no markers, no error.
-(Those proxies are gone as of v78; see above.)
+(Those proxies are gone as of v79; see above.)
 Then, briefly, by calling `/health`, which asked the right question but still hung the
 entire boot on one request winning. Both failed in production. Both looked to the rider
 like an app that simply does not work.

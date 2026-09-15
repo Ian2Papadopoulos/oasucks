@@ -715,6 +715,59 @@ console.log("\n— the header row, and a ☰ that is just Settings —");
   await v.ctx.close();
 }
 
+/* "Two minutes have passed and it does not update promptly." A refresh is
+   45 seconds, 75 if you have not touched the screen, and the board did not
+   move between them — so a bus shown as 4 minutes sat there saying four
+   until the next fetch landed, by which time it had gone. */
+console.log("\n— the minutes count down between sweeps —");
+{
+  const v = await open();
+  const before = await v.page.evaluate(() =>
+    [...document.querySelectorAll("#list .row .eta .v")].map(x => x.textContent));
+  ok("the board starts with the minutes the server sent", before.length > 0, before.join(","));
+
+  /* Wind the clock the board is dated from back three minutes, which is
+     what sitting still for three minutes does. */
+  const after = await v.page.evaluate(async () => {
+    boardAt -= 3 * 60000;
+    etaDrift = -1;                       // force the tick to notice
+    renderView();
+    await new Promise(r => setTimeout(r, 150));
+    return [...document.querySelectorAll("#list .row .eta .v")].map(x => x.textContent);
+  });
+  ok("...and three minutes later they are three minutes smaller",
+    JSON.stringify(after) !== JSON.stringify(before), `${before.join(",")} -> ${after.join(",")}`);
+
+  /* A bus more than a minute past due has gone. Keeping its row is worse
+     than showing nothing: it is the one people step out to the kerb for. */
+  const gone = await v.page.evaluate(async () => {
+    boardAt -= 30 * 60000;
+    etaDrift = -1; renderView();
+    await new Promise(r => setTimeout(r, 150));
+    return { rows: document.querySelectorAll("#list .row").length,
+             empty: document.querySelectorAll("#list .empty").length };
+  });
+  ok("...and a bus half an hour past due is off the board, not frozen on it",
+    gone.rows === 0 && gone.empty > 0, JSON.stringify(gone));
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+{
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("the board is dated from when the numbers were true, not when they arrived",
+    /lastLoad = gen \? gen\*1000 : Date\.now\(\)/.test(html),
+    "the Worker takes its own cache age out before sending them");
+  ok("...and every place that shows a minute uses the same clock",
+    !/\$\{a\.min\}/.test(html) && !/String\(a\.min\)/.test(html),
+    "one countdown, not one per screen");
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("the Worker subtracts its cache age from the minutes it serves",
+    /function ageArrivals/.test(w) && /ageArrivals\(\(Array\.isArray\(got\.data\)/.test(w),
+    "a 50-second-old '4 minutes' is really three");
+  ok("...reading the age from the response, not guessing it",
+    /parseInt\(r\.headers\.get\("Age"\)/.test(w));
+}
+
 /* Two string tables maintained by hand will drift, and the failure is
    invisible in the language you are not testing in: a key added to `en`
    and missed in `el` renders as `undefined` for every Greek rider. */

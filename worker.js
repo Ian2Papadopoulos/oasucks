@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v78";
+const APP_VERSION = "v79";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -236,6 +236,49 @@ function circuitState() {
    module state, so user traffic opening the circuit could starve a cron
    sharing that isolate — while a different isolate answered /alerts/why
    with a perfectly closed one. Failures are still recorded either way. */
+/* Same as getJSON, but says how old the answer is. A cache hit carries an
+   `Age` header, and for arrivals that number is not bookkeeping — it is
+   minutes. A 50-second-old "4 minutes" is really three, and the rider is
+   looking at a number that has already expired. */
+async function getJSONAged(urlStr, cacheTtl, opts) {
+  const upstream = urlStr.startsWith(OASA);
+  if (upstream && !(opts && opts.ignoreCircuit) && circuitOpen()) return { data: null, ageS: 0 };
+  try {
+    const r = await timedFetch(urlStr, cacheTtl, opts);
+    if (!r.ok) { if (upstream) circuitNote(false, `HTTP ${r.status}`); return { data: null, ageS: 0 }; }
+    const ageS = Math.max(0, parseInt(r.headers.get("Age") || "0", 10) || 0);
+    const data = await r.json();
+    if (upstream) circuitNote(true);
+    return { data, ageS };
+  } catch (e) {
+    if (upstream) circuitNote(false, String((e && e.message) || e));
+    return { data: null, ageS: 0 };
+  }
+}
+/* Arrival minutes, with the cache's age taken out of them. Rounding is
+   deliberate: OASA gives whole minutes, so anything under 30 seconds of
+   age is noise and anything over it is a minute the rider does not have.
+   A bus the correction puts in the past has gone — it is not news. */
+/* The same idea on OASA's own field names, for the paths that have not
+   mapped them yet. One rule, two shapes — not two rules. */
+function agedRaw(list, ageS) {
+  const drift = Math.round((ageS || 0) / 60);
+  if (!drift) return list;
+  return list.map(a => {
+    const m = parseInt(a.btime2 ?? a.btime ?? "", 10);
+    if (!isFinite(m)) return a;
+    return { ...a, btime2: String(m - drift), btime: String(m - drift) };
+  }).filter(a => {
+    const m = parseInt(a.btime2 ?? "", 10);
+    return !isFinite(m) || m >= 0;
+  });
+}
+function ageArrivals(list, ageS) {
+  const drift = Math.round((ageS || 0) / 60);
+  if (!drift) return list;
+  return list.map(a => ({ ...a, min: a.min - drift })).filter(a => a.min >= 0);
+}
+
 async function getJSON(urlStr, cacheTtl, opts) {
   const upstream = urlStr.startsWith(OASA);
   if (upstream && !(opts && opts.ignoreCircuit) && circuitOpen()) return null;
@@ -1075,15 +1118,21 @@ async function arrivalsForAlert(stopCode) {
      OASA nothing, and at a quiet one it pays once for everybody. Fifty
      seconds of staleness against a three-minute lead is not a trade worth
      a request. */
-  const fresh = await getJSON(url, ACT_TTL.getStopArrivals, ALERT_FETCH);
-  if (Array.isArray(fresh)) {
-    const at = Math.floor(Date.now() / 1000);
+  const got = await getJSONAged(url, ACT_TTL.getStopArrivals, ALERT_FETCH);
+  /* The same correction the rider board gets, and for a sharper reason: a
+     three-minute lead has no room for a fifty-second-old "3 minutes". The
+     shared cache still saves the request; it just no longer costs the
+     rider the alert. */
+  const fresh = Array.isArray(got.data) ? agedRaw(got.data, got.ageS) : null;
+  if (fresh) {
+    const at = Math.floor(Date.now() / 1000) - (got.ageS || 0);
     await cache.put(stampKey, new Response(JSON.stringify(fresh), {
       headers: { "Content-Type": "application/json",
         "Cache-Control": `public, max-age=${ALERT_STALE_S}`,
         "X-Fetched-At": String(at) },
     })).catch(() => {});
-    return { arrivals: fresh, ageS: 0, source: "live or edge cache" };
+    return { arrivals: fresh, ageS: got.ageS || 0,
+      source: got.ageS ? `edge cache ${got.ageS}s, minutes aged` : "live" };
   }
 
   /* The fallback that makes this whole function exist. The cron's path to
@@ -1101,15 +1150,8 @@ async function arrivalsForAlert(stopCode) {
   })();
   if (!old) return null;
   const drift = Math.round(old.ageS / 60);
-  const aged = old.arrivals.map(a => {
-    const m = parseInt(a.btime2 ?? a.btime ?? "", 10);
-    if (!isFinite(m)) return a;
-    return { ...a, btime2: String(m - drift), btime: String(m - drift) };
-  }).filter(a => {
-    const m = parseInt(a.btime2 ?? "", 10);
-    return !isFinite(m) || m >= 0;            // already arrived: not news
-  });
-  return { arrivals: aged, ageS: old.ageS, source: `stale ${old.ageS}s, minutes aged by ${drift}` };
+  return { arrivals: agedRaw(old.arrivals, old.ageS), ageS: old.ageS,
+    source: `stale ${old.ageS}s, minutes aged by ${drift}` };
 }
 /* Bypassing the breaker means this path needs its own ceiling, and the
    runtime imposes one anyway: a Worker invocation gets 50 subrequests on
@@ -1969,16 +2011,23 @@ async function handleNearby(url, env, ctx) {
   if (ctx && slDirty) ctx.waitUntil(saveStopLines(env));
 
   // live arrivals only for the stops actually shown in the list
+  /* The arrivals are shared through a 50-second edge cache, so a rider can
+     be handed a list that was true nearly a minute ago. Take the age out
+     of the minutes rather than passing the staleness on: the cache saves
+     the request either way, and the number on screen should mean what it
+     says. */
+  let oldestS = 0;
   await pool(stops.slice(0, limit).map(s => async () => {
-    const raw = await getJSON(
+    const got = await getJSONAged(
       `${OASA}?act=getStopArrivals&p1=${encodeURIComponent(s.code)}`, ACT_TTL.getStopArrivals);
-    s.arrivals = (Array.isArray(raw) ? raw : [])
+    if (got.ageS > oldestS) oldestS = got.ageS;
+    s.arrivals = ageArrivals((Array.isArray(got.data) ? got.data : [])
       .map(a => ({
         code: String(pickField(a, "route_code", "RouteCode") || ""),
         veh: String(pickField(a, "veh_code", "VEH_NO", "veh_no") || ""),
         min: parseInt(pickField(a, "btime2", "btime", "stop_time") || "", 10),
       }))
-      .filter(a => isFinite(a.min))
+      .filter(a => isFinite(a.min)), got.ageS)
       .sort((x, y) => x.min - y.min);
     s.detail = true;
   }), 6);
