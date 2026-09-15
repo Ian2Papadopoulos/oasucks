@@ -102,8 +102,9 @@ https://oasa-stop.<your-subdomain>.workers.dev
   Location → Allow.
 - **Language:** ☰ → Γλώσσα / Language. About *and* Terms & privacy both follow it —
   check `/legal.html` in both settings.
-- **☰:** opens Settings itself — language, hide-empty-stops, push, and the **FAQ**, whose
-  last entry links **Terms & privacy** (`/legal.html`).
+- **☰:** opens Settings itself — your **alerts** (first row, with the count), language,
+  hide-empty-stops, push, and the **FAQ**, whose last entry links **Terms & privacy**
+  (`/legal.html`).
 - **⌕ (first in the header):** find a line and preview its route, or find a stop by name.
 - **Holding a stop** — in the list, on the map, on the stop card, or in a search result —
   blurs the board and offers **Pin / Unpin** and **Set alert**. Check it on a mouse too:
@@ -263,7 +264,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v72",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v73",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -644,8 +645,18 @@ eight links in it. Ask the Worker which one broke:
 curl.exe "https://oasax.com/alerts/why?token=$env:ADMIN_TOKEN"
 ```
 
-It walks the same gates the cron walks, for every stored rule, and sends nothing. Read
-two fields per rule:
+It walks the same gates the cron walks, for every stored rule, and sends nothing.
+
+**Read the three top-level fields first** — they are about the machinery, not any one
+rule, and a rule that looks perfect cannot fire if these are wrong:
+
+| Field | What to look for |
+|---|---|
+| `cron` | `healthy: true` means the scheduler is calling the Worker. `healthy: false` means **nothing can fire, however correct every rule is** — check `[triggers]` in `wrangler.toml` and Workers & Pages → your Worker → Settings → Trigger Events, then redeploy. This is the one fault that makes a perfect `WOULD FIRE` verdict meaningless. |
+| `lastPush` | What happened the last time an alert was actually attempted: the rule, route, vehicle, lead, and the push service's own answer. `ok: false` with a `status` is the push service refusing — 401/403 is the VAPID keys, 404/410 a subscription the browser has retired, 400 the encryption. `"no alert push has ever been attempted"` with a healthy cron means no rule has ever got as far as sending. |
+| `lastDelivered` | How long ago a push last went out successfully. |
+
+Then read the per-rule fields:
 
 | Field | What to look for |
 |---|---|
@@ -655,6 +666,18 @@ two fields per rule:
 
 Run it **inside the window you set**, with a bus actually due. Outside the window every
 rule reports `blocked`, correctly and uselessly.
+
+**3b. `WOULD FIRE` but the phone stayed quiet.** The rule is right; something downstream
+of it is not. In order of likelihood:
+
+- **`cron.healthy` is false.** Nothing is calling `runAlerts`. Fix the triggers.
+- **`lastPush.ok` is false.** The push service refused; `status` and `detail` say why.
+- **`lastPush` is a different rule, or missing entirely.** The run is not reaching this
+  rule. Check `upstream.open` — an open circuit means OASA is being rate-limited and the
+  arrivals fetch is being skipped.
+- **`subscription` is `found` but the phone is a second device.** A rule names the
+  subscription of the device it was made on. The push is being delivered — to the other
+  phone.
 
 **4. Does the rule match?** `alerts.rules` in `/health` is how many are active, and
 `alerts.dueNow` says whether any window is open at this moment. An alert fires only for a

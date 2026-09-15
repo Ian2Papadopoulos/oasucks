@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v72";
+const APP_VERSION = "v73";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1036,8 +1036,16 @@ async function runAlerts(env) {
     let lineOf = null;
     const lineFor = async rc => {
       if (lineOf === null) {
-        const r = await fetchStopRoutes(stopCode);
-        lineOf = new Map(((r && r.routes) || []).map(x => [String(x.code), String(x.id)]));
+        /* Guarded, and the empty map is cached on failure. This runs on
+           arrivals the rule did NOT ask for, so it must never be able to
+           end the run: without the catch, one bad minute upstream while
+           some other line happened to be first in the list would throw
+           past every rule still waiting, including the one whose bus was
+           pulling in. A miss here costs a fallback, not an alert. */
+        try {
+          const r = await fetchStopRoutes(stopCode);
+          lineOf = new Map(((r && r.routes) || []).map(x => [String(x.code), String(x.id)]));
+        } catch (_) { lineOf = new Map(); }
       }
       return lineOf.get(String(rc)) || null;
     };
@@ -1082,8 +1090,15 @@ async function runAlerts(env) {
         // With one tag per rule+vehicle only the first of a 15/10/5 set
         // ever rang; per-lead tags make each one its own notification.
         const firingLead = Math.min(...unsent.map(([, L]) => L));
+        /* Every outcome of this attempt is written down, because the
+           thing that made alerts unfixable was that a failed send left no
+           trace anywhere: /alerts/why could prove a rule SHOULD fire and
+           nothing could say what happened when it did. A swallowed error
+           is a silent alert. */
+        let note = null;
         try {
           const sub = await env.ALERTS.get(`sub:${rule.sub}`, "json");
+          if (!sub) note = { ok: false, why: `no sub:${rule.sub} in KV` };
           if (sub) {
             const sent = await sendPush(sub, {
               title: `${rule.lineId || "Λεωφορείο"} σε ${min}′`,
@@ -1097,11 +1112,24 @@ async function runAlerts(env) {
             if (sent.gone) await env.ALERTS.delete(`sub:${rule.sub}`).catch(() => {});
             await setMeta(env, "alert_last", Math.floor(Date.now() / 1000));
             if (sent.status < 300) { try { await bumpUsage(env, ["alert"]); } catch (_) {} }
+            note = { ok: sent.status < 300, status: sent.status,
+              detail: String(sent.detail || "").slice(0, 200), gone: !!sent.gone };
           }
-        } catch (_) { /* keep going */ }
+        } catch (e) { note = { ok: false, why: String((e && e.message) || e).slice(0, 200) }; }
 
-        for (const [k] of unsent) {
-          await env.ALERTS.put(k, "1", { expirationTtl: 3600 });
+        await setMeta(env, "alert_last_try", JSON.stringify({
+          at: Math.floor(Date.now() / 1000), rule: rule.id, line: rule.lineId || null,
+          route: rc, veh, lead: firingLead, min, ...note,
+        })).catch(() => {});
+
+        /* Only a delivered push marks the lead as spent. Writing the
+           dedupe key after a FAILED send is how one bad minute used to
+           cost the whole hour: the key said "already alerted" for the next
+           3,600 seconds and every retry inside the lead was skipped. */
+        if (note && note.ok) {
+          for (const [k] of unsent) {
+            await env.ALERTS.put(k, "1", { expirationTtl: 3600 }).catch(() => {});
+          }
         }
       }
     }
@@ -3559,8 +3587,32 @@ export default {
         w.verdict = reasons.length ? reasons : ["no arrivals at this stop at all"];
         out.push(w);
       }
+      /* The one thing every gate above assumes and none of them can
+         check: that anything calls runAlerts at all. A rule that WOULD
+         FIRE and a scheduler that stopped look identical from here, and
+         they need opposite fixes — so the answer comes in the same
+         response as the question. */
+      const nowS = Math.floor(Date.now() / 1000);
+      const cronLast = Number(await getMeta(env, "cron_last")) || 0;
+      const alertLast = Number(await getMeta(env, "alert_last")) || 0;
+      let lastTry = null;
+      try { lastTry = JSON.parse(await getMeta(env, "alert_last_try") || "null"); } catch (_) {}
       return json({ athensTime: minToHhmm(now.minutes), athensDay: now.day,
-        upstream: circuitState(), rules: out.length ? out : "no rules stored" });
+        upstream: circuitState(),
+        cron: cronLast
+          ? { lastRunAgoSec: nowS - cronLast,
+              healthy: nowS - cronLast < 180,
+              note: nowS - cronLast < 180 ? "the scheduler is calling us"
+                : "NOT RUNNING — no cron in the last 3 minutes, so no rule can fire "
+                  + "however correct it is. Check [triggers] in wrangler.toml and redeploy." }
+          : { lastRunAgoSec: null, healthy: false,
+              note: "NEVER — this Worker has no record of a cron run. Either D1 is "
+                + "unbound or the schedule was never deployed." },
+        lastPush: lastTry
+          ? { ...lastTry, agoSec: nowS - (lastTry.at || nowS) }
+          : "no alert push has ever been attempted",
+        lastDelivered: alertLast ? { agoSec: nowS - alertLast } : "never",
+        rules: out.length ? out : "no rules stored" });
     }
 
     /* What the cron schedule *should* be, from the live rules. Admin —

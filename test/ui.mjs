@@ -482,11 +482,18 @@ console.log("\n— an alert can be edited, not only deleted —");
   const fresh = await v.page.evaluate(() => ({
     head: !!document.querySelector("#ruleform .fhead"),
     from: document.getElementById("f-from").value,
+    to: document.getElementById("f-to").value,
     days: [...document.querySelectorAll("#f-days .chip")].filter(c => c.classList.contains("on")).length,
+    want: nowWindow(),
   }));
   ok("a new alert afterwards is a new alert, not the last one again",
-    !fresh.head && fresh.from === "08:30" && fresh.days === 5,
-    `${fresh.from}, ${fresh.days} days`);
+    !fresh.head && fresh.days === 5, `${fresh.from}, ${fresh.days} days`);
+  /* 08:30–08:50 was somebody else's commute. You set an alert because of
+     the bus you are waiting for now, so the window starts five minutes
+     behind the clock and runs half an hour ahead. */
+  ok("...and its window is around right now, not a hard-coded morning",
+    fresh.from === fresh.want.from && fresh.to === fresh.want.to,
+    `${fresh.from}–${fresh.to}`);
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
 }
@@ -654,11 +661,15 @@ console.log("\n— the header row, and a ☰ that is just Settings —");
   const v = await open();
   const ids = await v.page.evaluate(() =>
     [...document.querySelectorAll(".brand .iconbtn")].map(b => b.id));
-  ok("five buttons, in the order you reach for them",
-    ids.join(",") === "findbtn,planbtn,reportbtn,bell,menubtn", ids.join(","));
+  ok("four buttons, in the order you reach for them",
+    ids.join(",") === "findbtn,planbtn,reportbtn,menubtn", ids.join(","));
   ok("...search first, in front of the journey", ids[0] === "findbtn");
   ok("...and ☰ last, because it is the one you use least",
     ids[ids.length - 1] === "menubtn");
+  /* The bell was a button you pressed to make an alert. Alerts are made by
+     holding a stop now, so what is left is reviewing the ones you set —
+     which is a settings row, not a thing you reach for at a bus stop. */
+  ok("no bell in the header any more", !ids.includes("bell"), ids.join(","));
   ok("the search button opens the line search",
     await v.page.evaluate(async () => {
       document.getElementById("findbtn").click();
@@ -673,6 +684,33 @@ console.log("\n— the header row, and a ☰ that is just Settings —");
       return document.getElementById("setbg").classList.contains("on")
         && document.getElementById("menu").hidden;
     }), "a menu with one row is a button in a costume");
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+{
+  const v = await open();
+  const row = await v.page.evaluate(async () => {
+    state.subId = "s1";
+    state.rules = [{ id: "a", enabled: true }, { id: "b", enabled: true }];
+    bellBadge();
+    document.getElementById("menubtn").click();
+    await new Promise(r => setTimeout(r, 250));
+    return { label: document.getElementById("set-alerts-t").textContent,
+             value: document.getElementById("set-alerts-v").textContent,
+             first: document.querySelector("#setbg .setrow").id };
+  });
+  ok("Settings carries the alerts, first in the panel", row.first === "set-alerts");
+  ok("...named, so it is not a mystery row", /alert/i.test(row.label), row.label);
+  ok("...and still says how many are set, which is what the badge did",
+    row.value === "2", row.value);
+  const opened = await v.page.evaluate(async () => {
+    document.getElementById("set-alerts").click();
+    await new Promise(r => setTimeout(r, 300));
+    return { alerts: document.getElementById("alertbg").classList.contains("on"),
+             settings: document.getElementById("setbg").classList.contains("on") };
+  });
+  ok("...opening the alerts panel, and closing Settings behind it",
+    opened.alerts && !opened.settings, JSON.stringify(opened));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
 }

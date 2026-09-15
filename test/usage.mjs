@@ -522,6 +522,70 @@ console.log("\n— why an alert did not fire —");
   vm.runInContext(`getJSON = __realGet;`, Object.assign(ctx, { __realGet: realGet }));
 }
 
+/* /alerts/why can prove a rule SHOULD fire and still tell you nothing
+   about what happened when it did, because runAlerts swallowed the
+   result. These drive the real thing. */
+console.log("\n— what runAlerts does when the push fails —");
+{
+  const store = new Map();
+  const KV = {
+    async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
+    async put(k, v) { store.set(k, v); }, async delete(k) { store.delete(k); },
+  };
+  const realGet = vm.runInContext("getJSON", ctx);
+  const realPush = vm.runInContext("sendPush", ctx);
+  const now = vm.runInContext("athensNow", ctx)();
+  const hhmm = vm.runInContext("minToHhmm", ctx);
+  const env = { ALERTS: KV, VAPID_PUBLIC_KEY: "p", VAPID_PRIVATE_KEY: "q" };
+
+  let arrivals = [], routes = [], reply = { status: 201, detail: "", gone: false }, calls = 0;
+  ctx.__arr = () => arrivals; ctx.__routes = () => routes;
+  ctx.__reply = () => { calls++; return reply; };
+  vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
+    : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
+  vm.runInContext(`sendPush = async () => __reply();`, ctx);
+
+  const rule = { id: "r1", sub: "s1", enabled: true, stopCode: "10361", lineId: "608",
+    routeCodes: ["2045"], days: [0, 1, 2, 3, 4, 5, 6],
+    from: hhmm(now.minutes), to: hhmm(now.minutes + 20), leads: [10, 5] };
+  const run = async (arr, rep, rts = []) => {
+    store.clear(); store.set("rules:index", JSON.stringify([rule]));
+    store.set("sub:s1", JSON.stringify({ endpoint: "https://p/x", keys: {} }));
+    arrivals = arr; routes = rts; reply = rep; calls = 0;
+    ctx.__env = env;
+    await vm.runInContext(`runAlerts(__env)`, ctx);
+  };
+  const sentKeys = () => [...store.keys()].filter(k => k.startsWith("sent:"));
+
+  await run([{ route_code: "2045", veh_code: "V1", btime2: "4" }], { status: 201, detail: "", gone: false });
+  ok("a delivered push marks its leads as spent", sentKeys().length === 2, sentKeys().join(","));
+  ok("...and it went out once, not once per lead", calls === 1, String(calls));
+
+  /* The bug that turned one bad minute into a lost hour: the dedupe key
+     was written whatever the push service said, so a 500 or a timeout
+     inside the lead silently cancelled every retry for the next hour. */
+  await run([{ route_code: "2045", veh_code: "V1", btime2: "4" }], { status: 502, detail: "bad gateway", gone: false });
+  ok("a push that FAILED does not mark the lead as spent",
+    sentKeys().length === 0, sentKeys().join(",") || "(none)");
+  ok("...so the next minute tries again rather than skipping the hour",
+    (await (async () => { const before = calls; arrivals = [{ route_code: "2045", veh_code: "V1", btime2: "4" }];
+      ctx.__env = env; await vm.runInContext(`runAlerts(__env)`, ctx); return calls > before; })()));
+
+  /* Unguarded, this call could end the whole run — and it runs on
+     arrivals the rule did NOT ask for, so the bus it skipped past was
+     somebody else's alert. */
+  ctx.__routes = () => { throw new Error("upstream fell over"); };
+  await run([{ route_code: "9999", veh_code: "V9", btime2: "2" },
+             { route_code: "2045", veh_code: "V1", btime2: "4" }],
+            { status: 201, detail: "", gone: false });
+  ok("a line lookup that throws does not abort the run behind it",
+    calls === 1 && sentKeys().length === 2, `${calls} pushes, ${sentKeys().length} keys`);
+  ctx.__routes = () => routes;
+
+  vm.runInContext(`getJSON = __realGet; sendPush = __realPush;`,
+    Object.assign(ctx, { __realGet: realGet, __realPush: realPush }));
+}
+
 console.log("\n— the push service's own verdict, kept —");
 {
   const w = readFileSync(path.join(REPO, "worker.js"), "utf8");

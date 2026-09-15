@@ -932,7 +932,6 @@
       <button class="iconbtn" id="findbtn" aria-label="search">⌕</button>
       <button class="iconbtn" id="planbtn" aria-label="journey"><span class="ab">A<i></i>B</span></button>
       <button class="iconbtn alert" id="reportbtn" aria-label="live reports"><span class="livedot"></span><span class="badge" id="repcount" style="display:none">0</span></button>
-      <button class="iconbtn" id="bell">🔔<span class="badge" id="bellcount" style="display:none">0</span></button>
       <button class="iconbtn" id="menubtn" aria-label="menu" aria-expanded="false">
         <span class="bars"><i></i><i></i><i></i></span></button>
     </div>
@@ -967,7 +966,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v72</span></div>
+  <div class="foot"><span class="ver">v73</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1131,6 +1130,11 @@
 
 <div class="sheet-bg" id="setbg"><div class="sheet">
   <h3 id="set-h">Ρυθμίσεις</h3>
+  <!-- Alerts are made by holding a stop now, so the bell was no longer a
+       thing you reach for in a hurry — it is where you go back to review
+       what you already set. That is a settings row, not a header button. -->
+  <button class="setrow" id="set-alerts">
+    <span class="setlab" id="set-alerts-t"></span><span class="setval" id="set-alerts-v"></span></button>
   <button class="setrow" id="set-lang">
     <span class="setlab" id="set-lang-t"></span><span class="setval" id="set-lang-v"></span></button>
   <button class="setrow" id="set-empty">
@@ -1394,8 +1398,8 @@ const T={
   tour6p:"Το κουμπί A→B πάνω δεξιά βρίσκει διαδρομή από ένα σημείο σε άλλο: διεύθυνση, "+
     "στάση ή η θέση σου. Αποθήκευσε Σπίτι και Δουλειά και δεν τα ξαναγράφεις.",
   tour4h:"Ειδοποιήσεις",
-  tour4p:"Βάλε ειδοποίηση για οποιαδήποτε στάση, όχι μόνο τις κοντινές: το καμπανάκι έχει "+
-    "αναζήτηση για κάθε στάση της Αθήνας.",
+  tour4p:"Κράτα πατημένη μια στάση και διάλεξε «Ειδοποίηση» — για οποιαδήποτε στάση, όχι "+
+    "μόνο τις κοντινές. Όσες έχεις βάλει τις βρίσκεις στο ☰ → Ρυθμίσεις.",
   /* Η κάρτα εγκατάστασης δείχνει τα βήματα ΤΗΣ συσκευής που κρατάς — οι
      οδηγίες για τις άλλες τρεις είναι θόρυβος τη στιγμή που θέλεις να το
      εγκαταστήσεις εδώ. Οι υπόλοιπες μπαίνουν σε μία γραμμή από κάτω. */
@@ -1557,7 +1561,7 @@ const T={
   freshNow:"μόλις τώρα", freshAgo:a=>`πριν ${a}`, secShort:"δ",
   ppHint:"Πάτα μια γραμμή για τη διαδρομή της", fromStop:n=>`από ${n}`,
   nextStops:"Επόμενες στάσεις",noRoute:"Δεν βρέθηκε διαδρομή",
-  alertsH:"Ειδοποιήσεις",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση, όχι μόνο τις κοντινές.",
+  alertsH:"Ειδοποιήσεις",alertsNone:"καμία",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση, όχι μόνο τις κοντινές.",
   newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
   editAlert:"Επεξεργασία",delAlert:"Διαγραφή",
@@ -1698,8 +1702,8 @@ const T={
   tour6p:"The A→B button at the top plans a trip from one place to another: an address, a "+
     "stop, or where you are. Save Home and Work and you never type them again.",
   tour4h:"Alerts",
-  tour4p:"Set an alert for any stop, not just nearby ones: the bell has a search for every stop "+
-    "in Athens.",
+  tour4p:"Hold a stop and pick “Set alert” — for any stop, not just the ones near you. "+
+    "The ones you have set live in ☰ → Settings.",
   /* The install card shows the steps for the device in your hand — the
      other three platforms' instructions are noise at the moment you want
      to install it on this one. They get a single line underneath. */
@@ -1860,7 +1864,7 @@ const T={
   freshNow:"just now", freshAgo:a=>`${a} ago`, secShort:"s",
   ppHint:"Tap a line to draw its route", fromStop:n=>`from ${n}`,
   nextStops:"Next stops",noRoute:"No route data",
-  alertsH:"Alerts",alertsP:"Get notified before your bus reaches any stop, not just the ones near you.",
+  alertsH:"Alerts",alertsNone:"none",alertsP:"Get notified before your bus reaches any stop, not just the ones near you.",
   newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
   editAlert:"Edit",delAlert:"Delete",
@@ -4798,6 +4802,7 @@ function closeSettings(){ $("#setbg").classList.remove("on"); }
 function renderSettings(){
   const h=$("#set-h"); if(!h) return;                  // called before DOM on first paint
   h.textContent=t("setH");
+  $("#set-alerts-t").textContent=t("alertsH");
   $("#set-lang-t").textContent=t("mLang");
   $("#set-lang-v").textContent=LANG==="el"?"ΕΛ → EN":"EN → ΕΛ";
   $("#set-empty-t").textContent=t("setEmpty");
@@ -5344,7 +5349,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v72</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v73</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5550,9 +5555,12 @@ async function loadRules(){
   try{ const r=await fetch(`${base()}/rules?sub=${encodeURIComponent(state.subId)}`);
     state.rules=r.ok?await r.json():[]; }catch{ state.rules=[]; }
 }
+/* The count used to be a badge on a header button. It is the value on the
+   Settings row now — same number, same job: telling you there is something
+   set without making you open anything. */
 function bellBadge(){
   const n=state.rules.filter(r=>r.enabled!==false).length;
-  const b=$("#bellcount"); b.textContent=n; b.style.display=n?"grid":"none";
+  const v=$("#set-alerts-v"); if(v) v.textContent=n?String(n):t("alertsNone");
 }
 function openAlerts(){ $("#alertbg").classList.add("on"); renderAlerts(); }
 function closeAlerts(){ $("#alertbg").classList.remove("on"); }
@@ -5630,8 +5638,22 @@ function renderAlerts(){
 /* `edit` is an existing rule; `onStop` is a stop you long-pressed and want
    an alert for. Both put a specific stop at the top of the picker and
    select it — the difference is only whether there is a rule to overwrite. */
+/* The old default was a hard-coded 08:30–08:50, which is somebody else's
+   commute. You set an alert because of the bus you are waiting for NOW, so
+   the window opens five minutes behind the clock — enough to catch a bus
+   already listed as due — and runs half an hour ahead. Widen it in the
+   two fields if you are setting tomorrow's. */
+const WIN_BACK=5, WIN_AHEAD=30;
+function nowWindow(){
+  const d=new Date(), m=d.getHours()*60+d.getMinutes();
+  const clamp=x=>((x%1440)+1440)%1440;
+  const hhmm=x=>String(Math.floor(clamp(x)/60)).padStart(2,"0")+":"
+    +String(clamp(x)%60).padStart(2,"0");
+  return {from:hhmm(m-WIN_BACK), to:hhmm(m+WIN_AHEAD)};
+}
 function renderForm(edit,onStop){
   const form=$("#ruleform"); form.innerHTML="";
+  const win=nowWindow();
   const head=edit ? `${t("editAlert")} · ${edit.stopName||""}`
     : onStop ? `${t("smAlert")} · ${stopName(onStop)}` : "";
   if(head){
@@ -5668,8 +5690,8 @@ function renderForm(edit,onStop){
       <div class="shint">${esc(t("alertHint"))}</div></div>
     <div class="field"><label>${t("line")}</label><select id="f-route"></select></div>
     <div class="field"><label>${t("days")}</label><div class="chips" id="f-days"></div></div>
-    <div class="field two"><div><label>${t("from")}</label><input type="time" id="f-from" value="${esc(edit&&edit.from||"08:30")}"></div>
-      <div><label>${t("till")}</label><input type="time" id="f-to" value="${esc(edit&&edit.to||"08:50")}"></div></div>
+    <div class="field two"><div><label>${t("from")}</label><input type="time" id="f-from" value="${esc(edit&&edit.from||win.from)}"></div>
+      <div><label>${t("till")}</label><input type="time" id="f-to" value="${esc(edit&&edit.to||win.to)}"></div></div>
     <div class="field"><label>${t("lead")}</label><div class="chips" id="f-leads"></div></div>`;
   form.appendChild(wrap);
   const sel=new Set(edit&&Array.isArray(edit.days)?edit.days:[1,2,3,4,5]),db=wrap.querySelector("#f-days");
@@ -5891,7 +5913,7 @@ $("#pickok").onclick=()=>{ const c=pmap.getCenter(); closePicker();
   setLocation(c.lat,c.lng, pickShort||t("you"), false, false); };
 $("#sheetbg").onclick=e=>{ if(e.target.id==="sheetbg") closeSheet(); };
 $("#alertbg").onclick=e=>{ if(e.target.id==="alertbg") closeAlerts(); };
-$("#bell").onclick=openAlerts;
+$("#set-alerts").onclick=()=>{ closeSettings(); openAlerts(); };
 $("#reportbtn").onclick=openReports;
 $("#rep-x").onclick=closeReports;
 $("#wake").onclick=wake;

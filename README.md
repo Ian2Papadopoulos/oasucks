@@ -3,10 +3,10 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v72.**
+version: v73.**
 
-**The top bar** is five buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
-reports (the orange dot), alerts 🔔, and ☰, which opens **Settings** directly (language,
+**The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
+reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
 whether to hide stops with nothing coming, and the FAQ). Under it, a two-way control:
 **List · Map**.
 
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 785 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 797 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
@@ -97,9 +97,14 @@ you could not see mid-gesture, a repeat silently undid the pin you had just made
 that says what it will do cannot do the opposite by accident.
 
 It is also how an alert is made now. Setting one used to mean opening 🔔, pressing
-**+ New alert**, and finding in a dropdown the stop you were already looking at — so that
-button is gone. The bell still opens the list of alerts you have, where each can be
-edited or deleted.
+**+ New alert**, and finding in a dropdown the stop you were already looking at — so both
+that button and the bell itself are gone. Reviewing what you have set is a different act
+from setting one, done rarely and not at a bus stop, so it is the first row of
+**Settings**, carrying the count the badge used to carry.
+
+The form's window defaults to **now − 5 min → now + 30 min** (`WIN_BACK` / `WIN_AHEAD`).
+It used to open on a hard-coded 08:30–08:50, which is somebody else's commute: you are
+setting an alert because of the bus you are waiting for now.
 
 On a mouse the press ends in a click, so `onLongPress` swallows that click in the capture
 phase: without it, holding a search result would open the menu *and* the stop card behind
@@ -732,7 +737,10 @@ all. Picking one opens a **card in the centre of the screen** with its live arri
 the same style as the list. Hold the stop's name there for the pin/alert menu; hold an
 arrival row for the route preview.
 
-### Alerts (🔔) — any stop, not just nearby ones
+### Alerts — any stop, not just nearby ones
+
+Made by holding a stop; reviewed at **☰ → Settings → Alerts**, which shows how many are
+set without opening anything.
 
 The stop picker in a new alert lists your **favourites** first, then nearby stops, then
 **⌕ Search another stop…** — which reaches any stop in Athens through `/stops/search`
@@ -758,6 +766,34 @@ always did with one more field. One case is worth knowing about: if the stop's d
 cannot be fetched — OASA down, or that direction retired — the rule's own line is kept as
 the selected option and saved back unchanged, rather than being silently switched to
 whichever direction happens to sort first.
+
+#### Why an alert that should fire still didn't
+
+Three separate faults kept real alerts from arriving, and they hid each other. Each one
+alone is enough to explain a silent phone.
+
+1. **The route code was matched exactly.** `webRoutesForStop` lists every direction and
+   variant of a line, so a rule gets saved naming one code while the bus that turns up
+   carries another — seen in the field: a rule wanting route `2027` at a stop whose buses
+   were all `1998`, every one of them the same line 18. The rule now falls back to the
+   **line**, which is what it actually meant; the code is only how it was written down.
+2. **A failed push still marked the lead as spent.** The `sent:` dedupe key is written
+   with a one-hour TTL, and it was written whatever the push service answered. One 500,
+   one timeout, one minute of bad weather between the Worker and Google — and every retry
+   inside that lead was skipped for the next hour, which for a 15/10/5 alert is the whole
+   alert. The key is now written **only after a delivered push**.
+3. **A line lookup that threw ended the entire run.** The fallback in (1) fires on
+   arrivals the rule did *not* ask for, so an upstream hiccup while some other line
+   happened to be first in the list threw past every rule still waiting — including the
+   one whose bus was pulling in. It is guarded, and the empty result is cached, so a miss
+   costs a fallback rather than an alert.
+
+And the reason none of this was findable: **runAlerts swallowed every outcome.** It now
+writes `alert_last_try` — the rule, route, vehicle, lead, and what the push service
+actually said — which `/alerts/why` returns along with the cron heartbeat. That last part
+matters most: a rule that *would* fire and a scheduler that has stopped calling look
+identical from the outside and need opposite fixes, so the diagnostic answers both in one
+response.
 
 **There is no probe on the boot path, and that is the fix.** The app used to prove a
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by

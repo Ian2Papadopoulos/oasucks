@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v72 defaults** — if you edit the
+breaks if you change it. Values here are the **v73 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -136,6 +136,11 @@ in v44) both read as *OASA staff*.
 | `walkSpeed` | **80 m/min** | Used for the "🚶 ~4′" walking estimate. |  |
 | `detour` | **1.35** | Straight-line distance × this ≈ real walking distance. |  |
 | `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`), pinned from the long-press menu. | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
+
+`public/index.html` → `WIN_BACK` / `WIN_AHEAD`: **5** and **30** minutes. The window a
+new alert opens on, measured from the clock — `now − 5 → now + 30`. It used to be a
+hard-coded 08:30–08:50, which is somebody else's commute; you set an alert because of the
+bus you are waiting for now. Editing an existing alert keeps its own times.
 
 **Hide stops with no arrivals** (☰ → Settings, which ☰ opens directly, `localStorage.hideEmpty`, off by
 default): drops stops with nothing due within `imminentMin` from the list rather
