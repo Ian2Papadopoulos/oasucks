@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v73.**
+version: v74.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -35,7 +35,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 797 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 805 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
@@ -794,6 +794,29 @@ actually said — which `/alerts/why` returns along with the cron heartbeat. Tha
 matters most: a rule that *would* fire and a scheduler that has stopped calling look
 identical from the outside and need opposite fixes, so the diagnostic answers both in one
 response.
+
+#### The gap between "the cron ran" and "a push was attempted"
+
+Even with both of those, one stretch stayed dark, and it is the one that matters:
+**everything the cron does runs inside `ctx.waitUntil`, and a promise handed to
+`waitUntil` that rejects is discarded by the runtime without a word.** No log, no retry,
+nothing. `cron_last` is stamped early, so a throw anywhere after it left a healthy
+heartbeat and a silent phone — which is precisely the state that could not be diagnosed.
+
+Three changes close it:
+
+- The whole scheduled body is wrapped. `cronRun()` holds what used to be inline, the
+  caller catches, and the stack goes into `cron_trace`.
+- **Tracking and nightly maintenance no longer run before a failure can reach the
+  alerts.** They sit after `runAlerts` and are caught separately; in the original order a
+  throw in either took every alert with it.
+- Every early return in `runAlerts` names itself. `getJSON` never throws — it returns
+  `null` for a timeout, a non-200, an open circuit and a parse failure alike — so the
+  `continue` that skipped a stop was a silent dead end. It now records
+  `NO ANSWER from OASA on this run`, or `SKIPPED — circuit open`, against that stop.
+
+`/alerts/why` returns the last trace from a minute that actually had a rule due, as
+`lastCronWithWork`. Quiet minutes do not overwrite it.
 
 **There is no probe on the boot path, and that is the fix.** The app used to prove a
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by

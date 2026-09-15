@@ -582,8 +582,57 @@ console.log("\n— what runAlerts does when the push fails —");
     calls === 1 && sentKeys().length === 2, `${calls} pushes, ${sentKeys().length} keys`);
   ctx.__routes = () => routes;
 
+  /* Every early return in runAlerts is a legitimate "nothing to do", and
+     from the outside they are indistinguishable from each other and from a
+     crash. Each one has to name itself. */
+  await run([], { status: 201, detail: "", gone: false });
+  {
+    const T = {}; ctx.__env = env; ctx.__T = T;
+    store.set("rules:index", JSON.stringify([rule]));
+    arrivals = [];
+    await vm.runInContext(`runAlerts(__env, __T)`, ctx);
+    ok("a stop OASA answered with nothing is not the same as no answer",
+      T.stops && /0 arrivals/.test(String(T.stops["10361"])), JSON.stringify(T.stops));
+  }
+  {
+    const T = {}; ctx.__env = env; ctx.__T = T;
+    vm.runInContext(`getJSON = async () => null;`, ctx);
+    await vm.runInContext(`runAlerts(__env, __T)`, ctx);
+    ok("...and OASA not answering at all says so, rather than passing quietly",
+      /NO ANSWER/.test(String((T.stops || {})["10361"])), JSON.stringify(T.stops));
+    vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
+      : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
+  }
+  {
+    const T = {}; ctx.__env = env; ctx.__T = T;
+    store.set("rules:index", JSON.stringify([{ ...rule, days: [(now.day + 1) % 7] }]));
+    await vm.runInContext(`runAlerts(__env, __T)`, ctx);
+    ok("...and 'no window is open' is named too",
+      /window is open/.test(String(T.stopped)), String(T.stopped));
+  }
+
   vm.runInContext(`getJSON = __realGet; sendPush = __realPush;`,
     Object.assign(ctx, { __realGet: realGet, __realPush: realPush }));
+}
+
+/* A promise handed to ctx.waitUntil that REJECTS is discarded by the
+   runtime without a word. Everything the cron does runs in there, so one
+   throw used to cost every alert after it, invisibly and forever. */
+console.log("\n— the cron writes down what it did —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("the whole scheduled body is caught, not left to waitUntil",
+    /try \{ await cronRun\(event, env, T\); \}[\s\S]{0,20}catch \(e\) \{ T\.threw/.test(w),
+    "a rejected waitUntil promise is discarded silently");
+  ok("...and what it threw is written where a human can read it",
+    /setMeta\(env, "cron_trace"/.test(w));
+  ok("...but only for minutes that had work, so a quiet one cannot bury it",
+    /if \(T\.due \|\| T\.threw\)/.test(w));
+  ok("tracking and maintenance cannot take the alerts down with them",
+    /catch \(e\) \{ T\.trackingError/.test(w) && /catch \(e\) \{ T\.maintError/.test(w),
+    "they run after the alerts and are now caught separately");
+  ok("/alerts/why hands the trace back with the rules",
+    /lastCronWithWork/.test(w));
 }
 
 console.log("\n— the push service's own verdict, kept —");

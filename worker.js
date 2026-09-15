@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v73";
+const APP_VERSION = "v74";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -997,12 +997,19 @@ function athensUtcOffsetHours() {
   return Math.round((ath - utc) / 3600000);
 }
 
-async function runAlerts(env) {
-  if (!pushReady(env)) return;
+/* `T` is a trace the cron writes down afterwards. Every early return in
+   here is a legitimate "nothing to do", and each one is indistinguishable
+   from the next from the outside — which is how "alerts never fire" stayed
+   unanswerable for three rounds: the heartbeat proved the run STARTED and
+   /alerts/why proved a rule SHOULD fire, and nothing covered the ground
+   between them. So every exit says which one it was. */
+async function runAlerts(env, T = {}) {
+  if (!pushReady(env)) { T.stopped = "push not configured"; return T; }
   const now = athensNow();
 
   const rules = (await readRules(env)).filter(r => r && r.enabled !== false);
-  if (!rules.length) return;
+  T.rules = rules.length;
+  if (!rules.length) { T.stopped = "no enabled rules"; return T; }
 
   // Only rules whose window is near enough to matter right now.
   const active = rules.filter(r => {
@@ -1012,15 +1019,28 @@ async function runAlerts(env) {
     const maxLead = Math.max(...(r.leads || [10]));
     return now.minutes >= from - maxLead - 1 && now.minutes <= to;
   });
-  if (!active.length) return;
+  T.active = active.length;
+  if (!active.length) { T.stopped = "no rule's window is open right now"; return T; }
 
   // One arrivals fetch per distinct stop.
   const byStop = {};
   for (const r of active) (byStop[r.stopCode] ||= []).push(r);
+  T.stops = {};
+  T.attempts = 0;
 
   for (const [stopCode, stopRules] of Object.entries(byStop)) {
     const arrivals = await getJSON(`${OASA}?act=getStopArrivals&p1=${encodeURIComponent(stopCode)}`, 0);
-    if (!Array.isArray(arrivals)) continue;
+    /* getJSON never throws — it returns null, for a timeout, a non-200, an
+       open circuit and a parse failure alike. So this `continue` is a
+       silent dead end unless it says so: a cron that cannot reach OASA and
+       a cron that is not running look identical on the phone. */
+    if (!Array.isArray(arrivals)) {
+      T.stops[stopCode] = circuitState().open
+        ? "SKIPPED — circuit open, we are backing off OASA"
+        : "NO ANSWER from OASA on this run";
+      continue;
+    }
+    T.stops[stopCode] = `${arrivals.length} arrivals`;
 
     /* The route code a rule stores comes from webRoutesForStop, which
        lists every direction and variant of every line at the stop. The
@@ -1117,6 +1137,7 @@ async function runAlerts(env) {
           }
         } catch (e) { note = { ok: false, why: String((e && e.message) || e).slice(0, 200) }; }
 
+        T.attempts++;
         await setMeta(env, "alert_last_try", JSON.stringify({
           at: Math.floor(Date.now() / 1000), rule: rule.id, line: rule.lineId || null,
           route: rc, veh, lead: firingLead, min, ...note,
@@ -1134,6 +1155,7 @@ async function runAlerts(env) {
       }
     }
   }
+  return T;
 }
 
 /* ==================== vehicle tracking (D1) ======================= *
@@ -3595,8 +3617,9 @@ export default {
       const nowS = Math.floor(Date.now() / 1000);
       const cronLast = Number(await getMeta(env, "cron_last")) || 0;
       const alertLast = Number(await getMeta(env, "alert_last")) || 0;
-      let lastTry = null;
+      let lastTry = null, lastCron = null;
       try { lastTry = JSON.parse(await getMeta(env, "alert_last_try") || "null"); } catch (_) {}
+      try { lastCron = JSON.parse(await getMeta(env, "cron_trace") || "null"); } catch (_) {}
       return json({ athensTime: minToHhmm(now.minutes), athensDay: now.day,
         upstream: circuitState(),
         cron: cronLast
@@ -3612,6 +3635,14 @@ export default {
           ? { ...lastTry, agoSec: nowS - (lastTry.at || nowS) }
           : "no alert push has ever been attempted",
         lastDelivered: alertLast ? { agoSec: nowS - alertLast } : "never",
+        /* The last cron minute that actually had a rule due: how many
+           windows it saw, whether OASA answered for each stop, and
+           anything it threw. This is the stretch between "the scheduler is
+           calling us" and "a push was attempted" — the one place a silent
+           alert could still hide. */
+        lastCronWithWork: lastCron
+          ? { ...lastCron, agoSec: nowS - (lastCron.at || nowS) }
+          : "no cron run has yet found a rule inside its window",
         rules: out.length ? out : "no rules stored" });
     }
 
@@ -4100,41 +4131,71 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
+    /* Everything in here runs inside ctx.waitUntil, and a promise handed to
+       waitUntil that REJECTS is discarded without a word — no log, no
+       retry, nothing on the phone. That is not a place to let an exception
+       find its own way out: one throw anywhere below used to cost every
+       alert after it, invisibly and forever. So the whole body is caught,
+       and what happened is written down. */
     ctx.waitUntil((async () => {
-      const now = athensNow();
-      const daily = (() => {
-        const h = new Intl.DateTimeFormat("en-GB", {
-          timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hour12: false,
-        }).formatToParts(new Date()).reduce((o, p) => (o[p.type] = p.value, o), {});
-        return h.hour === "04" && +h.minute < 2;
-      })();
-
-      // Cheapest possible no-op minute: one small KV read tells us whether
-      // any alert window is near. Nothing due and no tracking → stop here,
-      // touching neither OASA nor D1.
-      let windows = [];
-      if (pushReady(env)) {
-        try { windows = windowsOf(await readRules(env)); } catch (_) { }
+      const T = { cron: event.cron || null };
+      try { await cronRun(event, env, T); }
+      catch (e) { T.threw = String((e && e.stack) || e).slice(0, 400); }
+      /* Only runs that had something to do are kept. A quiet minute
+         overwriting the last interesting one is how a trace becomes
+         useless — and most minutes are quiet by design. */
+      if (T.due || T.threw) {
+        await setMeta(env, "cron_trace",
+          JSON.stringify({ at: Math.floor(Date.now() / 1000), ...T })).catch(() => {});
       }
-      /* Proof of life, written before anything that can fail. Without it
-         "alerts stopped working" and "the scheduler stopped calling us"
-         look identical from the outside, and they need opposite fixes. */
-      await setMeta(env, "cron_last", Math.floor(Date.now() / 1000));
-      try { await bumpUsage(env, ["cron"]); } catch (_) {}
+    })());
+  },
+};
 
-      const alertsDue = windowDue(windows, now);
-      if (alertsDue) await runAlerts(env);
+async function cronRun(event, env, T) {
+    const now = athensNow();
+    const daily = (() => {
+      const h = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).formatToParts(new Date()).reduce((o, p) => (o[p.type] = p.value, o), {});
+      return h.hour === "04" && +h.minute < 2;
+    })();
+
+    // Cheapest possible no-op minute: one small KV read tells us whether
+    // any alert window is near. Nothing due and no tracking → stop here,
+    // touching neither OASA nor D1.
+    let windows = [];
+    if (!pushReady(env)) T.push = "not configured — VAPID keys or the KV binding are missing";
+    else {
+      try { windows = windowsOf(await readRules(env)); }
+      catch (e) { T.rulesError = String((e && e.message) || e).slice(0, 200); }
+    }
+    T.windows = windows.length;
+    /* Proof of life, written before anything that can fail. Without it
+       "alerts stopped working" and "the scheduler stopped calling us"
+       look identical from the outside, and they need opposite fixes. */
+    await setMeta(env, "cron_last", Math.floor(Date.now() / 1000));
+    try { await bumpUsage(env, ["cron"]); } catch (_) {}
+
+    const alertsDue = windowDue(windows, now);
+    T.due = alertsDue;
+    if (alertsDue) await runAlerts(env, T);
+    /* Past the alerts on purpose. These are housekeeping, and a failure
+       in either of them must not take the alerts down with it — which,
+       in the original order, is exactly what it would have done. */
+    try {
       if (await trackingActive(env)) await sampleVehicles(env);
-      if (daily) {
+    } catch (e) { T.trackingError = String((e && e.message) || e).slice(0, 200); }
+    if (daily) {
+      try {
         await syncSchedules(env);
         await pruneOld(env);
         // Keep the cron schedule itself matched to the current rules
         // (no-op unless the CF API secrets are configured).
         await applySchedule(env, cronFor(windows));
-      }
-    })());
-  },
-};
+      } catch (e) { T.maintError = String((e && e.message) || e).slice(0, 200); }
+    }
+}
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {

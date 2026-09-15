@@ -264,7 +264,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v73",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v74",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -655,6 +655,7 @@ rule, and a rule that looks perfect cannot fire if these are wrong:
 | `cron` | `healthy: true` means the scheduler is calling the Worker. `healthy: false` means **nothing can fire, however correct every rule is** — check `[triggers]` in `wrangler.toml` and Workers & Pages → your Worker → Settings → Trigger Events, then redeploy. This is the one fault that makes a perfect `WOULD FIRE` verdict meaningless. |
 | `lastPush` | What happened the last time an alert was actually attempted: the rule, route, vehicle, lead, and the push service's own answer. `ok: false` with a `status` is the push service refusing — 401/403 is the VAPID keys, 404/410 a subscription the browser has retired, 400 the encryption. `"no alert push has ever been attempted"` with a healthy cron means no rule has ever got as far as sending. |
 | `lastDelivered` | How long ago a push last went out successfully. |
+| `lastCronWithWork` | The last cron minute that found a rule inside its window — the stretch between "the scheduler is calling us" and "a push was attempted". `due` says a window was open; `stops` says what OASA answered for each one (`13 arrivals`, `NO ANSWER from OASA on this run`, or `SKIPPED — circuit open`); `attempts` counts pushes tried; `stopped` names the early exit if there was one; `threw` carries a stack if the run died. Quiet minutes never overwrite it. |
 
 Then read the per-rule fields:
 
@@ -673,8 +674,10 @@ of it is not. In order of likelihood:
 - **`cron.healthy` is false.** Nothing is calling `runAlerts`. Fix the triggers.
 - **`lastPush.ok` is false.** The push service refused; `status` and `detail` say why.
 - **`lastPush` is a different rule, or missing entirely.** The run is not reaching this
-  rule. Check `upstream.open` — an open circuit means OASA is being rate-limited and the
-  arrivals fetch is being skipped.
+  rule. Read `lastCronWithWork`: `stops` says whether OASA answered, `stopped` names the
+  early exit, `threw` carries the stack if the run died. Note `upstream.open` in the top
+  of the response reflects the *web* isolate — a cron runs in its own, so a circuit can be
+  open there and closed here; `stops` is the one that tells you about the cron's isolate.
 - **`subscription` is `found` but the phone is a second device.** A rule names the
   subscription of the device it was made on. The push is being delivered — to the other
   phone.
