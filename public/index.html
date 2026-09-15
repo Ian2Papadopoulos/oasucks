@@ -949,7 +949,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v69</span></div>
+  <div class="foot"><span class="ver">v70</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1537,6 +1537,7 @@ const T={
   pushTestOk:"Στάλθηκε. Αν δεν εμφανιστεί μέσα σε λίγα δευτερόλεπτα, η συσκευή σου δεν "+
     "λαμβάνει ειδοποιήσεις — και οι ειδοποιήσεις για λεωφορεία δεν θα έρθουν ούτε αυτές.",
   pushTestFail:"Δεν στάλθηκε — οι ειδοποιήσεις δεν είναι ενεργές σε αυτή τη συσκευή.",
+  pushTestWhy:(s,d)=>`Δεν στάλθηκε. Η υπηρεσία ειδοποιήσεων απάντησε ${s}${d?": "+d:""}`,
   test:"Δοκιμαστική ειδοποίηση",noRules:"Καμία ειδοποίηση ακόμη.",
   needStops:"Φόρτωσε πρώτα στάσεις κοντά σου.",
   findStop:"⌕ Αναζήτηση άλλης στάσης…", noStopHit:"Καμία στάση με αυτό το όνομα.",
@@ -1835,6 +1836,7 @@ const T={
   pushTestOk:"Sent. If nothing appears within a few seconds, this device is not receiving "+
     "notifications — and bus alerts will not arrive either.",
   pushTestFail:"Not sent — notifications are not active on this device.",
+  pushTestWhy:(s,d)=>`Not sent. The push service answered ${s}${d?": "+d:""}`,
   test:"Send test notification",noRules:"No alerts yet.",
   needStops:"Load nearby stops first.",
   findStop:"⌕ Search another stop…", noStopHit:"No stop by that name.",
@@ -2316,7 +2318,15 @@ function renderList(){
            <div class="rows"><div class="skel"></div></div></div>`;
     return;
   }
-  if(list.firstElementChild&&list.firstElementChild.classList.contains("msg")) list.innerHTML="";
+  /* The placeholder boards are not cards, and real cards are inserted
+     BEFORE whatever is already there — so anything left over ends up
+     underneath the list. This used to check only for `.msg`, which meant
+     the loading skeletons added in v65 were never cleared: ten real stops,
+     and then two placeholders sitting at the bottom pretending to load,
+     forever. Clear on either. */
+  const leftover=list.firstElementChild;
+  if(leftover&&(leftover.classList.contains("msg")||leftover.classList.contains("skel-card")))
+    list.innerHTML="";
 
   const live=new Set();
   let prev=null;
@@ -5291,7 +5301,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v69</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v70</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5557,7 +5567,12 @@ function renderAlerts(){
         const r=await fetch(base()+"/push/test",{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({sub:id})});
         const j=await r.json().catch(()=>({}));
-        out.textContent=(r.ok&&j.ok)?t("pushTestOk"):t("pushTestFail");
+        /* When the push service refuses, it says why, and that sentence is
+           worth far more than "not sent" — 401/403 is the VAPID keys,
+           404/410 a dead subscription, 400 the encryption. */
+        out.textContent=(r.ok&&j.ok) ? t("pushTestOk")
+          : j.status ? t("pushTestWhy")(j.status, j.detail||"")
+          : t("pushTestFail");
       }catch(e){ out.textContent=pushErrMsg(e); }
       tb.disabled=false;
     };

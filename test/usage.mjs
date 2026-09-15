@@ -417,6 +417,35 @@ console.log("\n— health can be asked about the upstream too —");
 
 /* The notice has to be settable by exactly one person and readable by
    everyone, which is the whole security model of it. */
+/* When nothing arrives on the phone, the question is always which half is
+   wrong, and the answer is usually in a response body we were throwing
+   away. 401/403 is the VAPID keys, 404/410 a dead subscription, 400 the
+   encryption — four different jobs behind one "not sent". */
+console.log("\n— the push service's own verdict, kept —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("sendPush returns why, not just a number",
+    /return \{ status: res\.status, detail, gone:/.test(w));
+  ok("...reading the body only when it failed",
+    /if \(res\.status >= 300\) \{[\s\S]{0,120}await res\.text\(\)/.test(w),
+    "a success body is noise and costs a read");
+  ok("/push/test hands it to the app", /detail: r\.detail \|\| undefined/.test(w));
+  /* RFC 8030: 404 and 410 mean the endpoint is retired. Keeping it means
+     every future cron pays for a call that cannot succeed. */
+  ok("a subscription the service has retired is forgotten",
+    (w.match(/if \(r\.gone\) await env\.ALERTS\.delete/g) || []).length === 1
+    && (w.match(/if \(sent\.gone\) await env\.ALERTS\.delete/g) || []).length === 1,
+    "on both the test path and the alert path");
+  ok("...and a failed send is not counted as one that worked",
+    /if \(sent\.status < 300\) \{ try \{ await bumpUsage/.test(w),
+    "alert_last was being stamped either way");
+  const app = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("the app shows the verdict rather than 'not sent'",
+    /pushTestWhy/.test(app) && /The push service answered/.test(app));
+  ok("...in both languages",
+    (app.match(/pushTestWhy:/g) || []).length === 2);
+}
+
 console.log("\n— setting the notice takes a token; reading it does not —");
 {
   const KV = (() => {

@@ -2,3 +2,5 @@
 .wrangler/
 .dev.vars
 *.log
+
+notice.json

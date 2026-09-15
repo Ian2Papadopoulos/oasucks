@@ -398,6 +398,42 @@ console.log("\n— an alert can be edited, not only deleted —");
    A deployment has a Worker on its own origin — that is what deploying it
    means. Assume it, and let an unambiguous 404 be the only thing that says
    otherwise. */
+/* Real cards are inserted BEFORE whatever is already in the list, so a
+   placeholder left behind ends up underneath it. The clear-out checked only
+   for `.msg`, which meant the loading skeletons added in v65 survived the
+   first real render and sat at the bottom of the board pretending to load,
+   forever. */
+console.log("\n— nothing left over under the last stop —");
+{
+  const v = await open();
+  await v.page.waitForTimeout(1400);
+  const before = await v.page.evaluate(() => ({
+    stops: document.querySelectorAll("#list .stop").length,
+    skel: document.querySelectorAll("#list .skel-card").length,
+  }));
+  ok("a loaded board has no placeholders in it", before.skel === 0,
+    `${before.stops} cards, ${before.skel} placeholders`);
+
+  /* Drive the exact sequence that produced it: an empty board paints
+     placeholders, then stops arrive. */
+  const after = await v.page.evaluate(async () => {
+    const keep = state.stops;
+    state.stops = []; bootDone = false; bootFail = null; renderList();
+    const mid = document.querySelectorAll("#list .skel-card").length;
+    state.stops = keep; bootDone = true; renderList();
+    return { mid, skel: document.querySelectorAll("#list .skel-card").length,
+      stops: document.querySelectorAll("#list .stop:not(.skel-card)").length,
+      lastIsCard: !(document.querySelector("#list").lastElementChild || {})
+        .classList?.contains("skel-card") };
+  });
+  ok("...the waiting board does paint them", after.mid > 0, `${after.mid} placeholders`);
+  ok("...and the stops arriving clears every one", after.skel === 0,
+    `${after.stops} cards, ${after.skel} left over`);
+  ok("...so the last thing in the list is a real stop", after.lastIsCard);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+
 console.log("\n— no probe at all —");
 {
   const c = await browser.newContext({ viewport: { width: 390, height: 840 },

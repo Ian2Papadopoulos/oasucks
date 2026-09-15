@@ -41,7 +41,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v69";
+const APP_VERSION = "v70";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -831,6 +831,11 @@ async function vapidAuth(endpoint, env) {
   return `vapid t=${header}.${payload}.${bytesToB64u(sig)}, k=${env.VAPID_PUBLIC_KEY}`;
 }
 
+/* Returns the push service's verdict, not just its number. When nothing
+   arrives on the phone the question is always "which half is wrong", and
+   the answer is usually sitting in a response body we were discarding:
+   401/403 means the VAPID keys are wrong, 404/410 means the subscription
+   is dead, 400 means the encryption is. */
 async function sendPush(sub, payloadObj, env) {
   const body = await encryptPush(sub, JSON.stringify(payloadObj));
   const res = await fetch(sub.endpoint, {
@@ -843,7 +848,11 @@ async function sendPush(sub, payloadObj, env) {
     },
     body,
   });
-  return res.status;
+  let detail = "";
+  if (res.status >= 300) {
+    try { detail = (await res.text()).slice(0, 200).replace(/\s+/g, " ").trim(); } catch (_) { }
+  }
+  return { status: res.status, detail, gone: res.status === 404 || res.status === 410 };
 }
 
 function pushReady(env) {
@@ -1048,15 +1057,18 @@ async function runAlerts(env) {
         try {
           const sub = await env.ALERTS.get(`sub:${rule.sub}`, "json");
           if (sub) {
-            await sendPush(sub, {
+            const sent = await sendPush(sub, {
               title: `${rule.lineId || "Λεωφορείο"} σε ${min}′`,
               body: `${rule.stopName || ""}${rule.routeName ? " · " + rule.routeName : ""} — άφιξη ~${etaClock}`,
               tag: `${rule.id}:${veh}:${firingLead}`,
               lead: firingLead,
               url: "./",
             }, env);
+            /* The push service says this endpoint is retired. Keeping it
+               means every future run pays for a call that cannot succeed. */
+            if (sent.gone) await env.ALERTS.delete(`sub:${rule.sub}`).catch(() => {});
             await setMeta(env, "alert_last", Math.floor(Date.now() / 1000));
-            try { await bumpUsage(env, ["alert"]); } catch (_) {}
+            if (sent.status < 300) { try { await bumpUsage(env, ["alert"]); } catch (_) {} }
           }
         } catch (_) { /* keep going */ }
 
@@ -3798,10 +3810,13 @@ export default {
       const b = await req.json().catch(() => null);
       const sub = b && b.sub ? await env.ALERTS.get(`sub:${b.sub}`, "json") : null;
       if (!sub) return json({ error: "unknown subscription" }, 404);
-      const status = await sendPush(sub, {
+      const r = await sendPush(sub, {
         title: "OASAx ✓", body: "Οι ειδοποιήσεις δουλεύουν.", tag: "test", url: "./",
       }, env);
-      return json({ ok: status < 300, status });
+      // a subscription the push service has retired is worth forgetting
+      if (r.gone) await env.ALERTS.delete(`sub:${b.sub}`).catch(() => {});
+      return json({ ok: r.status < 300, status: r.status, detail: r.detail || undefined,
+        gone: r.gone || undefined });
     }
 
     if (p.endsWith("/rules")) {

@@ -259,7 +259,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v69",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v70",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -446,8 +446,9 @@ $env:ADMIN_TOKEN = "the-string-you-just-set"
 ```
 
 **Step 1 — write the message to a file.** Do not try to put Greek inside a PowerShell
-command line; the quoting and the encoding will both bite you. Make `notice.json` in the
-project folder, saved as **UTF-8**:
+command line; the quoting and the encoding will both bite you. Copy
+`notice.example.json` in the project root to `notice.json` and edit it. It is not
+committed and is not served — it exists only to be posted from. Saved as **UTF-8**:
 
 ```json
 {
@@ -587,6 +588,16 @@ which of the three are already there. This is also the only failure the app is e
 blame on the server, and since v59 it is the only one it does.
 
 **1. Does any notification reach the device?** In the app: 🔔 → **Send test notification**.
+Since v70 the result names the push service's own verdict instead of "not sent", which
+is the fastest way to tell the halves apart:
+
+| What it says | What it means |
+|---|---|
+| `answered 401` or `403` | The VAPID keys are wrong or missing. Re-run `PUSH-SETUP.md`. |
+| `answered 404` or `410` | This subscription is retired. The Worker forgets it; reload and set the alert again. |
+| `answered 400` | The push service rejected the payload. Report this — it is a bug in the Worker, not your setup. |
+| `Push isn't configured…` | `/push/key` returned 501. The Worker has no VAPID keys at all. |
+
 If that does not arrive, no bus alert ever will, and the cause is on the phone:
 
 - **iPhone or iPad** must have the app on the **Home screen** and be opened from there.
