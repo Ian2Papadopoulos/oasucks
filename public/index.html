@@ -966,7 +966,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v76</span></div>
+  <div class="foot"><span class="ver">v77</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1016,11 +1016,6 @@
   <div id="rpmap"></div>
   <div class="rp-strip" id="rp-strip"></div>
 </div>
-
-<div class="sheet-bg" id="statbg"><div class="sheet">
-  <h3 id="st-h">Στατιστικά</h3><p id="st-p"></p>
-  <div id="st-body"></div>
-</div></div>
 
 <div class="rp" id="rep">
   <div class="rp-hd">
@@ -1165,9 +1160,6 @@ const CONFIG={proxyBase:"",refreshMs:45000,idleMs:75000,idleAfter:240000,sleepAf
      back if OASA ever stops minding. */
   listStops:10,listPool:11,imminentMin:15,maxMarkers:120,maxRows:6,
   walkSpeed:80,detour:1.35,onward:9};
-const API="https://telematics.oasa.gr/api/";
-const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u=>`https://corsproxy.io/?url=${encodeURIComponent(u)}`];
 
 /* No probe on the boot path, at all.
 
@@ -1185,7 +1177,7 @@ const PUBLIC_PROXIES=[u=>`https://api.allorigins.win/raw?url=${encodeURIComponen
    fail to be http at all, immediately and unambiguously. */
 function initialMode(){
   if(CONFIG.proxyBase) return "proxy";
-  return /^https?:$/.test(location.protocol) ? "same" : "public";
+  return /^https?:$/.test(location.protocol) ? "same" : "none";
 }
 let MODE=initialMode();
 function apiQS(a,p1,p2){ return `?act=${a}`+(p1!=null?`&p1=${encodeURIComponent(p1)}`:"")+(p2!=null?`&p2=${encodeURIComponent(p2)}`:""); }
@@ -1193,9 +1185,14 @@ function apiQS(a,p1,p2){ return `?act=${a}`+(p1!=null?`&p1=${encodeURIComponent(
 async function ensureMode(){ return MODE; }
 /* 404 means this origin serves the files but not the API. Anything else —
    a 5xx, a timeout, a blocked request, a redirect loop — is a bad minute
-   on a real backend, and must not talk the app out of using it. */
+   on a real backend, and must not talk the app out of using it.
+   There used to be a third mode here, "public", which routed every call
+   through a pair of free open CORS relays. It meant one 404 could
+   silently start sending riders' coordinates to a stranger's server, for
+   the rest of the session, with nothing on screen to say so. A missing
+   backend is now a missing backend, and the app says so. */
 function downgradeMode(status){
-  if(MODE==="same" && status===404){ MODE="public"; return true; }
+  if(MODE==="same" && status===404){ MODE="none"; return true; }
   return false;
 }
 function base(){ return MODE==="proxy"?CONFIG.proxyBase.replace(/\/$/,""):""; }
@@ -1203,12 +1200,10 @@ function hasBackend(){ return MODE==="same"||MODE==="proxy"; }
 /* fresh=true bypasses the Worker's edge cache — only the co-movement
    pass needs it, everything else prefers the shared cached answer. */
 async function oasa(a,p1,p2,fresh){
-  await ensureMode(); const qs=apiQS(a,p1,p2)+(fresh?"&nocache=1":"");
-  if(hasBackend()) return safeJson(await (await fetch(base()+"/api"+qs,{cache:"no-store"})).text());
-  const target=API+qs; let e2;
-  for(const w of PUBLIC_PROXIES){ try{ const r=await fetch(w(target),{cache:"no-store"});
-    if(!r.ok){e2=new Error("HTTP "+r.status);continue;} return safeJson(await r.text()); }catch(e){e2=e;} }
-  throw e2||new Error("proxy failed");
+  await ensureMode();
+  if(!hasBackend()) throw new Error("nobackend");
+  const qs=apiQS(a,p1,p2)+(fresh?"&nocache=1":"");
+  return safeJson(await (await fetch(base()+"/api"+qs,{cache:"no-store"})).text());
 }
 function safeJson(t){ try{ return JSON.parse(t); }catch{ return null; } }
 /* `opts.focus` biases results towards a point — the Worker forwards it to
@@ -1220,13 +1215,15 @@ async function geocode(q,opts){
   await ensureMode();
   const o=opts||{};
   let url;
-  if(hasBackend()){
-    url=`${base()}/geocode?q=${encodeURIComponent(q)}&lang=${LANG}`;
-    if(o.focus&&isFinite(o.focus.lat)&&isFinite(o.focus.lng))
-      url+=`&lat=${o.focus.lat.toFixed(4)}&lng=${o.focus.lng.toFixed(4)}`;
-  } else {
-    url=`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=gr&limit=6&accept-language=${LANG}&q=${encodeURIComponent(q)}`;
-  }
+  /* Through the Worker or not at all. The fallback that used to live here
+     called Nominatim straight from the browser, which is the rider's IP
+     and their search text going to a third party — and it only ever ran
+     when there was no backend, i.e. when nothing else in the app worked
+     either. A half-working app that leaks is worse than an honest error. */
+  if(!hasBackend()) return [];
+  url=`${base()}/geocode?q=${encodeURIComponent(q)}&lang=${LANG}`;
+  if(o.focus&&isFinite(o.focus.lat)&&isFinite(o.focus.lng))
+    url+=`&lat=${o.focus.lat.toFixed(4)}&lng=${o.focus.lng.toFixed(4)}`;
   const j=await (await fetch(url,{cache:"no-store",signal:o.signal||null})).json();
   return Array.isArray(j)?j:[];
 }
@@ -1270,8 +1267,10 @@ function placeLabel(j){
 }
 async function reverse(lat,lng){
   await ensureMode();
-  const url=hasBackend()?`${base()}/reverse?lat=${lat}&lon=${lng}&lang=${LANG}`
-    :`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&lat=${lat}&lon=${lng}&accept-language=${LANG}`;
+  // Same rule as geocode(): the rider's exact coordinates go to our own
+  // Worker or nowhere.
+  if(!hasBackend()) return { full:null, short:"" };
+  const url=`${base()}/reverse?lat=${lat}&lon=${lng}&lang=${LANG}`;
   const j=await (await fetch(url,{cache:"no-store"})).json();
   return { full:(j&&(j.display_name||j.name))||null, short:placeLabel(j) };
 }
@@ -1311,16 +1310,15 @@ const T={
   pick:"Επιλογή στον χάρτη",quick:"Γρήγορη επιλογή",use:"Χρήση",searching:"Αναζήτηση…",
   noResults:"Κανένα αποτέλεσμα",walk:"με τα πόδια",
   reports:"Ζωντανές αναφορές", reportCta:"＋ Νέα αναφορά", reportWhere:"Πού;",
-  onBus:"Σε λεωφορείο", atStop:"Σε στάση", atMetro:"Σε μετρό",
-  whichLine:"Ποια γραμμή;", whichStop:"Ποια στάση;", whichStation:"Ποιος σταθμός;",
-  issueType:"Τι συμβαίνει;", noteOpt:"Σχόλιο (προαιρετικό)", send:"Αποστολή",
+  onBus:"Σε λεωφορείο", atMetro:"Σε μετρό",
+  send:"Αποστολή",
   catWhat:"Τι συμβαίνει;",
   /* Μόνο στην παλιά διεύθυνση. Λέει πού πήγε η εφαρμογή και ότι θέλει νέα
      εγκατάσταση — τα αγαπημένα δεν μεταφέρονται, γιατί ο browser κρατά τα
      δεδομένα ανά διεύθυνση. */
   movedTxt:h=>`Η εφαρμογή μετακόμισε στο ${h}. Άνοιξέ την εκεί και πρόσθεσέ την ξανά στην αρχική οθόνη — τα αγαπημένα και οι ειδοποιήσεις δεν μεταφέρονται.`,
   movedGo:"Άνοιγμα →",
-  noReports:"Καμία ενεργή αναφορά.", agoShort:"πριν", mineOnly:"Μόνο εσύ μπορείς να τη σβήσεις",
+  noReports:"Καμία ενεργή αναφορά.", agoShort:"πριν", minShort:"λ.", justNow:"μόλις τώρα", mineOnly:"Μόνο εσύ μπορείς να τη σβήσεις",
   confirmBus:"Σε ποιο λεωφορείο είσαι;", scanBus:"Εντοπισμός λεωφορείων γύρω σου…",
   scanRefine:"Έλεγχος ποιο κινείται μαζί σου…", withYou:"κινείται μαζί σου",
   gpsFix:"Εντοπισμός της θέσης σου…",
@@ -1338,15 +1336,10 @@ const T={
   firstP:"Οι αναφορές είναι δημόσιες αλλά τελείως ανώνυμες.",
   agree:"Κατάλαβα",
   unofficial:"Ανεπίσημη εφαρμογή· δεν σχετίζεται με ΟΑΣΑ / ΟΣΥ / ΣΤΑΣΥ.",
-  mLegal:"Όροι & απόρρητο", legalH:"Όροι & απόρρητο",
   openTerms:"Όροι χρήσης", openPrivacy:"Πολιτική απορρήτου",
   back:"← Πίσω",
-  mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", mAbout:"Σχετικά",
-  /* journey planner */
-  mPlan:"Διαδρομή", mPlanS:"Από πού και πού πάω, με μετεπιβιβάσεις",
-  mLineS:"Βρες γραμμή, στάση ή περιοχή",
-  mSettingsS:"Γλώσσα, εμφάνιση λίστας, συχνές ερωτήσεις",
-  jpH:"Διαδρομή", jpFrom:"Από πού;", jpTo:"Πού πάμε;",
+  mLine:"Αναζήτηση γραμμής", mLive:"Ζωντανά λεωφορεία", mLang:"Γλώσσα", /* journey planner */
+  mPlan:"Διαδρομή", jpH:"Διαδρομή", jpFrom:"Από πού;", jpTo:"Πού πάμε;",
   jpMyLoc:"Η τοποθεσία μου", jpGo:"Εύρεση διαδρομής", jpSearching:"Υπολογισμός…",
   jpNone:"Δεν βρέθηκε διαδρομή με λεωφορείο, τρόλεϊ, τραμ ή μετρό.",
   jpClosed:"Αυτή την ώρα δεν κυκλοφορούν λεωφορεία ούτε συρμοί.",
@@ -1372,15 +1365,12 @@ const T={
   jpWalkAll:"Με τα πόδια", jpWalk:"Περπάτημα", jpTo2:"προς",
   jpMin:"λεπτά", jpChanges:n=>n===0?"χωρίς αλλαγή":(n===1?"1 αλλαγή":`${n} αλλαγές`),
   jpStops:n=>n===1?"1 στάση":`${n} στάσεις`,
-  jpWait:"αναμονή", jpRide:"διαδρομή", jpArrive:"Άφιξη",
-  jpBoard:"Επιβίβαση", jpAlight:"Αποβίβαση", jpDest:"Προορισμός", jpStart:"Αφετηρία",
-  jpLive:"Ζωντανές αφίξεις", jpSched:"Βάσει δρομολογίων", jpEst:"Εκτίμηση",
+  jpWait:"αναμονή", jpRide:"διαδρομή", jpBoard:"Επιβίβαση", jpAlight:"Αποβίβαση", jpDest:"Προορισμός", jpLive:"Ζωντανές αφίξεις", jpSched:"Βάσει δρομολογίων", jpEst:"Εκτίμηση",
   jpNoteSched:"Μια ανταπόκριση είναι πολύ μακριά για ζωντανά δεδομένα: κανένα όχημα δεν έχει ακόμη δρομολογηθεί. Ο χρόνος βγήκε από τα δημοσιευμένα δρομολόγια της γραμμής.",
   jpNoteEst:"Οι χρόνοι του μετρό είναι εκτίμηση. Το τηλεματικό σύστημα του ΟΑΣΑ δεν δίνει θέσεις συρμών, οπότε χρησιμοποιούνται οι δημοσιευμένες συχνότητες ανά ημέρα και ώρα. Το ίδιο ισχύει όπου δεν βρέθηκε πίνακας δρομολογίων.",
   jpNoteWalk:"Οι χρόνοι περπατήματος είναι κατ' εκτίμηση, σε ευθεία γραμμή με προσαύξηση για τους δρόμους, όχι πραγματική πεζοπορική διαδρομή.",
   jpModeBus:"Λεωφορείο", jpModeTram:"Τραμ", jpModeTrolley:"Τρόλεϊ", jpModeMetro:"Μετρό",
   jpDisclaim:"Ενδεικτικοί χρόνοι. Η κίνηση και η πραγματική συχνότητα αλλάζουν το αποτέλεσμα.",
-  jpMyLocErr:"Δεν ξέρω πού είσαι. Πάτα «Αλλαγή» για να ορίσεις τοποθεσία.",
   jpFast:"Ταχύτερη", jpFewer:"Λιγότερες αλλαγές", jpMetro:"Με μετρό",
   jpByVehicle:"Με όχημα",
   mSettings:"Ρυθμίσεις", setH:"Ρυθμίσεις",
@@ -1554,15 +1544,13 @@ const T={
      the hour or two they have left; nothing can file one any more. */
   ti_fare:"Προσωπικό ΟΑΣΑ", ti_inspector:"Προσωπικό ΟΑΣΑ",
   ti_delay:"Καθυστέρηση", ti_incident:"Επεισόδιο", ti_no_show:"Δεν πέρασε",
-  ti_detour:"Παράκαμψη", ti_other:"Άλλο", reportSent:"Καταχωρήθηκε ✓",
-  needLoc:"Χρειάζεται τοποθεσία.", repOff:"Οι αναφορές δεν έχουν ρυθμιστεί.",
-  linesHere:"Γραμμές από εδώ", arrivingSoon:"Επόμενες αφίξεις", noLines:"Καμία γραμμή",
+  ti_detour:"Παράκαμψη", ti_other:"Άλλο", linesHere:"Γραμμές από εδώ", arrivingSoon:"Επόμενες αφίξεις", noLines:"Καμία γραμμή",
   wake:"Σε παύση. Πάτα για ανανέωση", stopFallback:"Στάση",radius:"Ακτίνα",stopsN:"στάσεις",
   freshNow:"μόλις τώρα", freshAgo:a=>`πριν ${a}`, secShort:"δ",
   ppHint:"Πάτα μια γραμμή για τη διαδρομή της", fromStop:n=>`από ${n}`,
   nextStops:"Επόμενες στάσεις",noRoute:"Δεν βρέθηκε διαδρομή",
   alertsH:"Ειδοποιήσεις",alertsNone:"καμία",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση, όχι μόνο τις κοντινές.",
-  newAlert:"＋ Νέα ειδοποίηση",stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
+  stop:"Στάση",line:"Γραμμή / κατεύθυνση",days:"Ημέρες",
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
   editAlert:"Επεξεργασία",delAlert:"Διαγραφή",
   noticeH:"Εργασίες συντήρησης",noticeOk:"Εντάξει",
@@ -1576,7 +1564,6 @@ const T={
   pushTestFail:"Δεν στάλθηκε — οι ειδοποιήσεις δεν είναι ενεργές σε αυτή τη συσκευή.",
   pushTestWhy:(s,d)=>`Δεν στάλθηκε. Η υπηρεσία ειδοποιήσεων απάντησε ${s}${d?": "+d:""}`,
   test:"Δοκιμαστική ειδοποίηση",noRules:"Καμία ειδοποίηση ακόμη.",
-  needStops:"Φόρτωσε πρώτα στάσεις κοντά σου.",
   findStop:"⌕ Αναζήτηση άλλης στάσης…", noStopHit:"Καμία στάση με αυτό το όνομα.",
   alertHint:"Η στάση μπορεί να είναι οπουδήποτε: διάλεξε από τις κοντινές ή τα αγαπημένα σου, "+
     "ή ψάξε οποιαδήποτε στάση της Αθήνας.",
@@ -1615,16 +1602,15 @@ const T={
   pick:"Pick on map",quick:"Quick pick",use:"Use",searching:"Searching…",
   noResults:"No results",walk:"walk",
   reports:"Live reports", reportCta:"＋ New report", reportWhere:"Where are you?",
-  onBus:"On a bus", atStop:"At a stop", atMetro:"At a metro station",
-  whichLine:"Which line?", whichStop:"Which stop?", whichStation:"Which station?",
-  issueType:"What's happening?", noteOpt:"Note (optional)", send:"Send",
+  onBus:"On a bus", atMetro:"At a metro station",
+  send:"Send",
   catWhat:"What's happening?",
   /* Shown on the old address only. Says where the app went and that it
      needs installing again — favourites do not travel, because browsers
      keep stored data per address. */
   movedTxt:h=>`OASAx has moved to ${h}. Open it there and add it to your home screen again — favourites and alerts do not travel.`,
   movedGo:"Open →",
-  noReports:"No active reports.", agoShort:"ago", mineOnly:"Only you can clear it",
+  noReports:"No active reports.", agoShort:"ago", minShort:"m", justNow:"just now", mineOnly:"Only you can clear it",
   confirmBus:"Which bus are you on?", scanBus:"Finding buses around you…",
   scanRefine:"Checking which one moves with you…", withYou:"moving with you",
   gpsFix:"Getting your position…",
@@ -1642,15 +1628,10 @@ const T={
   firstP:"Reports are public but completely anonymous.",
   agree:"Got it",
   unofficial:"Unofficial app; not affiliated with OASA / OSY / STASY.",
-  mLegal:"Terms & privacy", legalH:"Terms & privacy",
   openTerms:"Terms of use", openPrivacy:"Privacy policy",
   back:"← Back",
-  mLine:"Find a line", mLive:"Live buses", mLang:"Language", mAbout:"About",
-  /* journey planner */
-  mPlan:"Journey", mPlanS:"Plan a trip across the network, changes included",
-  mLineS:"Find a line, a stop or an area",
-  mSettingsS:"Language, list options, FAQ",
-  jpH:"Journey", jpFrom:"From where?", jpTo:"Where to?",
+  mLine:"Find a line", mLive:"Live buses", mLang:"Language", /* journey planner */
+  mPlan:"Journey", jpH:"Journey", jpFrom:"From where?", jpTo:"Where to?",
   jpMyLoc:"My location", jpGo:"Find a route", jpSearching:"Working it out…",
   jpNone:"No route by bus, trolley, tram or metro.",
   jpClosed:"Neither buses nor trains are running at this hour.",
@@ -1676,15 +1657,12 @@ const T={
   jpWalkAll:"Walk", jpWalk:"Walk", jpTo2:"to",
   jpMin:"min", jpChanges:n=>n===0?"no changes":(n===1?"1 change":`${n} changes`),
   jpStops:n=>n===1?"1 stop":`${n} stops`,
-  jpWait:"wait", jpRide:"ride", jpArrive:"Arrive",
-  jpBoard:"Board", jpAlight:"Get off", jpDest:"Destination", jpStart:"Start",
-  jpLive:"Live arrivals", jpSched:"From the timetable", jpEst:"Estimated",
+  jpWait:"wait", jpRide:"ride", jpBoard:"Board", jpAlight:"Get off", jpDest:"Destination", jpLive:"Live arrivals", jpSched:"From the timetable", jpEst:"Estimated",
   jpNoteSched:"One connection is too far ahead for live data: no vehicle has been dispatched for it yet. That time comes from the line's published timetable instead.",
   jpNoteEst:"Metro times are estimates. OASA's telematics feed carries no trains, so this uses the published frequencies for the day and hour. The same applies anywhere no timetable could be read.",
   jpNoteWalk:"Walking times are estimated from straight-line distance with an allowance for streets, not from a real pedestrian route.",
   jpModeBus:"Bus", jpModeTram:"Tram", jpModeTrolley:"Trolley", jpModeMetro:"Metro",
   jpDisclaim:"Indicative times. Traffic and real frequencies will move them.",
-  jpMyLocErr:"I do not know where you are. Tap Change to set a location.",
   jpFast:"Fastest", jpFewer:"Fewer changes", jpMetro:"By metro",
   jpByVehicle:"By vehicle",
   mSettings:"Settings", setH:"Settings",
@@ -1857,15 +1835,13 @@ const T={
      the hour or two they have left; nothing can file one any more. */
   ti_fare:"OASA staff", ti_inspector:"OASA staff",
   ti_delay:"Delayed", ti_incident:"Incident", ti_no_show:"Never arrived",
-  ti_detour:"Detour", ti_other:"Other", reportSent:"Reported ✓",
-  needLoc:"Location needed.", repOff:"Reports aren't configured.",
-  linesHere:"Lines from here", arrivingSoon:"Arriving soon", noLines:"No lines listed",
+  ti_detour:"Detour", ti_other:"Other", linesHere:"Lines from here", arrivingSoon:"Arriving soon", noLines:"No lines listed",
   wake:"Paused. Tap to refresh", stopFallback:"Stop",radius:"Radius",stopsN:"stops",
   freshNow:"just now", freshAgo:a=>`${a} ago`, secShort:"s",
   ppHint:"Tap a line to draw its route", fromStop:n=>`from ${n}`,
   nextStops:"Next stops",noRoute:"No route data",
   alertsH:"Alerts",alertsNone:"none",alertsP:"Get notified before your bus reaches any stop, not just the ones near you.",
-  newAlert:"＋ New alert",stop:"Stop",line:"Line / direction",days:"Days",
+  stop:"Stop",line:"Line / direction",days:"Days",
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
   editAlert:"Edit",delAlert:"Delete",
   noticeH:"Maintenance",noticeOk:"Got it",
@@ -1878,7 +1854,6 @@ const T={
   pushTestFail:"Not sent — notifications are not active on this device.",
   pushTestWhy:(s,d)=>`Not sent. The push service answered ${s}${d?": "+d:""}`,
   test:"Send test notification",noRules:"No alerts yet.",
-  needStops:"Load nearby stops first.",
   findStop:"⌕ Search another stop…", noStopHit:"No stop by that name.",
   alertHint:"The stop can be anywhere. Pick a nearby one or a favourite, or search any stop "+
     "in Athens.",
@@ -1894,34 +1869,6 @@ const T={
   dayNames:["Su","Mo","Tu","We","Th","Fr","Sa"]}
 };
 const t=k=>T[LANG][k];
-Object.assign(T.el,{
-  stats:"Στατιστικά", statsP:"Παρακολούθηση γραμμών: συχνότητα, συνωστισμός, χαμένα δρομολόγια.",
-  track:"Παρακολούθηση", tracked:"Παρακολουθούνται", addTrack:"＋ Πρόσθεσε γραμμή",
-  noTracked:"Καμία γραμμή ακόμη. Πρόσθεσε μία και άσε τη να μαζέψει δεδομένα.",
-  trackOff:"Η παρακολούθηση δεν έχει ρυθμιστεί (λείπει η D1).",
-  events:"καταγραφές", collecting:"Συλλογή δεδομένων… έλα ξανά σε λίγες ώρες.",
-  waitReal:"Πραγματική αναμονή", headway:"Συχνότητα", regular:"Κανονικότητα",
-  bunching:"Συνωστισμός", missingSvc:"Χαμένα δρομολόγια", vehicles:"Οχήματα",
-  worst:"Χειρότερο κενό", last7:"7 ημέρες", last30:"30 ημέρες", byHour:"Ανά ώρα",
-  incidents:"Περιστατικά", noneYet:"Κανένα ακόμη",
-  trackingFor:"Παρακολούθηση", dayShort:"ημ.", hourShort:"ώ.", minShort:"λ.",
-  lastBus:"τελευταίο", agoWord:"πριν", justNow:"μόλις τώρα",
-  readyWord:"έτοιμο για ανάλυση", buildingWord:"συλλέγει ακόμη", sinceWord:"από"
-});
-Object.assign(T.en,{
-  stats:"Stats", statsP:"Track lines: frequency, bunching, and missing trips.",
-  track:"Tracking", tracked:"Tracked", addTrack:"＋ Track a line",
-  noTracked:"No lines yet. Add one and let it gather data.",
-  trackOff:"Tracking isn't configured (D1 missing).",
-  events:"records", collecting:"Collecting data… check back in a few hours.",
-  waitReal:"Real wait", headway:"Headway", regular:"Regularity",
-  bunching:"Bunching", missingSvc:"Missing trips", vehicles:"Vehicles",
-  worst:"Worst gap", last7:"7 days", last30:"30 days", byHour:"By hour",
-  incidents:"Incidents", noneYet:"None yet",
-  trackingFor:"Tracking", dayShort:"d", hourShort:"h", minShort:"m",
-  lastBus:"last bus", agoWord:"ago", justNow:"just now",
-  readyWord:"ready to analyse", buildingWord:"still building up", sinceWord:"since"
-});
 const PRESETS=[
  {el:"Σύνταγμα",en:"Syntagma",lat:37.9755,lng:23.7348},
  {el:"Ομόνοια",en:"Omonia",lat:37.9841,lng:23.7281},
@@ -3640,9 +3587,6 @@ function reportForArrival(a){
       || rs.find(r=>!r.veh && r.routeCode===a.code)
       || null;
 }
-function reportForMetro(id){
-  return groupedReports().find(r=>r.kind==="metro"&&r.targetId===String(id))||null;
-}
 function flagLine(r){
   if(!r) return "";
   const ago=agoTxt(Date.now()/1000-r.at);
@@ -3866,22 +3810,6 @@ async function sampleBuses(at,opts){
 /* Also carries speed/heading when the device reports them (phones do
    while actually moving) and the fix's own timestamp — both feed the
    staleness maths below. */
-function myPosition(){
-  return new Promise(res=>{
-    const fallback={lat:here.lat,lng:here.lng,acc:999,speed:null,heading:null,t:Date.now()/1000};
-    if(!navigator.geolocation) return res(fallback);
-    navigator.geolocation.getCurrentPosition(
-      p=>{ rememberPos(p);
-        const c=p.coords;
-        res({lat:c.latitude,lng:c.longitude,acc:c.accuracy||0,
-          speed:(isFinite(c.speed)&&c.speed>=0)?c.speed:null,
-          heading:(isFinite(c.heading)&&c.heading>=0)?c.heading:null,
-          t:(p.timestamp?p.timestamp/1000:Date.now()/1000)});
-      },
-      ()=>res(fallback),
-      {enableHighAccuracy:true,timeout:6000,maximumAge:0});
-  });
-}
 
 /* Watch our own position for a while and hand back a TRACK, not a point.
    One getCurrentPosition gives `speed:null` on most Android fixes (the
@@ -5349,7 +5277,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v76</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v77</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5357,151 +5285,6 @@ function closeAbout(){ $("#aboutbg").classList.remove("on"); }
 
 /* ====================== tracking & stats UI ======================= */
 let statRoute=null, statDays=7;
-function openStats(){ $("#statbg").classList.add("on"); renderStats(); }
-function closeStats(){ $("#statbg").classList.remove("on"); }
-async function trackList(){
-  if(!hasBackend()) return null;
-  try{ const r=await fetch(base()+"/track/list",{cache:"no-store"}); return r.ok?await r.json():null; }catch{ return null; }
-}
-async function renderStats(){
-  $("#st-h").textContent=t("stats"); $("#st-p").textContent=t("statsP");
-  const body=$("#st-body");
-  const list=await trackList();
-  if(list===null){ body.innerHTML=`<div class="note">${t("trackOff")}</div>`; return; }
-  body.innerHTML="";
-
-  if(!list.length) body.innerHTML=`<div class="note">${t("noTracked")}</div>`;
-  const nowS=Math.floor(Date.now()/1000);
-  list.forEach(r=>{
-    const d=document.createElement("div"); d.className="rule";
-    const days=Math.max(0,(nowS-(r.added_at||nowS))/86400);
-    const dur = days>=1 ? `${Math.floor(days)}${t("dayShort")}`
-      : `${Math.max(1,Math.round(days*24))}${t("hourShort")}`;
-    const fresh = r.last_ts ? relTime(nowS-r.last_ts) : null;
-    const ready = days>=3 && (r.events||0)>=400;
-    const started = r.added_at ? new Date(r.added_at*1000).toLocaleDateString() : "";
-    d.innerHTML=`<div class="info"><div class="ln">${esc(r.line_id||r.route_code)}
-        <span style="font-weight:600;color:var(--muted);font-size:11.5px"> · ${t("trackingFor")} ${dur}</span></div>
-      <div class="dt">${esc(destOf(r.descr)||"")}<br>
-        ${t("sinceWord")} ${started} · <b style="color:var(--paper)">${(r.events||0).toLocaleString()}</b> ${t("events")}${r.vehicles?` · ${r.vehicles} ${t("vehicles").toLowerCase()}`:""}
-        ${fresh?`<br>${t("lastBus")} ${fresh}`:""}
-        <br><span style="${ready?"font-weight:700":"background:var(--marker);padding:0 3px"}">${ready?"✓ "+t("readyWord"):"◷ "+t("buildingWord")}</span></div></div>`;
-    const view=document.createElement("button"); view.className="del"; view.textContent="📊";
-    view.onclick=()=>{ statRoute=r.route_code; showRouteStats(); };
-    const del=document.createElement("button"); del.className="del"; del.textContent="✕";
-    del.onclick=async()=>{
-      del.disabled=true; del.textContent="…";
-      try{
-        const res=await fetch(base()+"/track/remove",{method:"POST",cache:"no-store",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({route_code:r.route_code})});
-        if(!res.ok){ let j={}; try{ j=await res.json(); }catch(_){}
-          del.textContent="!"; del.title=j.error||("HTTP "+res.status); del.disabled=false; return; }
-        renderStats();
-      }catch(e){ del.textContent="!"; del.title=String((e&&e.message)||e); del.disabled=false; }
-    };
-    d.appendChild(view); d.appendChild(del); body.appendChild(d);
-  });
-
-  // add a line from the stops currently loaded
-  const stops=state.stops.slice(0,CONFIG.listStops).filter(s=>s.routes&&s.routes.length);
-  if(stops.length){
-    const wrap=document.createElement("div");
-    wrap.innerHTML=`<div class="field"><label>${t("addTrack")}</label>
-      <select id="tk-route">${stops.flatMap(s=>(s.routes||[]).map(r=>
-        `<option value="${esc(r.code)}" data-line="${esc(r.id)}" data-descr="${esc((LANG==="en"?(r.en||r.el):(r.el||r.en))||"")}">${esc(r.id)} · ${esc(destOf((LANG==="en"?(r.en||r.el):(r.el||r.en))||""))}</option>`)).join("")}
-      </select></div>`;
-    const msg=document.createElement("div"); msg.className="note"; msg.style.display="none";
-    const add=document.createElement("button"); add.className="primary"; add.textContent=t("addTrack");
-    const fail=txt=>{ msg.style.display=""; msg.textContent=txt;
-      add.disabled=false; add.textContent=t("addTrack"); };
-    add.onclick=async()=>{
-      const sel=wrap.querySelector("#tk-route");
-      const o=sel&&sel.selectedOptions&&sel.selectedOptions[0];
-      if(!sel||!sel.value){ fail("no line selected"); return; }
-      add.disabled=true; add.textContent="…"; msg.style.display="none";
-      try{
-        const r=await fetch(base()+"/track/add",{method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({ route_code:sel.value,
-            line_id:(o&&o.dataset.line)||"", line_code:(o&&o.dataset.line)||"",
-            descr:(o&&o.dataset.descr)||"" })});
-        let j={}; try{ j=await r.json(); }catch(_){}
-        if(!r.ok){ fail(`${j.error||"HTTP "+r.status}${j.max?" ("+j.max+" max)":""}`); return; }
-        renderStats();
-      }catch(e){ fail(String((e&&e.message)||e)); }
-    };
-    body.appendChild(wrap); body.appendChild(add); body.appendChild(msg);
-  }
-}
-
-function relTime(sec){
-  if(!isFinite(sec)||sec<0) return "";
-  if(sec<90) return t("justNow");
-  if(sec<3600) return `${Math.round(sec/60)}${t("minShort")} ${t("agoWord")}`;
-  if(sec<86400) return `${Math.round(sec/3600)}${t("hourShort")} ${t("agoWord")}`;
-  return `${Math.round(sec/86400)}${t("dayShort")} ${t("agoWord")}`;
-}
-function kpi(label,value,cls){ return `<div class="${cls||""}"><b>${value}</b><span>${label}</span></div>`; }
-async function showRouteStats(){
-  const body=$("#st-body");
-  body.innerHTML=`<div class="note">${t("searching")}</div>`;
-  try{
-    const [s,bunch,miss]=await Promise.all([
-      fetch(`${base()}/stats?route=${encodeURIComponent(statRoute)}&days=${statDays}`,{cache:"no-store"}).then(r=>r.json()),
-      fetch(`${base()}/stats/bunching?route=${encodeURIComponent(statRoute)}&days=${statDays}`,{cache:"no-store"}).then(r=>r.json()),
-      fetch(`${base()}/stats/missing?route=${encodeURIComponent(statRoute)}&days=${statDays}`,{cache:"no-store"}).then(r=>r.json()),
-    ]);
-    if(!s||!s.enough){
-      body.innerHTML=`<div class="note">${t("collecting")}<br>${(s&&s.total)||0} ${t("events")}</div>
-        <button class="ghost" id="st-back">←</button>`;
-      $("#st-back").onclick=renderStats; return;
-    }
-    const regCls=s.regularity>=75?"ok":s.regularity>=50?"warn":"bad";  // ok / marked / boxed
-    const bunchCls=s.bunchRate<=5?"ok":s.bunchRate<=15?"warn":"bad";
-    const missCls=s.missingRate<=5?"ok":s.missingRate<=15?"warn":"bad";
-    const maxH=Math.max(1,...(s.hourly||[]).map(h=>h.n));
-    const bars=Array.from({length:24},(_,h)=>{
-      const f=(s.hourly||[]).find(x=>x.h===h);
-      const v=f?f.n:0; const pct=Math.round(v/maxH*100);
-      return `<i class="${pct>66?"hi":""}" style="height:${Math.max(2,pct)}%" title="${h}:00 · ${v}"></i>`;
-    }).join("");
-
-    body.innerHTML=`
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-        <div class="tile num" style="height:28px;min-width:44px;font-size:13px">${esc((s.route&&s.route.line_id)||statRoute)}</div>
-        <div style="color:var(--muted);font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          ${esc(destOf((s.route&&s.route.descr)||"")||"")}</div>
-        <button class="chip${statDays===7?" on":""}" id="d7">${t("last7")}</button>
-        <button class="chip${statDays===30?" on":""}" id="d30">${t("last30")}</button>
-      </div>
-      <div class="kpi">
-        ${kpi(t("waitReal"), s.expectedWait+"′")}
-        ${kpi(t("headway"), s.typicalGap+"′")}
-        ${kpi(t("regular"), s.regularity+"%", regCls)}
-        ${kpi(t("bunching"), s.bunchRate+"%", bunchCls)}
-        ${kpi(t("missingSvc"), s.missingRate+"%", missCls)}
-        ${kpi(t("worst"), s.worstGap+"′")}
-      </div>
-      <div class="note">${s.total} ${t("events")} · ${s.vehicles} ${t("vehicles").toLowerCase()}</div>
-      <div class="sec-label">${t("byHour")}</div>
-      <div class="hrs">${bars}</div>
-      <div class="hrlab"><span>00</span><span>06</span><span>12</span><span>18</span><span>23</span></div>
-      <div class="sec-label">${t("bunching")} · ${t("incidents")}</div>
-      ${bunch&&bunch.length?bunch.slice(0,6).map(b=>
-        `<div class="inc"><b>${Math.round(b.gapSec/60*10)/10}′</b> ${t("bunching").toLowerCase()} · ${new Date(b.at*1000).toLocaleString()}</div>`).join("")
-        :`<div class="inc">${t("noneYet")}</div>`}
-      <div class="sec-label">${t("missingSvc")}</div>
-      ${miss&&miss.length?miss.slice(0,6).map(g=>
-        `<div class="inc"><b>${g.minutes}′</b> (${t("headway").toLowerCase()} ~${g.typical}′) · ${new Date(g.from*1000).toLocaleString()}</div>`).join("")
-        :`<div class="inc">${t("noneYet")}</div>`}
-      <button class="ghost" id="st-back">←</button>`;
-    $("#d7").onclick=()=>{ statDays=7; showRouteStats(); };
-    $("#d30").onclick=()=>{ statDays=30; showRouteStats(); };
-    $("#st-back").onclick=renderStats;
-  }catch(e){ body.innerHTML=`<div class="note">${t("err")}</div>`; }
-}
-
 /* ============================ alerts =============================== */
 function u8(b64){ const p="=".repeat((4-b64.length%4)%4);
   const s=(b64+p).replace(/-/g,"+").replace(/_/g,"/"); const raw=atob(s);
@@ -5917,7 +5700,6 @@ $("#set-alerts").onclick=()=>{ closeSettings(); openAlerts(); };
 $("#reportbtn").onclick=openReports;
 $("#rep-x").onclick=closeReports;
 $("#wake").onclick=wake;
-$("#statbg").onclick=e=>{ if(e.target.id==="statbg") closeStats(); };
 $("#rp-x").onclick=closeRP;
 $("#rl-x").onclick=()=>clearRoute(true);
 $("#jp-x").onclick=closeJourney;

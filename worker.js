@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v76";
+const APP_VERSION = "v77";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -143,6 +143,9 @@ async function timedFetch(urlStr, cacheTtl, opts) {
     } catch (e) {
       clearTimeout(timer);
       lastErr = e;
+      // A retry fired the instant the last one gave up is the same request
+      // again into the same bad second. Short, bounded, no jitter needed.
+      if (attempt < tries - 1) await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
     }
   }
   throw lastErr;
@@ -1028,7 +1031,83 @@ function athensUtcOffsetHours() {
 /* The alert cron's whole upstream budget is one call per stop per minute.
    That is not what the breaker is for, and being refused by it costs a
    rider the bus. See getJSON. */
-const ALERT_FETCH = { ignoreCircuit: true };
+/* The alert cron gets a longer rope than a rider does. A rider is looking
+   at the screen and an 8-second wait is worse than an error; the cron has
+   a whole minute and nobody watching, and its failure costs the bus. */
+const ALERT_FETCH = { ignoreCircuit: true, timeoutMs: 12000, tries: 3 };
+/* Stop STARTING new stop fetches past this point in a run. Without it, ten
+   stops each burning three 12-second timeouts is six minutes of a cron
+   minute, and the runtime cuts it off somewhere in the middle with no
+   record of where. */
+const ALERT_DEADLINE_MS = 25000;
+/* How stale an arrivals list may be before the alert path refuses it.
+   Minutes are age-corrected below, but the correction assumes the bus kept
+   moving as predicted, and that assumption decays. Two and a half minutes
+   is short enough for a 3-minute lead to still mean something. */
+const ALERT_STALE_S = 150;
+
+/* Arrivals, for the alert path only, in three escalating steps:
+ *
+ *   1. the edge cache, which the RIDER path fills on its own ~50s cycle —
+ *      free, costs OASA nothing, and is the answer to "can alerts stop
+ *      burning requests": at a stop somebody is watching, they already
+ *      have.
+ *   2. a live fetch with the long rope above.
+ *   3. a stale copy, age-corrected.
+ *
+ * Step 3 is why this exists. The cron's path to OASA times out where the
+ * rider path succeeds — a different colo, a different route, the same
+ * host — and the old code turned that into silence. A two-minute-old
+ * arrival list still knows a bus is coming; it just needs the clock
+ * subtracted from it. */
+async function arrivalsForAlert(stopCode) {
+  const url = `${OASA}?act=getStopArrivals&p1=${encodeURIComponent(stopCode)}`;
+  const cache = caches.default;
+  const stampKey = new Request(url.replace(OASA, "https://alerts-last/"), { method: "GET" });
+
+  /* Note the TTL: the SAME one the rider path uses, not 0. That is what
+     makes step 1 free. A stop somebody is standing at was fetched seconds
+     ago for their screen, and `cf.cacheTtl` means this subrequest reads
+     and writes that same edge entry — so at a busy stop the alert costs
+     OASA nothing, and at a quiet one it pays once for everybody. Fifty
+     seconds of staleness against a three-minute lead is not a trade worth
+     a request. */
+  const fresh = await getJSON(url, ACT_TTL.getStopArrivals, ALERT_FETCH);
+  if (Array.isArray(fresh)) {
+    const at = Math.floor(Date.now() / 1000);
+    await cache.put(stampKey, new Response(JSON.stringify(fresh), {
+      headers: { "Content-Type": "application/json",
+        "Cache-Control": `public, max-age=${ALERT_STALE_S}`,
+        "X-Fetched-At": String(at) },
+    })).catch(() => {});
+    return { arrivals: fresh, ageS: 0, source: "live or edge cache" };
+  }
+
+  /* The fallback that makes this whole function exist. The cron's path to
+     OASA times out where the rider path succeeds, and the old code turned
+     that into silence. A two-minute-old arrivals list still knows a bus is
+     coming; it just needs the clock subtracted from it. */
+  const old = await (async () => {
+    const hit = await cache.match(stampKey).catch(() => null);
+    if (!hit) return null;
+    const at = Number(hit.headers.get("X-Fetched-At") || 0);
+    const body = await hit.json().catch(() => null);
+    if (!Array.isArray(body) || !at) return null;
+    const ageS = Math.max(0, Math.floor(Date.now() / 1000) - at);
+    return ageS > ALERT_STALE_S ? null : { arrivals: body, ageS };
+  })();
+  if (!old) return null;
+  const drift = Math.round(old.ageS / 60);
+  const aged = old.arrivals.map(a => {
+    const m = parseInt(a.btime2 ?? a.btime ?? "", 10);
+    if (!isFinite(m)) return a;
+    return { ...a, btime2: String(m - drift), btime: String(m - drift) };
+  }).filter(a => {
+    const m = parseInt(a.btime2 ?? "", 10);
+    return !isFinite(m) || m >= 0;            // already arrived: not news
+  });
+  return { arrivals: aged, ageS: old.ageS, source: `stale ${old.ageS}s, minutes aged by ${drift}` };
+}
 /* Bypassing the breaker means this path needs its own ceiling, and the
    runtime imposes one anyway: a Worker invocation gets 50 subrequests on
    the free plan, and going over throws — which, before the cron was
@@ -1084,20 +1163,25 @@ async function runAlerts(env, T = {}) {
     T.overCapacity = `${entries.length} stops due, serving ${ALERT_MAX_STOPS}`;
     entries = entries.slice(0, ALERT_MAX_STOPS);
   }
+  const started = Date.now();
   for (const [stopCode, stopRules] of entries) {
-    const arrivals = await getJSON(
-      `${OASA}?act=getStopArrivals&p1=${encodeURIComponent(stopCode)}`, 0, ALERT_FETCH);
-    /* getJSON never throws — it returns null, for a timeout, a non-200, an
-       open circuit and a parse failure alike. So this `continue` is a
-       silent dead end unless it says so: a cron that cannot reach OASA and
-       a cron that is not running look identical on the phone. */
-    if (!Array.isArray(arrivals)) {
+    if (Date.now() - started > ALERT_DEADLINE_MS) {
+      T.stops[stopCode] = "NOT REACHED — the run hit its deadline first";
+      continue;
+    }
+    const got = await arrivalsForAlert(stopCode);
+    /* Nothing throws on this path — a timeout, a non-200 and a parse
+       failure all arrive as null — so this branch is a silent dead end
+       unless it says so. A cron that cannot reach OASA and a cron that is
+       not running look identical on the phone. */
+    if (!got) {
       const f = circuitState().lastFail;
-      T.stops[stopCode] = "NO ANSWER from OASA on this run"
+      T.stops[stopCode] = "NO ANSWER from OASA, and nothing cached to fall back on"
         + (f ? ` — last upstream failure ${f.agoSec}s ago: ${f.why}` : "");
       continue;
     }
-    T.stops[stopCode] = `${arrivals.length} arrivals`;
+    const arrivals = got.arrivals;
+    T.stops[stopCode] = `${arrivals.length} arrivals (${got.source})`;
 
     /* The route code a rule stores comes from webRoutesForStop, which
        lists every direction and variant of every line at the stop. The

@@ -20,3 +20,17 @@
   Referrer-Policy: strict-origin-when-cross-origin
   # The app asks for location itself; nothing embedded in it should.
   Permissions-Policy: geolocation=(self), camera=(), microphone=(), payment=()
+  # Since v77 the browser talks to exactly one host — this one. The
+  # geocoder, the reverse geocoder and the OASA proxy all go through the
+  # Worker, and the public-CORS-proxy fallback that used to bypass it is
+  # gone. So connect-src can be closed, which is the half of a CSP that
+  # actually matters here: it means injected script cannot exfiltrate
+  # anything, whatever else it manages to do.
+  #
+  # script-src keeps 'unsafe-inline' because the app IS one inline script
+  # — an honest limitation, not an oversight. Moving it to a file would
+  # buy a nonce, and cost the single-file property the whole project is
+  # built on. img-src carries the tile hosts and data:/blob: for the
+  # canvas-drawn markers.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://tile.openstreetmap.org; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'
+

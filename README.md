@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v76.**
+version: v77.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -21,9 +21,11 @@ within 600 m. Every report is trusted; when several people flag the same thing i
 becomes one marker carrying the head count.
 See [Live reports](#live-reports) for the exact rules.
 
-> The service-stats screen (line reliability, bunching, missing trips) still exists in
-> the code and the tracking backend still collects data — the UI was retired in v18 to
-> make room for reports. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
+> The service-stats **screen** (line reliability, bunching, missing trips) was retired in
+> v18 to make room for reports, and its client code was deleted in v77 — it had been
+> shipping in every page load for sixty versions with nothing able to open it. The
+> tracking **backend** is untouched and still collects the data, so the screen can come
+> back from `/track/*` whenever it earns its place. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
 
 ## Files
 
@@ -35,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 813 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 835 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
@@ -122,9 +124,11 @@ The app auto-detects its backend at startup:
   share one URL — the same-origin backend is detected and everything just works.
 - **Split hosting:** if you host the static files elsewhere, set `CONFIG.proxyBase` in
   `public/index.html` to your Worker URL.
-- **No backend at all** (e.g. opened as a local file): it falls back to public CORS
-  proxies — fine for a quick look, but rate-limited and flaky, and the extra features
-  (reports, alerts, stats) need the Worker. Don't ship on that.
+- **No backend at all** (e.g. opened as a local file): the app says so and stops. There
+  used to be a third mode here that routed every call through free open CORS relays, so
+  one 404 from the Worker could silently start sending riders' coordinates to a
+  stranger's server for the rest of the session, with nothing on screen to say so.
+  Removed in v77 — a missing backend is now a missing backend.
 
 ## Deploy in ~5 minutes
 
@@ -818,7 +822,32 @@ Three changes close it:
 `/alerts/why` returns the last trace from a minute that actually had a rule due, as
 `lastCronWithWork`. Quiet minutes do not overwrite it.
 
-#### And the answer it gave
+#### And what finally fixed it
+
+The trace named the breaker (see below), and exempting the alert path from it was
+necessary but not sufficient: the next reading said
+`NO ANSWER from OASA on this run — The operation was aborted`. The cron's fetch to
+telematics.oasa.gr **times out where the rider path, hitting the same host in the same
+second, succeeds** — a different colo, a different route, the same API. That is not
+something this app can fix from inside, so it stops depending on it.
+
+`arrivalsForAlert()` is three steps instead of one call:
+
+1. The fetch now passes **`ACT_TTL.getStopArrivals` instead of `0`**, so it reads and
+   writes the same edge entry the rider path fills. At a stop somebody is standing at, the
+   alert costs OASA nothing — which is also the answer to "can alerts stop burning
+   requests". Fifty seconds of staleness against a three-minute lead is not a trade worth
+   a request.
+2. If that misses, a live call with a longer rope than a rider gets: 12 s, three tries,
+   with a backoff between them, because the cron has a whole minute and nobody watching.
+3. If *that* fails, a stamped copy up to `ALERT_STALE_S` (150 s) old, **with the clock
+   subtracted from every arrival** — a two-minute-old list still knows a bus is coming, it
+   just needs ageing. Buses the correction puts in the past are dropped.
+
+`ALERT_DEADLINE_MS` (25 s) stops the run starting new stop fetches after that point, so
+one dark stop cannot eat the minute and leave the rest unserved.
+
+#### And the answer the trace gave
 
 ```
 "lastCronWithWork": { due: true, rules: 2, active: 2, attempts: 0,
@@ -852,6 +881,7 @@ instead of only a tally, and `circuitState().lastFail` carries it into every dia
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by
 calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
 the rest of the session on third-party CORS proxies: no stops, no markers, no error.
+(Those proxies are gone as of v77; see above.)
 Then, briefly, by calling `/health`, which asked the right question but still hung the
 entire boot on one request winning. Both failed in production. Both looked to the rider
 like an app that simply does not work.

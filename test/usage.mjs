@@ -48,8 +48,17 @@ const ctx = {
   encodeURIComponent, decodeURIComponent,
   AbortController: class { constructor() { this.signal = null; } abort() {} },
   crypto: { randomUUID: () => "x", subtle: {} },
-  caches: { default: { async match() {}, async put() {} } },
+  /* A real one, not a pair of no-ops: the alert path's fallback to a
+     stamped copy IS cache behaviour, and a stub that forgets everything
+     tests the opposite of what matters. */
+  caches: { default: null },                    // filled in below, with a clear()
   fetch: async () => { throw new Error("no network in the harness"); },
+};
+const EDGE = new Map();
+const edgeKey = r => (typeof r === "string" ? r : r.url);
+ctx.caches.default = {
+  async match(r) { const v = EDGE.get(edgeKey(r)); return v ? v.clone() : undefined; },
+  async put(r, res) { EDGE.set(edgeKey(r), res.clone()); },
 };
 ctx.globalThis = ctx;
 vm.createContext(ctx);
@@ -596,6 +605,7 @@ console.log("\n— what runAlerts does when the push fails —");
   }
   {
     const T = {}; ctx.__env = env; ctx.__T = T;
+    EDGE.clear();                    // nothing stamped: no fallback to reach for
     vm.runInContext(`getJSON = async () => null;`, ctx);
     await vm.runInContext(`runAlerts(__env, __T)`, ctx);
     ok("...and OASA not answering at all says so, rather than passing quietly",
@@ -603,6 +613,48 @@ console.log("\n— what runAlerts does when the push fails —");
     vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
       : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
   }
+  /* "The operation was aborted": the cron's fetch to OASA times out where
+     the rider path, hitting the same host at the same moment, succeeds. So
+     the alert path may not depend on that one call winning. */
+  {
+    const T = {}; ctx.__env = env; ctx.__T = T;
+    store.set("rules:index", JSON.stringify([rule]));
+    arrivals = [{ route_code: "2045", veh_code: "V1", btime2: "9" }];
+    reply = { status: 201, detail: "", gone: false };
+    await vm.runInContext(`runAlerts(__env, __T)`, ctx);
+    ok("a live fetch is used and stamped for later",
+      /live or edge cache/.test(String((T.stops || {})["10361"])), JSON.stringify(T.stops));
+
+    /* Now OASA goes dark. The bus is still coming; the last answer still
+       knows roughly where it is. */
+    const T2 = {}; ctx.__T = T2;
+    vm.runInContext(`getJSON = async () => null;`, ctx);
+    store.delete("sent:r1:V1:10"); store.delete("sent:r1:V1:5");
+    const before = calls;
+    await vm.runInContext(`runAlerts(__env, __T2)`,
+      Object.assign(ctx, { __T2: T2 }));
+    ok("...and when OASA goes dark the stamped copy carries the run",
+      /stale/.test(String((T2.stops || {})["10361"])), JSON.stringify(T2.stops));
+    ok("...with the minutes aged, not replayed as if no time had passed",
+      /aged by/.test(String((T2.stops || {})["10361"])), JSON.stringify(T2.stops));
+    ok("...so the alert still goes out instead of being lost",
+      calls > before, `${calls - before} pushes`);
+    vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
+      : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
+  }
+  {
+    const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+    ok("the alert fetch shares the rider's edge cache rather than bypassing it",
+      /getJSON\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
+      "a stop somebody is watching costs OASA nothing");
+    ok("...and gets a longer rope than a rider does",
+      /ALERT_FETCH = \{ ignoreCircuit: true, timeoutMs: 12000, tries: 3 \}/.test(w));
+    ok("...bounded by a deadline, so one dark stop cannot eat the run",
+      /ALERT_DEADLINE_MS/.test(w) && /NOT REACHED/.test(w));
+    ok("a retry waits before repeating itself into the same bad second",
+      /await new Promise\(r => setTimeout\(r, 300 \* \(attempt \+ 1\)\)\)/.test(w));
+  }
+
   /* The fault that cost every alert this service has ever tried to send:
      an isolate serves fetch AND scheduled events from one module state, so
      user traffic could open the breaker and starve a cron sharing it —
@@ -612,8 +664,8 @@ console.log("\n— what runAlerts does when the push fails —");
   {
     const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
     ok("the breaker cannot refuse the alert cron",
-      /const ALERT_FETCH = \{ ignoreCircuit: true \}/.test(w)
-      && /getStopArrivals[\s\S]{0,80}ALERT_FETCH/.test(w),
+      /const ALERT_FETCH = \{ ignoreCircuit: true,/.test(w)
+      && /getJSON\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
       "one call per stop per minute is not what a breaker is for");
     ok("...and the line lookup behind it is exempt too",
       /fetchStopRoutes\(stopCode, ALERT_FETCH\)/.test(w));

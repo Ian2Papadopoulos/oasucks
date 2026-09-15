@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v76 defaults** — if you edit the
+breaks if you change it. Values here are the **v77 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -153,6 +153,16 @@ cron minute spends roughly:
 Ten stops with two alerts firing is `5 + 20 + 14 = 39`. Twenty stops with three firings is
 `66` — over the cap, and **going over throws**, which before v74 was a silent total
 failure. Raise this with the plan, not before.
+
+`worker.js` → the alert fetch, three steps:
+
+| Parameter | Default | What it means |
+|---|---|---|
+| (the fetch TTL) | `ACT_TTL.getStopArrivals` = **50 s** | The alert path shares the rider path's edge entry instead of bypassing it (`0`). At a stop somebody is watching, the alert costs OASA nothing. |
+| `ALERT_FETCH.timeoutMs` | **12 000 ms** | Longer than a rider's 8 s: the cron has a whole minute and nobody watching, and its failure costs the bus. |
+| `ALERT_FETCH.tries` | **3** | With a 300/600 ms backoff, so a retry is not the same request into the same bad second. |
+| `ALERT_STALE_S` | **150 s** | How old a stamped copy may be before the fallback refuses it. Minutes are aged by the elapsed time; the correction assumes the bus kept moving as predicted, and that assumption decays. |
+| `ALERT_DEADLINE_MS` | **25 000 ms** | Stop *starting* new stop fetches past this point in a run, so one unreachable stop cannot eat the minute. |
 
 The alert path is exempt from the upstream circuit breaker
 (`ALERT_FETCH = { ignoreCircuit: true }`) — one call per stop per minute is not the load

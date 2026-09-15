@@ -576,7 +576,7 @@ console.log("\n— no probe at all —");
       const before = MODE;
       const a = downgradeMode(500), b = downgradeMode(0), c = downgradeMode(502);
       const held = MODE === before && !a && !b && !c;
-      const gone = downgradeMode(404) && MODE === "public";
+      const gone = downgradeMode(404) && MODE === "none" && !hasBackend();
       MODE = before;
       return held && gone;
     }), "a 5xx or a timeout is a bad minute, not a missing backend");
@@ -713,6 +713,63 @@ console.log("\n— the header row, and a ☰ that is just Settings —");
     opened.alerts && !opened.settings, JSON.stringify(opened));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
+}
+
+/* Two string tables maintained by hand will drift, and the failure is
+   invisible in the language you are not testing in: a key added to `en`
+   and missed in `el` renders as `undefined` for every Greek rider. */
+console.log("\n— the app is one thing, not the sediment of seventy versions —");
+{
+  const v = await open();
+  const d = await v.page.evaluate(() => {
+    const el = Object.keys(T.el), en = Object.keys(T.en);
+    return { onlyEl: el.filter(k => !en.includes(k)), onlyEn: en.filter(k => !el.includes(k)),
+             n: el.length,
+             mismatched: el.filter(k => en.includes(k) && typeof T.el[k] !== typeof T.en[k]) };
+  });
+  ok("both languages carry exactly the same keys",
+    !d.onlyEl.length && !d.onlyEn.length,
+    `el-only: ${d.onlyEl.join(",") || "none"} | en-only: ${d.onlyEn.join(",") || "none"}`);
+  ok("...and the same shapes, so a plural rule cannot become a bare string",
+    !d.mismatched.length, d.mismatched.join(","));
+  ok("...and there are still strings", d.n > 200, `${d.n} keys`);
+  /* The other direction, and the one that actually bit: a key the code
+     calls but no table defines renders as the word "undefined" in the UI.
+     Tidying up unused strings is exactly when this happens. */
+  const src = readFileSync(path.join(PUB, "index.html"), "utf8");
+  const used = [...new Set([...src.matchAll(/[^a-zA-Z]t\("([a-zA-Z0-9_]+)"\)/g)].map(m => m[1]))];
+  const missing = await v.page.evaluate(
+    u => u.filter(k => T.el[k] === undefined || T.en[k] === undefined), used);
+  ok("every string the code asks for exists in both tables",
+    !missing.length, missing.join(",") || `${used.length} keys checked`);
+  await v.ctx.close();
+}
+{
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  /* A retired feature that still ships is a feature: it costs every page
+     load, it shows up in every search, and it has to be reasoned about
+     every time something near it changes. */
+  for (const gone of ["openStats", "renderStats", "statbg", "trackList", "myPosition",
+                      "reportForMetro"]) {
+    ok(`the retired ${gone} is gone, not merely unreachable`,
+      !new RegExp(`\\b${gone}\\b`).test(html));
+  }
+  /* One 404 from the Worker used to switch the app to third-party CORS
+     proxies for the rest of the session, sending riders' coordinates to a
+     stranger's server with nothing on screen to say so. */
+  ok("no third-party host is called from the browser at all",
+    !/allorigins|corsproxy|nominatim\.openstreetmap/.test(html),
+    "the geocoder and the OASA proxy both go through the Worker");
+  ok("...and a missing backend is a missing backend, not a silent downgrade",
+    /MODE="none"/.test(html) && !/PUBLIC_PROXIES/.test(html),
+    "one 404 used to switch every later call to a stranger's server");
+  const hdr = readFileSync(path.join(PUB, "_headers"), "utf8");
+  ok("so connect-src can finally be closed",
+    /Content-Security-Policy:/.test(hdr) && /connect-src 'self'/.test(hdr),
+    "injected script cannot exfiltrate what it cannot send");
+  ok("...with framing, objects and form posts denied outright",
+    /frame-ancestors 'none'/.test(hdr) && /object-src 'none'/.test(hdr)
+    && /form-action 'none'/.test(hdr));
 }
 
 await browser.close();
