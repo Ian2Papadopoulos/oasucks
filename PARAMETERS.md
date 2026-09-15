@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v75 defaults** — if you edit the
+breaks if you change it. Values here are the **v76 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -137,12 +137,26 @@ in v44) both read as *OASA staff*.
 | `detour` | **1.35** | Straight-line distance × this ≈ real walking distance. |  |
 | `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`), pinned from the long-press menu. | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
 
-`worker.js` → `ALERT_MAX_STOPS`: **20**. Distinct stops the alert cron fetches in one
-minute, tightest lead first. A Worker invocation gets 50 subrequests on the free plan and
-exceeding it throws, so this is the ceiling that keeps a growing rule set from taking the
-whole run down. Raise it with the plan, not before. The alert path is exempt from the
-upstream circuit breaker (`ALERT_FETCH = { ignoreCircuit: true }`) — one call per stop per
-minute is not the load the breaker exists to shed, and being refused by it loses the bus.
+`worker.js` → `ALERT_MAX_STOPS`: **10**. Distinct stops the alert cron fetches in one
+minute, tightest lead first (a 3-minute alert has one chance; a 15-minute one has twelve).
+
+The number is the subrequest budget, not a preference. A Worker invocation gets **50
+subrequests** on the free plan, and Workers KV counts toward them as well as `fetch`. A
+cron minute spends roughly:
+
+| | subrequests |
+|---|---|
+| fixed | ~5 — two rules reads, the heartbeat batch, the usage batch |
+| per stop | 2 — arrivals, plus the line lookup when a route code misses |
+| per firing | ~7 — one KV get per lead, the subscription, the push, the meta batch, one KV put per lead |
+
+Ten stops with two alerts firing is `5 + 20 + 14 = 39`. Twenty stops with three firings is
+`66` — over the cap, and **going over throws**, which before v74 was a silent total
+failure. Raise this with the plan, not before.
+
+The alert path is exempt from the upstream circuit breaker
+(`ALERT_FETCH = { ignoreCircuit: true }`) — one call per stop per minute is not the load
+the breaker exists to shed, and being refused by it loses the bus.
 
 `public/index.html` → `WIN_BACK` / `WIN_AHEAD`: **5** and **30** minutes. The window a
 new alert opens on, measured from the clock — `now − 5 → now + 30`. It used to be a

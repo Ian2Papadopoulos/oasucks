@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v75";
+const APP_VERSION = "v76";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1036,7 +1036,18 @@ const ALERT_FETCH = { ignoreCircuit: true };
    for the line lookups, the pushes and the D1 writes in the same minute.
    It is also the honest scaling limit of alerts on one Worker: past it,
    this is the number to raise together with the plan. */
-const ALERT_MAX_STOPS = 20;
+/* The arithmetic, because this number is not a guess. A Worker invocation
+   on the free plan gets 50 subrequests, and KV counts toward them as well
+   as fetch. A cron minute spends:
+     fixed      ~5   two rules reads, the heartbeat batch, the usage batch
+     per stop    2   arrivals, plus the line lookup when a code misses
+     per firing ~7   one KV get per lead, the subscription, the push, the
+                     meta batch, one KV put per lead
+   Ten stops with two alerts firing is 5 + 20 + 14 = 39, which leaves
+   headroom for a bad minute. Twenty stops with three firings is 66 — over
+   the cap, and going over THROWS, which before v74 was a silent total
+   failure. Raise this with the plan, not before. */
+const ALERT_MAX_STOPS = 10;
 async function runAlerts(env, T = {}) {
   if (!pushReady(env)) { T.stopped = "push not configured"; return T; }
   const now = athensNow();
@@ -1120,6 +1131,10 @@ async function runAlerts(env, T = {}) {
       const from = hhmmToMin(rule.from), to = hhmmToMin(rule.to);
       const leads = (rule.leads || [10, 5]).slice().sort((a, b) => b - a);
       const codes = (rule.routeCodes || []).map(String);
+      /* Once per rule, not once per arriving bus. A rule's subscription
+         cannot change halfway down a list of arrivals, and each read is a
+         round trip against the invocation's subrequest budget. */
+      let subRead = false, sub = null;
 
       for (const a of arrivals) {
         const rc = String(a.route_code ?? a.RouteCode ?? "");
@@ -1163,7 +1178,7 @@ async function runAlerts(env, T = {}) {
            is a silent alert. */
         let note = null;
         try {
-          const sub = await env.ALERTS.get(`sub:${rule.sub}`, "json");
+          if (!subRead) { sub = await env.ALERTS.get(`sub:${rule.sub}`, "json"); subRead = true; }
           if (!sub) note = { ok: false, why: `no sub:${rule.sub} in KV` };
           if (sub) {
             const sent = await sendPush(sub, {
@@ -1175,19 +1190,24 @@ async function runAlerts(env, T = {}) {
             }, env);
             /* The push service says this endpoint is retired. Keeping it
                means every future run pays for a call that cannot succeed. */
-            if (sent.gone) await env.ALERTS.delete(`sub:${rule.sub}`).catch(() => {});
-            await setMeta(env, "alert_last", Math.floor(Date.now() / 1000));
-            if (sent.status < 300) { try { await bumpUsage(env, ["alert"]); } catch (_) {} }
+            if (sent.gone) {
+              await env.ALERTS.delete(`sub:${rule.sub}`).catch(() => {});
+              sub = null;                            // do not retry a dead endpoint this run
+            }
             note = { ok: sent.status < 300, status: sent.status,
               detail: String(sent.detail || "").slice(0, 200), gone: !!sent.gone };
           }
         } catch (e) { note = { ok: false, why: String((e && e.message) || e).slice(0, 200) }; }
 
         T.attempts++;
-        await setMeta(env, "alert_last_try", JSON.stringify({
-          at: Math.floor(Date.now() / 1000), rule: rule.id, line: rule.lineId || null,
-          route: rc, veh, lead: firingLead, min, ...note,
-        })).catch(() => {});
+        /* One batch for the three things this used to write separately:
+           the attempt, the last-delivered stamp, and the usage tally. */
+        const stamp = Math.floor(Date.now() / 1000);
+        const meta = { alert_last_try: JSON.stringify({
+          at: stamp, rule: rule.id, line: rule.lineId || null,
+          route: rc, veh, lead: firingLead, min, ...note }) };
+        if (note && note.ok) { meta.alert_last = stamp; meta.__usage = "alert"; }
+        await setMetaMany(env, meta);
 
         /* Only a delivered push marks the lead as spent. Writing the
            dedupe key after a FAILED send is how one bad minute used to
@@ -1311,6 +1331,26 @@ async function bumpUsage(env, kinds) {
 /* One row, overwritten. D1 allows 100k writes a day and the cron is 1,440
    of them at most, so a heartbeat is affordable where a KV write (1,000 a
    day, shared with every filed report) would not be. */
+/* Three separate awaits against D1 is three round trips, and this runs
+   inside a cron invocation with a hard subrequest budget. One batch. */
+async function setMetaMany(env, obj) {
+  if (!dbReady(env)) return;
+  try {
+    await initSchema(env);
+    const day = dayKey(Date.now());
+    const stmts = [];
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === "__usage") continue;                 // a tally, not a meta row
+      stmts.push(env.DB.prepare(
+        "INSERT INTO meta(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v")
+        .bind(k, String(v)));
+    }
+    if (obj.__usage) stmts.push(env.DB.prepare(
+      `INSERT INTO usage(day, kind, n) VALUES(?, ?, 1)
+       ON CONFLICT(day, kind) DO UPDATE SET n = n + 1`).bind(day, String(obj.__usage)));
+    if (stmts.length) await env.DB.batch(stmts);
+  } catch (_) { /* a heartbeat must never break the run it is timing */ }
+}
 async function setMeta(env, k, v) {
   if (!dbReady(env)) return;
   try {

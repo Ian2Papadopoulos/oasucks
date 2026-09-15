@@ -620,7 +620,7 @@ console.log("\n— what runAlerts does when the push fails —");
     ok("...but the read path, which is what got us blocked, still is not",
       /if \(upstream && !\(opts && opts\.ignoreCircuit\) && circuitOpen\(\)\)/.test(w));
     ok("...so it carries its own ceiling instead, under the subrequest cap",
-      /ALERT_MAX_STOPS = 20/.test(w) && /T\.overCapacity/.test(w));
+      /ALERT_MAX_STOPS = 10/.test(w) && /T\.overCapacity/.test(w));
     ok("a refused upstream call keeps the reason, not just a tally",
       /circuitNote\(false, `HTTP \$\{r\.status\}`\)/.test(w)
       && /lastFail: circuit\.lastFail/.test(w),
@@ -671,11 +671,19 @@ console.log("\n— the push service's own verdict, kept —");
      every future cron pays for a call that cannot succeed. */
   ok("a subscription the service has retired is forgotten",
     (w.match(/if \(r\.gone\) await env\.ALERTS\.delete/g) || []).length === 1
-    && (w.match(/if \(sent\.gone\) await env\.ALERTS\.delete/g) || []).length === 1,
+    && /if \(sent\.gone\) \{[\s\S]{0,120}env\.ALERTS\.delete/.test(w),
     "on both the test path and the alert path");
+  ok("...and is not retried for the rest of the run",
+    /sub = null;\s*\/\/ do not retry a dead endpoint/.test(w));
   ok("...and a failed send is not counted as one that worked",
-    /if \(sent\.status < 300\) \{ try \{ await bumpUsage/.test(w),
+    /if \(note && note\.ok\) \{ meta\.alert_last = stamp; meta\.__usage = "alert"; \}/.test(w),
     "alert_last was being stamped either way");
+  /* Three awaits against D1 is three round trips, inside an invocation
+     with a hard subrequest budget. */
+  ok("...written in one batch, not three round trips",
+    /await setMetaMany\(env, meta\)/.test(w));
+  ok("the subscription is read once per rule, not once per arriving bus",
+    /if \(!subRead\) \{ sub = await env\.ALERTS\.get/.test(w));
   const app = readFileSync(path.join(PUB, "index.html"), "utf8");
   ok("the app shows the verdict rather than 'not sent'",
     /pushTestWhy/.test(app) && /The push service answered/.test(app));
