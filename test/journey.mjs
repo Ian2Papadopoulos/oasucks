@@ -99,17 +99,18 @@ await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "networkidle" });
 await page.waitForTimeout(1400);
 
 console.log("\n— getting to it —");
-await page.click("#menubtn"); await page.waitForTimeout(250);
+
 /* Journey moved out of the ☰ menu and into the header, next to reports,
    alerts and the hamburger, because two taps behind a hamburger is where a
    feature goes to be undiscovered. */
 ok("the journey is a top-level control, not a menu entry",
    await page.locator("#planbtn").isVisible()
    && await page.evaluate(() => !document.getElementById("m-plan")));
-ok("...and it is the first of the header buttons, before reports",
+ok("...sitting between the search and the reports",
    await page.evaluate(() => {
      const b = [...document.querySelectorAll(".brand .iconbtn")].map(x => x.id);
-     return b[0] === "planbtn" && b.indexOf("reportbtn") === 1;
+     return b[b.indexOf("planbtn") - 1] === "findbtn"
+       && b[b.indexOf("planbtn") + 1] === "reportbtn";
    }));
 await page.click("#planbtn"); await page.waitForTimeout(400);
 ok("the panel opens", await page.locator("#jp").evaluate(e => e.classList.contains("on")));

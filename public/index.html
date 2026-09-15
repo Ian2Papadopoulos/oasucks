@@ -829,6 +829,24 @@
   /* A thin line at the top was too easy to miss, and the whole purpose of
      this is to be read before someone decides the app is broken. Centred,
      over everything, once. */
+  /* Long-press menu. The board behind it blurs rather than merely dims,
+     because the question "which stop is this about" is answered by the
+     name at the top of the card, not by reading the list through it. */
+  .stopmenu{position:fixed;inset:0;z-index:4300;display:grid;place-items:center;padding:24px;
+    background:rgba(23,23,26,.35);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+  .stopmenu[hidden]{display:none}
+  .sm-box{width:100%;max-width:320px;background:var(--paper);border:2px solid var(--toner);
+    border-radius:2px;box-shadow:6px 6px 0 rgba(23,23,26,.2);padding:16px 15px 13px;
+    animation:pop .16s ease-out}
+  .sm-name{font-family:var(--mono);font-weight:700;font-size:12px;letter-spacing:.06em;
+    color:var(--toner);text-align:center;margin-bottom:13px;line-height:1.4}
+  .sm-act{width:100%;margin-bottom:8px;background:var(--toner);color:var(--paper);border:none;
+    padding:13px;font-weight:700;font-size:11.5px;cursor:pointer;font-family:var(--mono);
+    text-transform:uppercase;letter-spacing:.1em;border-radius:2px}
+  .sm-act:active{opacity:.85}
+  .sm-cancel{width:100%;background:none;border:none;color:var(--ink3);padding:8px;
+    font-family:var(--mono);font-size:10.5px;cursor:pointer;
+    text-transform:uppercase;letter-spacing:.1em}
   .noticebg{position:fixed;inset:0;z-index:4200;background:rgba(23,23,26,.45);
     display:grid;place-items:center;padding:22px}
   .noticebg[hidden]{display:none}
@@ -911,20 +929,20 @@
            anywhere. It is not a view of the board, so it does not belong in
            the list/map segment, and two taps behind a hamburger is where a
            feature goes to be undiscovered. -->
+      <button class="iconbtn" id="findbtn" aria-label="search">⌕</button>
       <button class="iconbtn" id="planbtn" aria-label="journey"><span class="ab">A<i></i>B</span></button>
       <button class="iconbtn alert" id="reportbtn" aria-label="live reports"><span class="livedot"></span><span class="badge" id="repcount" style="display:none">0</span></button>
       <button class="iconbtn" id="bell">🔔<span class="badge" id="bellcount" style="display:none">0</span></button>
       <button class="iconbtn" id="menubtn" aria-label="menu" aria-expanded="false">
         <span class="bars"><i></i><i></i><i></i></span></button>
     </div>
+    <!-- Line search moved to the header, so the only thing left behind ☰
+         was one row leading to Settings. A menu with a single entry is a
+         button wearing a costume: ☰ opens Settings itself now. The nav is
+         kept, hidden, because openLiveMap and #livebg still work and this
+         is where that button goes if it ever comes back. -->
     <nav class="menu" id="menu" hidden>
-      <button class="menu-item" id="m-line"><span class="mi">⌕</span>
-        <span class="mtxt"><b id="m-line-t"></b><i id="m-line-s"></i></span></button>
-      <!-- Live buses: retired from the menu, code kept intact (openLiveMap,
-           #livebg, /live). Un-hide this button to bring it back. -->
       <button class="menu-item" id="m-live" hidden><span class="mi">🗺</span><span id="m-live-t"></span></button>
-      <button class="menu-item apart" id="m-settings"><span class="mi">⚙</span>
-        <span class="mtxt"><b id="m-settings-t"></b><i id="m-settings-s"></i></span></button>
     </nav>
     <div class="locbar">
       <span class="dot"></span><span id="locwhere" class="where">…</span>
@@ -949,7 +967,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v71</span></div>
+  <div class="foot"><span class="ver">v72</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1067,6 +1085,18 @@
   </div>
   <div id="livemap"></div>
   <div class="rp-strip" id="live-hint"></div>
+</div>
+
+<!-- Long-press a stop, anywhere it appears, and the two things you can do
+     to it are on one card instead of behind two gestures nobody was told
+     about. -->
+<div class="stopmenu" id="stopmenu" hidden>
+  <div class="sm-box">
+    <div class="sm-name" id="sm-name"></div>
+    <button class="sm-act" id="sm-fav"></button>
+    <button class="sm-act" id="sm-alert"></button>
+    <button class="sm-cancel" id="sm-cancel"></button>
+  </div>
 </div>
 
 <div class="stopcard" id="stopcard"><div class="sc-box">
@@ -1355,8 +1385,8 @@ const T={
   tour1p:"Το πορτοκαλί κουμπί δείχνει τι συμβαίνει τώρα στο δίκτυο: βλάβες, υπερπλήρη οχήματα, "+
     "ασανσέρ και κυλιόμενες εκτός λειτουργίας, προσωπικό. Από εκεί κάνεις και τη δική σου αναφορά.",
   tour2h:"Αγαπημένες στάσεις",
-  tour2p:"Διπλό πάτημα σε μια στάση, στη λίστα ή στον χάρτη, για να την καρφιτσώσεις. Μένει πάντα "+
-    "στην κορυφή, ακόμη κι αν είσαι αλλού. Για αφαίρεση, κράτα το πατημένο.",
+  tour2p:"Κράτα πατημένη μια στάση — στη λίστα, στον χάρτη ή στην αναζήτηση — και "+
+    "διάλεξε: καρφίτσωμα ή ειδοποίηση. Η καρφιτσωμένη στάση μένει στην κορυφή, ακόμη κι αν είσαι αλλού.",
   tour3h:"Λίστα και χάρτης",
   tour3p:"Σύρε αριστερά για τον χάρτη, δεξιά για τη λίστα. Κράτα πατημένη μια γραμμή στη λίστα "+
     "για να δεις τη διαδρομή της. Στον χάρτη, πάτα μια στάση και διάλεξε γραμμή για να σχεδιαστεί.",
@@ -1386,11 +1416,10 @@ const T={
   setEmpty:"Απόκρυψη στάσεων χωρίς αφίξεις",
   setEmptyH:"Όταν είναι ενεργό, οι στάσεις που δεν έχουν άφιξη τα επόμενα 15′ δεν εμφανίζονται "+
     "στη λίστα, όσο κοντά κι αν είναι. Τα αγαπημένα εμφανίζονται πάντα.",
-  dtFav:"Διπλό πάτημα για αγαπημένο",
-  favAlready:"Είναι ήδη αγαπημένο — κράτα πατημένο για αφαίρεση",
+  favAlready:"Είναι ήδη αγαπημένο",
   favAdded:"★ Προστέθηκε στα αγαπημένα", favRemoved:"Αφαιρέθηκε από τα αγαπημένα",
-  favFull:"Έφτασες το όριο αγαπημένων", favHint:"Διπλό πάτημα στο όνομα για αγαπημένο",
-  favHintOn:"Κράτα πατημένο το όνομα για αφαίρεση",
+  favFull:"Έφτασες το όριο αγαπημένων",
+  favHint:"Κράτα πατημένο το όνομα για επιλογές",
   secLines:"Γραμμές", secStops:"Στάσεις",
   lineH:"Αναζήτηση",
   lineP:"Γράψε γραμμή (π.χ. 022) για τη διαδρομή της, ή όνομα στάσης/περιοχής για τις αφίξεις της.",
@@ -1412,9 +1441,11 @@ const T={
     πέφτουν έξω αρκετά λεπτά.</p>
     <p><b>Μη βασίζεσαι στο OASAx για κάτι χρονικά κρίσιμο.</b></p>`,
   faqPinQ:"Πώς καρφιτσώνω μια στάση;",
-  faqPinA:`<p><b>Διπλό πάτημα</b> στο όνομα μιας στάσης — στη λίστα ή στον χάρτη — και
-    καρφιτσώνεται. Μένει στην κορυφή ακόμη κι όταν είσαι αλλού.</p>
-    <p><b>Κράτα το πατημένο</b> για να την ξεκαρφιτσώσεις.</p>`,
+  faqPinA:`<p><b>Κράτα πατημένο</b> το όνομα μιας στάσης — στη λίστα, στον χάρτη ή στα
+    αποτελέσματα της αναζήτησης. Εμφανίζεται ένα μενού με δύο επιλογές: <b>καρφίτσωμα</b>
+    και <b>ειδοποίηση</b>.</p>
+    <p>Η καρφιτσωμένη στάση μένει στην κορυφή ακόμη κι όταν είσαι αλλού. Κράτα την ξανά
+    πατημένη και το ίδιο μενού προσφέρει το ξεκαρφίτσωμα.</p>`,
   faqPlanQ:"Πώς βρίσκω διαδρομή;",
   faqPlanA:`<p>Το κουμπί <b>A→B</b> πάνω. Βάλε αφετηρία και προορισμό: διεύθυνση (και με
     αριθμό), στάση, σταθμό ή την τοποθεσία σου.</p>
@@ -1531,6 +1562,8 @@ const T={
   from:"Από",till:"Έως",lead:"Ειδοποίηση πριν από",save:"Αποθήκευση",cancel:"Ακύρωση",
   editAlert:"Επεξεργασία",delAlert:"Διαγραφή",
   noticeH:"Εργασίες συντήρησης",noticeOk:"Εντάξει",
+  smFav:"★ Αγαπημένη στάση",smUnfav:"☆ Αφαίρεση από αγαπημένα",smAlert:"🔔 Ειδοποίηση",
+  noRulesHow:"Κράτα πατημένη μια στάση για να βάλεις ειδοποίηση.",
   pushHow:"Δεν χρειάζεται να μένει ανοιχτή η εφαρμογή — η ειδοποίηση έρχεται και κλειστή. "+
     "Στο iPhone πρέπει πρώτα να την προσθέσεις στην αρχική οθόνη· σε καρτέλα Safari οι "+
     "ειδοποιήσεις δεν δουλεύουν ποτέ.",
@@ -1656,8 +1689,8 @@ const T={
   tour1p:"The orange button shows what is happening on the network right now: breakdowns, "+
     "crowding, elevators and escalators out of order, staff. File your own from the same screen.",
   tour2h:"Favourite stops",
-  tour2p:"Double-tap a stop, in the list or on the map, to pin it. It stays at the top even when "+
-    "you are somewhere else. To unpin it, press and hold.",
+  tour2p:"Press and hold a stop — in the list, on the map or in the search — and pick "+
+    "one: pin it, or set an alert. A pinned stop stays at the top even when you are somewhere else.",
   tour3h:"List and map",
   tour3p:"Swipe left for the map, right for the list. Long-press a line in the list to preview "+
     "its route. On the map, tap a stop and pick a line to draw it.",
@@ -1686,11 +1719,10 @@ const T={
   setEmpty:"Hide stops with no arrivals",
   setEmptyH:"When on, stops with nothing due in the next 15 min are left out of the list, "+
     "however close they are. Favourites always show.",
-  dtFav:"Double-tap to pin",
-  favAlready:"Already pinned — long-press to unpin",
+  favAlready:"Already pinned",
   favAdded:"★ Pinned to favourites", favRemoved:"Removed from favourites",
-  favFull:"Favourites are full", favHint:"Double-tap the name to pin it",
-  favHintOn:"Long-press the name to unpin",
+  favFull:"Favourites are full",
+  favHint:"Press and hold the name for options",
   secLines:"Lines", secStops:"Stops",
   lineH:"Search",
   lineP:"Type a line (e.g. 022) for its route, or a stop/place name for its arrivals.",
@@ -1713,9 +1745,11 @@ const T={
     out.</p>
     <p><b>Don't rely on OASAx for anything time-critical.</b></p>`,
   faqPinQ:"How do I pin a stop?",
-  faqPinA:`<p><b>Double-tap</b> a stop's name — in the list or on the map — to pin it. It
-    stays at the top even when you are somewhere else.</p>
-    <p><b>Press and hold</b> to unpin it.</p>`,
+  faqPinA:`<p><b>Press and hold</b> a stop's name — in the list, on the map, or in the
+    search results. A menu appears with the two things you can do with it: <b>pin</b> it,
+    or <b>set an alert</b>.</p>
+    <p>A pinned stop stays at the top even when you are somewhere else. Hold it again and
+    the same menu offers to unpin it.</p>`,
   faqPlanQ:"How do I plan a journey?",
   faqPlanA:`<p>The <b>A→B</b> button at the top. Set a start and a destination: an address
     (house number included), a stop, a station, or where you are.</p>
@@ -1831,6 +1865,8 @@ const T={
   from:"From",till:"To",lead:"Notify before",save:"Save",cancel:"Cancel",
   editAlert:"Edit",delAlert:"Delete",
   noticeH:"Maintenance",noticeOk:"Got it",
+  smFav:"★ Pin this stop",smUnfav:"☆ Unpin this stop",smAlert:"🔔 Set an alert",
+  noRulesHow:"Press and hold a stop to set one.",
   pushHow:"The app does not need to stay open — alerts arrive with it closed. On iPhone you "+
     "must add it to the Home screen first; notifications never work in a Safari tab.",
   pushTestOk:"Sent. If nothing appears within a few seconds, this device is not receiving "+
@@ -1935,49 +1971,33 @@ function onLongPress(el,fn,ms=430){
   el.addEventListener("mousemove",move);
   el.addEventListener("mouseup",clear);
   el.addEventListener("mouseleave",clear);
+  /* On a mouse the press still ends in a click, so an element that has its
+     own click handler would act on it as well — long-press a search result
+     and you would get the menu *and* the stop card behind it. Capture
+     phase, so this runs before the element's own handler. */
+  el.addEventListener("click",e=>{
+    if(fired){ fired=false; e.preventDefault(); e.stopPropagation(); }
+  },true);
   el.addEventListener("contextmenu",e=>e.preventDefault());
 }
 
-/* Double-tap — how you pin a favourite, in the list, on the map and on
-   the stop card. Rolled by hand rather than using dblclick: mobile
-   Safari doesn't fire dblclick reliably on arbitrary elements, and this
-   also lets us reject a "double tap" whose two taps landed in different
-   places (a scroll flick followed by a tap). Long-press keeps its old
-   job — route and line previews — so the two gestures never collide. */
-const DTAP={ms:320,slop:24};
-function onDoubleTap(el,fn){
-  let last=0,lx=0,ly=0;
-  const hit=(x,y,e)=>{
-    const now=Date.now();
-    if(now-last<DTAP.ms&&Math.abs(x-lx)<DTAP.slop&&Math.abs(y-ly)<DTAP.slop){
-      last=0;
-      if(e&&e.preventDefault) e.preventDefault();
-      if(navigator.vibrate) try{ navigator.vibrate(18); }catch(_){}
-      fn(e);
-      return;
-    }
-    last=now; lx=x; ly=y;
-  };
-  el.addEventListener("touchend",e=>{
-    if(e.changedTouches&&e.changedTouches.length===1){
-      const p=e.changedTouches[0]; hit(p.clientX,p.clientY,e);
-    }
-  });
-  // desktop: a real dblclick is simpler and doesn't double-count the taps
-  el.addEventListener("dblclick",e=>{
-    if(e.preventDefault) e.preventDefault();
-    fn(e);
-  });
-}
+/* A popup opening under a finger that is still moving is a tap waiting to
+   land on whatever appears there. TAP_GUARD is how long a freshly opened
+   popup ignores clicks — long enough to swallow the tail of the gesture
+   that opened it, short enough that deliberately picking a line never
+   waits. It is all that is left of the double-tap: pinning a stop is the
+   long-press menu now, and one gesture needs no window to distinguish it
+   from another. */
+const TAP_GUARD=440;
 
 /* --------------------------- static UI ----------------------------- */
 function applyStatics(){
   document.documentElement.lang=LANG;
   $("#change").textContent=t("change"); $("#wake-t").textContent=t("wake");
-  $("#m-line-t").textContent=t("mLine"); $("#m-live-t").textContent=t("mLive");
-  $("#m-settings-t").textContent=t("mSettings");
-  $("#m-line-s").textContent=t("mLineS");
-  $("#m-settings-s").textContent=t("mSettingsS");
+  $("#findbtn").title=t("mLine"); $("#findbtn").setAttribute("aria-label",t("mLine"));
+  $("#menubtn").title=t("mSettings"); $("#menubtn").setAttribute("aria-label",t("mSettings"));
+  $("#m-live-t").textContent=t("mLive");
+
   renderSettings();
   $("#live-title").textContent=t("liveH");
   $("#s-h").textContent=t("sheetH"); $("#s-p").textContent=t("sheetP");
@@ -2339,8 +2359,7 @@ function renderList(){
       const hd=document.createElement("div"); hd.className="stop-hd";
       const rows=document.createElement("div"); rows.className="rows";
       card.appendChild(hd); card.appendChild(rows);
-      onDoubleTap(hd,()=>{ const cur=byCode(key); if(cur) addFav(cur); });
-      onLongPress(hd,()=>{ const cur=byCode(key); if(cur) removeFav(cur); });
+      onLongPress(hd,()=>{ const cur=byCode(key); if(cur) openStopMenu(cur); });
       c={card,hd,rows,sig:"",headSig:"",mode:""};
       cardCache.set(key,c);
     }
@@ -2477,20 +2496,14 @@ function addTiles(map){
   return layer;
 }
 function meIcon(){ return L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[16,16],iconAnchor:[8,8]}); }
-/* Double-tap a pin to favourite it — the whole marker, so the name label
-   counts as well as the dot. Nothing is bound to long-press here any more:
-   a single tap opens the popup, and the popup is where routes are chosen.
-   Bound once per element — Leaflet recreates the element on setIcon, hence
-   the guard and the re-bind on redraw. */
+/* Hold a pin and the stop menu opens — the whole marker, so the name label
+   counts as well as the dot. A single tap still opens the popup, which is
+   where routes are chosen. Bound once per element: Leaflet recreates the
+   element on setIcon, hence the guard and the re-bind on redraw. */
 function bindMarkerGestures(m,s){
   const el=m.getElement(); if(!el||el._g) return;
   el._g=1;
-  onDoubleTap(el,e=>{
-    // keep the gesture off the map, or Leaflet's double-tap zoom fires too
-    if(e&&e.stopPropagation) e.stopPropagation();
-    m.closePopup(); addFav(s);
-  });
-  onLongPress(el,()=>{ m.closePopup(); removeFav(s); });
+  onLongPress(el,()=>{ m.closePopup(); openStopMenu(s); });
 }
 function stopIcon(s){
   // Pins carry the stop's own name; lines are revealed by opening the popup.
@@ -2577,11 +2590,10 @@ function bindPopupPicks(m,s){
   L.DomEvent.disableClickPropagation(box);
   box.addEventListener("click",e=>{
     const b=e.target.closest("[data-rc]"); if(!b) return;
-    /* The popup opens on the first tap. If the second tap of a double-tap
-       lands here it means the rider was pinning the stop, not choosing a
-       line, so ignore anything that arrives while a double-tap could still
-       be in progress. Deliberately picking a line takes longer than this. */
-    if(Date.now()-(box._openedAt||0) < DTAP.ms+120) return;
+    /* The popup opens on the first tap, right where the finger already is.
+       Ignore anything that arrives in the moments after, so the tail of the
+       gesture that opened it cannot draw a route nobody asked for. */
+    if(Date.now()-(box._openedAt||0) < TAP_GUARD) return;
     const code=b.dataset.rc;
     m.closePopup();
     if(String(rline.code)===String(code)) return clearRoute(true);
@@ -2703,11 +2715,11 @@ function afterFav(msg){
   renderView();
   if($("#stopcard").classList.contains("on")) renderStopCard();
 }
-/* Adding and removing are separate gestures now, not one toggle.
-   Double-tap only ever ADDS; long-press only ever REMOVES. A toggle
-   bound to a double-tap meant the same gesture did opposite things
-   depending on state you could not see mid-tap, so an accidental
-   repeat silently undid the thing you had just done. */
+/* Adding and removing stay separate functions, and the menu picks which
+   one to offer by looking at the state — so the thing you press says what
+   it will do. The toggle these replaced was bound to a double-tap and did
+   opposite things depending on state you could not see mid-tap, so an
+   accidental repeat silently undid the thing you had just done. */
 function addFav(s){
   const code=String(s.code);
   if(isFav(code)){ toast(t("favAlready")); return; }
@@ -4356,6 +4368,30 @@ function toast(msg){
    from search so you can glance at it without walking there. Long-press
    its name to pin it, exactly like in the list. */
 let cardStop=null;
+/* ------------------- what you can do to a stop ---------------------- *
+ * Two gestures nobody was told about — double-tap to pin, long-press to
+ * unpin — became one that shows you the choices. Long-press anywhere a
+ * stop appears: the list, a map pin, the card a pin opens.
+ *
+ * It is also how an alert gets made now. Setting one used to mean opening
+ * the bell and finding the stop again in a dropdown, which is the same
+ * stop you were already looking at.
+ * ------------------------------------------------------------------- */
+let menuStop=null,menuAfter=null;
+/* `after` is for the places that draw a stop once and never redraw it —
+   the search results, mainly. The list and the map repaint themselves on
+   the next tick, so they pass nothing. */
+function openStopMenu(s,after){
+  if(!s) return;
+  menuStop=s; menuAfter=after||null;
+  $("#sm-name").textContent=stopName(s);
+  $("#sm-fav").textContent=isFav(s.code)?t("smUnfav"):t("smFav");
+  $("#sm-alert").textContent=t("smAlert");
+  $("#sm-cancel").textContent=t("cancel");
+  $("#stopmenu").hidden=false;
+}
+function closeStopMenu(){ $("#stopmenu").hidden=true; menuStop=null; menuAfter=null; }
+
 function openStopCard(s){
   cardStop=s;
   $("#stopcard").classList.add("on");
@@ -4392,7 +4428,7 @@ function renderStopCard(){
       rows.appendChild(row);
     });
   }
-  $("#sc-hint").textContent=fav?t("favHintOn"):t("favHint");
+  $("#sc-hint").textContent=t("favHint");
 }
 
 /* ------------------------ line lookup ------------------------------ */
@@ -4514,13 +4550,20 @@ async function doLineSearch(){
   stopHits.forEach(raw=>{
     const s=adoptStop(raw);
     const b=document.createElement("button"); b.className="res";
-    b.innerHTML=`${isFav(s.code)?'<span class="star">★</span> ':""}🚏 ${esc(stopName(s))}`
-      +(isFinite(s.dist)?` <span style="color:var(--ink3)">· ${fmtDist(s.dist)}</span>`:"");
+    const paint=()=>{
+      b.innerHTML=`${isFav(s.code)?'<span class="star">★</span> ':""}🚏 ${esc(stopName(s))}`
+        +(isFinite(s.dist)?` <span style="color:var(--ink3)">· ${fmtDist(s.dist)}</span>`:"");
+    };
+    paint();
     /* The results stay open underneath. Picking a stop used to close the
        search, so deciding it was the wrong stop meant typing the query
        again; now closing the card puts you back in the list you were
        choosing from. */
     b.onclick=()=>openStopCard(s);
+    /* Same gesture as everywhere else: hold a stop, get the two things you
+       can do with it. Nothing here repaints on its own, so hand the menu a
+       way to redraw this one row when the star flips. */
+    onLongPress(b,()=>openStopMenu(s,paint));
     box.appendChild(b);
   });
 }
@@ -4628,7 +4671,7 @@ const TOUR_KEY="tourSeen";
 /* Bumped when the cards change enough that someone who saw the old set has
    not seen this one. The flag stores the version rather than a bare "1", so
    a bump shows the carousel once more and then goes quiet again. */
-const TOUR_VER="2";
+const TOUR_VER="3";
 /* The art on each card is the REAL control, not a grey glyph standing in
    for it. A card that says "tap the orange dot" over a black ◉ is asking
    you to translate before you can look, and the thing you are then hunting
@@ -5301,7 +5344,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v71</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v72</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5517,7 +5560,7 @@ function renderAlerts(){
   const list=$("#rulelist"),form=$("#ruleform"); list.innerHTML=""; form.innerHTML="";
   $("#a-how").textContent=t("pushHow");
   if(!hasBackend()){ list.innerHTML=`<div class="note">${t("pushOff")}</div>`; return; }
-  if(!state.rules.length) list.innerHTML=`<div class="note">${t("noRules")}</div>`;
+  if(!state.rules.length) list.innerHTML=`<div class="note">${t("noRules")}<br>${t("noRulesHow")}</div>`;
   state.rules.forEach(r=>{
     const d=document.createElement("div"); d.className="rule";
     const days=(r.days||[]).map(i=>t("dayNames")[i]).join(" ");
@@ -5545,9 +5588,10 @@ function renderAlerts(){
       await loadRules(); bellBadge(); renderAlerts(); };
     d.appendChild(ed); d.appendChild(del); list.appendChild(d);
   });
+  /* "+ New alert" is gone: an alert is made by long-pressing the stop you
+     want one for, which is the stop you were already looking at. This
+     panel is now for seeing and changing the ones you have. */
   const act=document.createElement("div"); act.className="formact";
-  const add=document.createElement("button"); add.className="primary"; add.textContent=t("newAlert");
-  add.onclick=()=>renderForm(); act.appendChild(add);
 
   /* This button was removed once, on the reasoning that the first real
      alert is the test. It is back, because that reasoning was wrong: a
@@ -5583,11 +5627,16 @@ function renderAlerts(){
 /* With a rule, the same form edits it; without one, it makes a new one.
    One form either way — an "edit" screen that is a near-copy of the "new"
    screen is two places to fix every time a field changes. */
-function renderForm(edit){
+/* `edit` is an existing rule; `onStop` is a stop you long-pressed and want
+   an alert for. Both put a specific stop at the top of the picker and
+   select it — the difference is only whether there is a rule to overwrite. */
+function renderForm(edit,onStop){
   const form=$("#ruleform"); form.innerHTML="";
-  if(edit){
+  const head=edit ? `${t("editAlert")} · ${edit.stopName||""}`
+    : onStop ? `${t("smAlert")} · ${stopName(onStop)}` : "";
+  if(head){
     const h=document.createElement("div"); h.className="fhead";
-    h.textContent=`${t("editAlert")} · ${edit.stopName||""}`.trim();
+    h.textContent=head.trim();
     form.appendChild(h);
   }
   /* The stop list here used to be "whatever is near you right now", which
@@ -5602,6 +5651,7 @@ function renderForm(edit){
      is often nowhere near where you are standing when you edit it. */
   if(edit&&edit.stopCode!=null)
     push(adoptStop({code:edit.stopCode,name_el:edit.stopName,name_en:edit.stopName}));
+  else if(onStop) push(onStop);
   favs.forEach(f=>{ const live=(state.stops||[]).find(s=>String(s.code)===String(f.code))
     ||state.favLive[String(f.code)]; if(live) push(live); });
   (state.stops||[]).slice(0,CONFIG.listStops).forEach(push);
@@ -5705,7 +5755,7 @@ function renderForm(edit){
   };
   qIn.oninput=()=>{ clearTimeout(qTimer); qTimer=setTimeout(runFind,320); };
   qIn.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(qTimer); runFind(); } };
-  if(edit) stopSel.value="0";                    // the rule's own stop, pushed first
+  if(edit||onStop) stopSel.value="0";            // the named stop, pushed first
   fill().then(()=>{
     const want=(edit&&edit.routeCodes||[])[0];
     if(!want) return;
@@ -5778,10 +5828,10 @@ function switchLang(){
   applyStatics(); updateRadiusLabel(); paintFresh(); renderView();
   if($("#rep").classList.contains("on")){ drawReportMap(); renderReportList(); }
 }
-$("#menubtn").onclick=()=>toggleMenu();
-$("#m-line").onclick=openLineSearch;
+// One row behind a menu is a button in a costume: ☰ is Settings now.
+$("#menubtn").onclick=openSettings;
+$("#findbtn").onclick=openLineSearch;
 $("#m-live").onclick=openLiveMap;
-$("#m-settings").onclick=openSettings;
 $("#set-lang").onclick=()=>{ switchLang(); renderSettings(); };
 $("#set-empty").onclick=toggleHideEmpty;
 $("#setbg").onclick=e=>{ if(e.target.id==="setbg") closeSettings(); };
@@ -5797,8 +5847,25 @@ $("#aboutbg").onclick=e=>{ if(e.target.id==="aboutbg") closeAbout(); };
 $("#live-x").onclick=closeLiveMap;
 $("#sc-x").onclick=closeStopCard;
 $("#stopcard").onclick=e=>{ if(e.target.id==="stopcard") closeStopCard(); };
-onDoubleTap($("#sc-hd"),()=>{ if(cardStop) addFav(cardStop); });
-onLongPress($("#sc-hd"),()=>{ if(cardStop) removeFav(cardStop); });
+onLongPress($("#sc-hd"),()=>{ if(cardStop) openStopMenu(cardStop); });
+$("#sm-cancel").onclick=closeStopMenu;
+$("#stopmenu").onclick=e=>{ if(e.target.id==="stopmenu") closeStopMenu(); };
+$("#sm-fav").onclick=()=>{
+  const s=menuStop,after=menuAfter; closeStopMenu();
+  if(!s) return;
+  isFav(s.code)?removeFav(s):addFav(s);
+  if(after) try{ after(); }catch(_){}
+};
+/* Straight into the form, on the stop you long-pressed. Finding it again
+   in a dropdown was the whole friction this replaces. */
+$("#sm-alert").onclick=()=>{
+  const s=menuStop; closeStopMenu();
+  if(!s) return;
+  closeStopCard();
+  closeLineSearch();
+  openAlerts();
+  renderForm(null,s);
+};
 $("#live-r").onclick=loadLive;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;

@@ -100,10 +100,14 @@ https://oasa-stop.<your-subdomain>.workers.dev
 - **Location:** if the board shows Syntagma instead of where you are, location was
   blocked — tap **Αλλαγή / Change** and allow location, or in Chrome: site settings →
   Location → Allow.
-- **Language:** ☰ menu → Γλώσσα / Language. About *and* Terms & privacy both follow it —
+- **Language:** ☰ → Γλώσσα / Language. About *and* Terms & privacy both follow it —
   check `/legal.html` in both settings.
-- **☰ menu:** find a line and preview its route, live bus map, language, about, and
-  **Terms & privacy** (`/legal.html`).
+- **☰:** opens Settings itself — language, hide-empty-stops, push, and the **FAQ**, whose
+  last entry links **Terms & privacy** (`/legal.html`).
+- **⌕ (first in the header):** find a line and preview its route, or find a stop by name.
+- **Holding a stop** — in the list, on the map, on the stop card, or in a search result —
+  blurs the board and offers **Pin / Unpin** and **Set alert**. Check it on a mouse too:
+  the stop card must *not* open behind the menu.
 - **Live reports:** tap the **orange dot** — the map shows only what's currently flagged
   (buses and metro stations), every flag one colour with its label above it, and
   **New report** underneath lets you file one. Test it
@@ -259,7 +263,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v71",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v72",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 

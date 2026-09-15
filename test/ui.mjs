@@ -222,21 +222,126 @@ console.log("\n— home and work —");
   await v.ctx.close();
 }
 
-console.log("\n— two gestures, one job each —");
+/* Two gestures nobody was told about — double-tap to pin, long-press to
+   unpin — became one that shows you the choices, and is also how an alert
+   gets made. */
+console.log("\n— one gesture, and it shows you the choices —");
 {
   const html = readFileSync(path.join(PUB, "index.html"), "utf8");
   ok("nothing toggles a favourite any more", !/function toggleFav/.test(html),
     "one gesture doing opposite things by hidden state is how a repeat undid your own pin");
-  ok("double-tap adds", /onDoubleTap\([^)]*\)[\s\S]{0,80}addFav\(/.test(html));
-  ok("long-press removes", /onLongPress\([^)]*\)[\s\S]{0,80}removeFav\(/.test(html));
-  for (const where of ["hd", "el", '$("#sc-hd")']) {
-    const re = new RegExp(`onLongPress\\(${where.replace(/[$()#"]/g, "\\$&")}`);
-    ok(`...on the ${where === "hd" ? "list card" : where === "el" ? "map pin" : "stop card"} too`, re.test(html));
+  ok("double-tap no longer means anything on a stop",
+    !/onDoubleTap\([^)]*\)[\s\S]{0,80}addFav\(/.test(html),
+    "an invisible gesture is a feature nobody finds");
+  for (const [where, what] of [["hd", "list card"], ["el", "map pin"], ['$("#sc-hd")', "stop card"]]) {
+    const re = new RegExp(`onLongPress\\(${where.replace(/[$()#"]/g, "\\$&")}[\\s\\S]{0,90}openStopMenu`);
+    ok(`long-press opens it on the ${what}`, re.test(html));
   }
   ok("adding something already pinned says so rather than silently undoing it",
     /favAlready/.test(html));
-  ok("the hint text teaches the new gesture",
-    /Long-press the name to unpin/.test(html) && /Κράτα πατημένο το όνομα/.test(html));
+}
+{
+  const v = await open();
+  const card = await v.page.$("#list .stop .stop-hd");
+  const b = await card.boundingBox();
+  await v.page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await v.page.mouse.down();
+  await v.page.waitForTimeout(650);
+  await v.page.mouse.up();
+  await v.page.waitForTimeout(250);
+  const m = await v.page.evaluate(() => ({
+    open: !document.getElementById("stopmenu").hidden,
+    name: document.getElementById("sm-name").textContent,
+    acts: [...document.querySelectorAll("#stopmenu .sm-act")].map(x => x.textContent.trim()),
+    blur: getComputedStyle(document.getElementById("stopmenu")).backdropFilter,
+  }));
+  ok("a long press on a list stop opens the menu", m.open);
+  ok("...naming the stop it is about", /\w/.test(m.name), m.name);
+  ok("...offering exactly two things", m.acts.length === 2, m.acts.join(" | "));
+  ok("...pinning and an alert", /Pin/i.test(m.acts[0]) && /alert/i.test(m.acts[1]),
+    m.acts.join(" | "));
+  /* The question "which stop is this about" is answered by the name on the
+     card, not by reading the list through it. */
+  ok("...over a blurred board, not merely a dimmed one", /blur/.test(m.blur), m.blur);
+
+  const pinned = await v.page.evaluate(async () => {
+    const n = favs.length;
+    document.getElementById("sm-fav").click();
+    await new Promise(r => setTimeout(r, 200));
+    return { added: favs.length === n + 1, closed: document.getElementById("stopmenu").hidden };
+  });
+  ok("...pinning from it works, and closes it", pinned.added && pinned.closed);
+
+  /* Second press on the same stop now offers to unpin: one entry that
+     knows which way it points, rather than two gestures that do not. */
+  const again = await v.page.evaluate(() => {
+    openStopMenu(state.stops[0]);
+    return document.getElementById("sm-fav").textContent;
+  });
+  ok("...and a pinned stop is offered the opposite", /Unpin/i.test(again), again);
+  await v.ctx.close();
+}
+{
+  /* An alert used to mean opening the bell and finding the stop again in a
+     dropdown — the same stop you were already looking at. */
+  const v = await open();
+  const made = await v.page.evaluate(async () => {
+    hasBackend = () => true; state.subId = "s1"; state.rules = [];
+    openStopMenu(state.stops[0]);
+    document.getElementById("sm-alert").click();
+    await new Promise(r => setTimeout(r, 500));
+    const sel = document.getElementById("f-stop");
+    return {
+      panel: document.getElementById("alertbg").classList.contains("on"),
+      head: (document.querySelector("#ruleform .fhead") || {}).textContent || "",
+      stop: sel ? sel.options[sel.selectedIndex].textContent.trim() : null,
+      buttons: [...document.querySelectorAll("#ruleform .formact button")].map(x => x.textContent),
+    };
+  });
+  ok("the alert option opens the form on that stop", made.panel && /\w/.test(made.stop), made.stop);
+  ok("...saying which stop, at the top", /alert/i.test(made.head) && made.head.includes(made.stop),
+    made.head);
+  ok("...and '+ New alert' is gone, being the friction this replaces",
+    !made.buttons.some(x => /new alert/i.test(x)), made.buttons.join(" | "));
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+{
+  /* A stop you found by searching is still a stop. The search results are
+     the one place that draws a row and then never touches it again, so the
+     pin has to be painted back in by hand — and the row's own click must
+     not fire behind the menu on a mouse. */
+  const v = await open();
+  await v.page.click("#findbtn");
+  await v.page.waitForTimeout(200);
+  await v.page.fill("#lnq", "SYNTAGMA");
+  await v.page.evaluate(() => doLineSearch());
+  await v.page.waitForTimeout(400);
+  const res = await v.page.$("#lnres .res");
+  ok("searching by name finds the stop", !!res);
+  const b = await res.boundingBox();
+  await v.page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await v.page.mouse.down();
+  await v.page.waitForTimeout(650);
+  await v.page.mouse.up();
+  await v.page.waitForTimeout(250);
+  const m = await v.page.evaluate(() => ({
+    open: !document.getElementById("stopmenu").hidden,
+    name: document.getElementById("sm-name").textContent,
+    card: document.getElementById("stopcard").classList.contains("on"),
+  }));
+  ok("...and holding it opens the same menu", m.open);
+  ok("...on the stop that was held", /SYNTAGMA/i.test(m.name), m.name);
+  ok("...without also opening the stop card behind it", !m.card);
+
+  const flip = await v.page.evaluate(async () => {
+    document.getElementById("sm-fav").click();
+    await new Promise(r => setTimeout(r, 250));
+    return document.querySelector("#lnres .res").innerHTML;
+  });
+  ok("...and the result row shows the pin straight away", /★/.test(flip), flip.slice(0, 60));
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
 }
 {
   const v = await open();
@@ -541,66 +646,34 @@ for (const [w, h] of [[1366, 768], [1280, 600], [1024, 560], [390, 844], [360, 6
   await c.close();
 }
 
-console.log("\n— the menu says what each entry does —");
+/* The header carries what you reach for; ☰ carries what you set once.
+   Line search moved out of the menu, which left one row leading to
+   Settings — a button wearing a costume. */
+console.log("\n— the header row, and a ☰ that is just Settings —");
 {
   const v = await open();
-  const items = await v.page.evaluate(() =>
-    [...document.querySelectorAll("#menu .menu-item")].filter(b => !b.hidden)
-      .map(b => b.innerText.replace(/\s+/g, " ").trim()));
-  /* Journey left the menu for the header button row, so what is left is
-     the two things that are genuinely menu-shaped. */
-  ok("two entries, not six", items.length === 2, items.join(" | "));
-  ok("each carries a line saying what it is for",
-    items.every(x => x.split(" ").length > 2), items.join(" | "));
-  ok("the journey is not among them any more",
-    !/journey/i.test(items.join(" ")), items.join(" | "));
-  ok("...it sits in the header instead, left of reports",
-    await v.page.evaluate(() => {
-      const b = [...document.querySelectorAll(".brand .iconbtn")].map(x => x.id);
-      return b[0] === "planbtn" && b[1] === "reportbtn";
-    }));
-  /* A <button> carries the UA's own padding, and 1px 6px of it leaves a
-     16px content box inside these 30px — narrower than the label, which
-     then overflowed to one side instead of centring. The amount differs
-     per engine, so it looked right on a desktop and wrong on a phone. */
-  const ab = await v.page.evaluate(() => {
-    const b = document.getElementById("planbtn").getBoundingClientRect();
-    const s = document.querySelector("#planbtn .ab").getBoundingClientRect();
-    return { dx: (s.x + s.width / 2) - (b.x + b.width / 2),
-             dy: (s.y + s.height / 2) - (b.y + b.height / 2),
-             fits: s.width <= b.width && s.height <= b.height };
-  });
-  ok("...with its label centred in the button, not pushed off one side",
-    Math.abs(ab.dx) < 0.6 && Math.abs(ab.dy) < 0.6, `off by ${ab.dx.toFixed(2)},${ab.dy.toFixed(2)}`);
-  ok("...and fitting inside it", ab.fits);
-  /* U+2192 is missing from the monospace faces several phones ship, and
-     the symbol font that supplies it brings its own metrics. */
-  ok("...drawing the arrow rather than typing it",
-    await v.page.evaluate(() => {
-      const s = document.querySelector("#planbtn .ab");
-      return !/→/.test(s.textContent) && !!s.querySelector("i");
-    }), "no glyph, nothing to fall back to");
-  ok("...which opens the panel without changing the board underneath",
+  const ids = await v.page.evaluate(() =>
+    [...document.querySelectorAll(".brand .iconbtn")].map(b => b.id));
+  ok("five buttons, in the order you reach for them",
+    ids.join(",") === "findbtn,planbtn,reportbtn,bell,menubtn", ids.join(","));
+  ok("...search first, in front of the journey", ids[0] === "findbtn");
+  ok("...and ☰ last, because it is the one you use least",
+    ids[ids.length - 1] === "menubtn");
+  ok("the search button opens the line search",
     await v.page.evaluate(async () => {
-      const before = state.view;
-      document.getElementById("planbtn").click();
-      await new Promise(r => setTimeout(r, 200));
-      return state.view === before && document.getElementById("jp").classList.contains("on");
-    }));
-  /* The segment keeps pointing at the board, which is still there behind
-     the panel — the journey is not a third view of it. */
-  ok("...leaving the segment on the view it was showing",
-    await v.page.evaluate(() => document.getElementById("t-vlist").classList.contains("on")
-      && document.getElementById("planbtn").classList.contains("on")));
-  ok("...and the button goes quiet again on close",
+      document.getElementById("findbtn").click();
+      await new Promise(r => setTimeout(r, 250));
+      return document.getElementById("linebg").classList.contains("on");
+    }), "it used to be two taps behind ☰");
+  await v.page.evaluate(() => closeLineSearch());
+  ok("☰ opens Settings itself, with no menu in between",
     await v.page.evaluate(async () => {
-      closeJourney();
-      await new Promise(r => setTimeout(r, 150));
-      return !document.getElementById("planbtn").classList.contains("on")
-        && document.getElementById("t-vlist").classList.contains("on");
-    }));
-  ok("Settings is set apart from the two that use the app",
-    await v.page.evaluate(() => document.getElementById("m-settings").classList.contains("apart")));
+      document.getElementById("menubtn").click();
+      await new Promise(r => setTimeout(r, 250));
+      return document.getElementById("setbg").classList.contains("on")
+        && document.getElementById("menu").hidden;
+    }), "a menu with one row is a button in a costume");
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
 }
 

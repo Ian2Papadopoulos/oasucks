@@ -3,12 +3,12 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v71.**
+version: v72.**
 
-**The top bar** is three buttons — live reports (the orange dot), alerts 🔔, and a ☰ menu
-holding [look up a line](#search--lines-and-stops) and **Settings** (language, whether to
-hide stops with nothing coming, and the FAQ). Under it, a three-way control: **List ·
-Map · Journey**.
+**The top bar** is five buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
+reports (the orange dot), alerts 🔔, and ☰, which opens **Settings** directly (language,
+whether to hide stops with nothing coming, and the FAQ). Under it, a two-way control:
+**List · Map**.
 
 **Live reports.** The old line-stats button is now the orange live dot. Tap it and a live map of
 Athens opens — only the buses and metro stations that currently carry a flag, each
@@ -32,21 +32,21 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/index.html` | The whole app (UI + logic). No build step, no framework. |
 | `worker.js` | Cloudflare Worker — serves the app, proxies the OASA API, stores reports. |
 | `public/manifest.webmanifest`, `public/sw.js`, `public/icon-*.png` | PWA install + offline shell. |
-| `public/legal.html` | Terms + privacy, as served in the app (☰ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
+| `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 773 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 785 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
 
 ## The menu, and the FAQ
 
-**Journey sits in the header**, an `A→B` button first in the row with live reports,
-alerts and ☰. It is a third thing the app does, not a preference, and two taps behind a
-hamburger is where a feature goes to be undiscovered. It is not a view of the board
-either: the list/map segment keeps pointing at whatever is underneath the panel, and the
-`A→B` button is the only thing that lights up while the panel is open.
+**Journey sits in the header**, an `A→B` button between the search ⌕ and live reports.
+It is a third thing the app does, not a preference, and two taps behind a hamburger is
+where a feature goes to be undiscovered. It is not a view of the board either: the
+list/map segment keeps pointing at whatever is underneath the panel, and the `A→B`
+button is the only thing that lights up while the panel is open.
 
 Its label is two letters and a drawn rule, and the button sets `padding:0`. Both are
 repairs to the same bug: a `<button>` carries the UA's own padding — 1px 6px in Chromium,
@@ -55,9 +55,14 @@ wider label off one side, and U+2192 is missing from the monospace faces several
 ship, so the symbol font that supplied it brought its own metrics. It looked right on a
 desktop and wrong in the hand.
 
-That leaves the ☰ menu as two entries — **Find a line** and **Settings** — each with a
-line under it saying what it does. Settings sits below a rule, since it changes the app
-rather than uses it.
+**Search came out of the menu too.** ⌕ is now the first button in the header, in front
+of `A→B`. Looking up a line or a stop by name is something you do while standing at a
+stop, not something you go into a settings drawer for; behind ☰ it was two taps and a
+guess about which drawer it lived in.
+
+That empties the ☰ menu of everything except Settings — and a menu with one row is a
+button wearing a costume. So **☰ opens Settings itself**: language, hide-empty-stops,
+push, the FAQ. One tap instead of two, and nothing in between to read.
 
 About and Terms & privacy used to be two more entries leading to two long scrolls, and
 almost nobody read either: a wall of prose answers no question in particular, so it
@@ -79,12 +84,26 @@ form to fill in twice. **Long-press clears a slot**, the same gesture that unpin
 favourite, so there is one thing to learn rather than two. Stored per browser; nothing
 about where you live leaves the device.
 
-### Two gestures, one job each
+### One gesture, and it shows you the choices
 
-**Double-tap pins. Long-press unpins.** It used to be one toggle bound to the double-tap,
-which meant the same gesture did opposite things depending on state you could not see
-mid-tap — so an accidental repeat silently undid the pin you had just made. Adding
-something already pinned now says so instead of removing it.
+**Hold a stop.** The board behind it blurs and a small card names the stop and offers the
+two things you can do with it: **Pin / Unpin**, and **Set alert**. It works wherever a
+stop appears — its header in the list, its pin on the map, the card that pin opens, and a
+result from the search.
+
+This replaced double-tap-to-pin and long-press-to-unpin. Two invisible gestures meant two
+things to learn and neither was discoverable, and because one of them depended on state
+you could not see mid-gesture, a repeat silently undid the pin you had just made. A menu
+that says what it will do cannot do the opposite by accident.
+
+It is also how an alert is made now. Setting one used to mean opening 🔔, pressing
+**+ New alert**, and finding in a dropdown the stop you were already looking at — so that
+button is gone. The bell still opens the list of alerts you have, where each can be
+edited or deleted.
+
+On a mouse the press ends in a click, so `onLongPress` swallows that click in the capture
+phase: without it, holding a search result would open the menu *and* the stop card behind
+it.
 
 ## The one thing you must understand
 
@@ -363,14 +382,14 @@ in four minutes — and if the 10-row cap is full it drops off the list entirely
 stays on the map). The server details 14 stops so there are live candidates to promote;
 see [PARAMETERS.md](PARAMETERS.md).
 
-**Favourites:** **double-tap** a stop to pin it — its header in the list, its name on
-the stop card, or its pin on the map (the label counts too). It gets a ★, sorts to the
-top and stays there across refreshes. A pinned stop that's out of range is still shown
-(its arrivals are fetched separately), which is the point: your home stop while you're
-at work, and it survives the hide-empty filter. On the **map** a pinned stop swaps its
-black dot for a yellow ★. Double-tap again to unpin; up to 6, kept in `localStorage`.
-**Long-press** is only for previews, and only in the list: hold an arrival row and the
-line's route opens over a map. On the map itself nothing is bound to a hold.
+**Favourites:** **hold a stop** and pick **Pin** — its header in the list, its name on
+the stop card, its pin on the map (the label counts too), or a search result. It gets a
+★, sorts to the top and stays there across refreshes. A pinned stop that's out of range
+is still shown (its arrivals are fetched separately), which is the point: your home stop
+while you're at work, and it survives the hide-empty filter. On the **map** a pinned stop
+swaps its black dot for a yellow ★. Hold it again and the same menu offers **Unpin**; up
+to 6, kept in `localStorage`. Holding an **arrival row** is a different thing and still
+means a preview: the line's route opens over a map.
 
 **Seeing a line on the map.** Tap a stop's pin and its popup lists every route calling
 there, as buttons: the lines it serves, and the arrivals due. Pick one and that route is
@@ -386,11 +405,10 @@ which is the distinction a rider standing there can actually see, and sort by nu
 
 **The popup never moves the map, and never covers the stop.** Leaflet's default is to
 pan so a tall popup fits, which slides the dot down the screen and puts the popup where
-your finger already is: the second tap of a double-tap then lands on a line chip and
-draws a route instead of pinning the stop. Auto-panning is off, the popup opens above the
-dot, and a chip ignores taps that arrive within a double-tap's window of the popup
-appearing. A refresh sweep also no longer rebuilds a pin whose popup is open, which is
-what used to swallow taps that happened to coincide with one.
+your finger already is, on top of a line chip. Auto-panning is off, the popup opens above
+the dot, and a chip ignores taps that arrive in the first moments of the popup appearing.
+A refresh sweep also no longer rebuilds a pin whose popup is open, which is what used to
+swallow taps that happened to coincide with one.
 
 This replaced a carousel: holding a pin used to parade every line serving it past on a
 3.2s timer. It answered a question nobody asks — you want the line you are waiting for,
@@ -427,9 +445,9 @@ if line-mapping fails it degrades to the route code and still shows the countdow
 
 ## Journey planning (A → B)
 
-Available from ☰ → **Journey**.
+Available from the `A→B` button in the header.
 
-☰ → **Journey** takes two places and returns up to three ways to get between
+`A→B` takes two places and returns up to three ways to get between
 them using **walking, bus/trolley and metro/ISAP** — the three modes this app has
 any business claiming to know about. Either end can be your location, a favourite,
 a stop, a metro station, or anything the geocoder can find.
@@ -685,10 +703,11 @@ easiest to improve: OASA has ~300 lines whose frequencies are nothing alike, so 
 table can only ever be an order of magnitude. It is used **only** where no live ETA
 exists to use instead.
 
-## The ☰ menu
+## Search, and what used to be the ☰ menu
 
-Everything that isn't "what's coming to my stop" lives behind the hamburger, so the
-header stays down to the two things you tap in a hurry (reports and alerts).
+☰ is now Settings itself — there is no menu between the button and the panel. The two
+things that used to live in that menu have moved out in front of it: **search** is the ☰
+button's neighbour in the header, and the live bus map is the orange dot.
 
 ### Search — lines *and* stops
 
@@ -710,7 +729,7 @@ geocodes the query (Nominatim — the path the address search already uses) and 
 the stops around that place, ranked so a stop actually *named* like the query beats one
 that's merely nearby; stops already loaded around you match instantly with no request at
 all. Picking one opens a **card in the centre of the screen** with its live arrivals in
-the same style as the list. Double-tap the stop's name there to pin it; long-press an
+the same style as the list. Hold the stop's name there for the pin/alert menu; hold an
 arrival row for the route preview.
 
 ### Alerts (🔔) — any stop, not just nearby ones
@@ -838,9 +857,11 @@ never sneak in only to drop out a moment later. Kept in `localStorage` under `hi
 
 The gestures that matter here are not discoverable, so on a fresh install six floating
 cards appear once the stops behind them have painted (700ms after load, so the app is
-never explained against an empty screen). They cover live reports, double-tap to
-favourite, swiping between list and map, planning an A→B journey, setting an alert for a
-stop you are nowhere near, and installing it. **Skip** or **Next → Start**; either way it
+never explained against an empty screen). They cover live reports, holding a stop for
+the pin/alert menu, swiping between list and map, planning an A→B journey, setting an
+alert for a stop you are nowhere near, and installing it. `TOUR_VER` is bumped when the
+cards change enough that someone who saw the old set has not seen this one — v72 bumped
+it to `3`, because the gesture the second card teaches is a different gesture. **Skip** or **Next → Start**; either way it
 is remembered in `localStorage.tourSeen` and never shows again.
 
 Nothing reopens it. It is the only thing in the app that interrupts you, so it gets one
@@ -1103,7 +1124,7 @@ doesn't discharge. What ships in this repo:
 | `LICENSE` | AGPL-3.0, for **the code only** — it does not license OASA's data, and it does not protect you as the *operator* of a running service |
 | `PRIVACY.md` | GDPR Art. 13 notice: what's processed, legal basis, retention, recipients, rights |
 | `TERMS.md` | No-warranty, liability limits, acceptable use, the fare rule, DSA notice-and-action |
-| `public/legal.html` | The in-app rendering of both, linked from ☰ → *Terms & privacy* and from About |
+| `public/legal.html` | The in-app rendering of both, linked from the FAQ and from About |
 
 **The AGPL, and what it means for a hosted app.** The code is under
 [AGPL-3.0-or-later](LICENSE). The clause that matters here is **§13**: with a normal
@@ -1114,7 +1135,7 @@ network has to offer those users the source of *their* version. Running it unmod
 or hacking on a private copy nobody else uses, triggers nothing.
 
 In practice that means the app has to carry a route to its own source. It does that by
-**written offer**: ☰ → About and the footer of `legal.html` both say the source is free
+**written offer**: the FAQ and the footer of `legal.html` both say the source is free
 on request and give the contact address. That is an offer, not a link, so it only holds
 up if it is honoured — **send the source to anyone who asks, promptly and at no charge**.
 If you would rather not field those mails, publish the repository and turn both lines

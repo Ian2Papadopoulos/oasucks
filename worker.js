@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v71";
+const APP_VERSION = "v72";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1022,6 +1022,26 @@ async function runAlerts(env) {
     const arrivals = await getJSON(`${OASA}?act=getStopArrivals&p1=${encodeURIComponent(stopCode)}`, 0);
     if (!Array.isArray(arrivals)) continue;
 
+    /* The route code a rule stores comes from webRoutesForStop, which
+       lists every direction and variant of every line at the stop. The
+       arrivals feed only ever names the one actually running there. So
+       picking the wrong variant out of the form's dropdown — which is one
+       click, and looks identical — produced an alert that could never fire
+       and never said why. Seen in the field: a rule wanting route 2027 at
+       a stop whose buses are all 1998.
+
+       So the line is what a rule really means, and the code is only how it
+       was written down. Match either. Loaded once per stop and only when a
+       code misses; webRoutesForStop is cached upstream for a day. */
+    let lineOf = null;
+    const lineFor = async rc => {
+      if (lineOf === null) {
+        const r = await fetchStopRoutes(stopCode);
+        lineOf = new Map(((r && r.routes) || []).map(x => [String(x.code), String(x.id)]));
+      }
+      return lineOf.get(String(rc)) || null;
+    };
+
     for (const rule of stopRules) {
       const from = hhmmToMin(rule.from), to = hhmmToMin(rule.to);
       const leads = (rule.leads || [10, 5]).slice().sort((a, b) => b - a);
@@ -1029,7 +1049,10 @@ async function runAlerts(env) {
 
       for (const a of arrivals) {
         const rc = String(a.route_code ?? a.RouteCode ?? "");
-        if (codes.length && !codes.includes(rc)) continue;
+        if (codes.length && !codes.includes(rc)) {
+          const want = String(rule.lineId || "");
+          if (!want || (await lineFor(rc)) !== want) continue;
+        }
         const min = parseInt(a.btime2 ?? a.btime ?? "", 10);
         if (!isFinite(min)) continue;
 
@@ -3492,6 +3515,8 @@ export default {
           w.blocked = "OASA returned nothing for this stop"; out.push(w); continue;
         }
         const codes = (r.routeCodes || []).map(String);
+        const stopRoutes = await fetchStopRoutes(r.stopCode);
+        const lineOf = new Map((((stopRoutes || {}).routes) || []).map(x => [String(x.code), String(x.id)]));
         w.arrivals = arrivals.map(a => ({
           route: String(a.route_code ?? a.RouteCode ?? ""),
           veh: String(a.veh_code ?? a.VEH_NO ?? ""),
@@ -3502,7 +3527,13 @@ export default {
         const reasons = [];
         for (const a of w.arrivals) {
           if (codes.length && !codes.includes(a.route)) {
-            reasons.push(`route ${a.route} is not one of ${codes.join(",")}`); continue;
+            const want = String(r.lineId || "");
+            const got = lineOf.get(a.route) || "?";
+            if (!want || got !== want) {
+              reasons.push(`route ${a.route} is line ${got}, not ${want || codes.join(",")}`);
+              continue;
+            }
+            reasons.push(`route ${a.route} is a different variant of line ${want} — matched anyway`);
           }
           if (!isFinite(a.min)) { reasons.push(`route ${a.route} has no readable time`); continue; }
           const eta = now.minutes + a.min;

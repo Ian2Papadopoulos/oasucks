@@ -432,10 +432,12 @@ console.log("\n— why an alert did not fire —");
     async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
     async put(k, v) { store.set(k, v); }, async delete(k) { store.delete(k); },
   };
-  let arrivals = [];
+  let arrivals = [], stopRoutes = [];
   ctx.__arr = () => arrivals;
+  ctx.__routes = () => stopRoutes;
   const realGet = vm.runInContext("getJSON", ctx);
-  vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr() : null;`, ctx);
+  vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
+    : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
 
   const now = vm.runInContext("athensNow", ctx)();
   const hhmm = vm.runInContext("minToHhmm", ctx);
@@ -449,10 +451,10 @@ console.log("\n— why an alert did not fire —");
   const rule = { id: "r1", sub: "s1", enabled: true, stopCode: "10361", lineId: "608",
     routeCodes: ["2045"], days: [0, 1, 2, 3, 4, 5, 6],
     from: hhmm(now.minutes), to: hhmm(now.minutes + 20), leads: [10, 5] };
-  const setup = (r, arr, sub = true) => {
+  const setup = (r, arr, sub = true, routes = []) => {
     store.clear(); store.set("rules:index", JSON.stringify([r]));
     if (sub) store.set("sub:s1", JSON.stringify({ endpoint: "https://p/x", keys: {} }));
-    arrivals = arr;
+    arrivals = arr; stopRoutes = routes;
   };
 
   {
@@ -491,7 +493,21 @@ console.log("\n— why an alert did not fire —");
   setup(rule, [{ route_code: "9999", veh_code: "V2", btime2: "3" }]);
   j = await ask();
   ok("another line at the same stop is named, not ignored",
-    /not one of 2045/.test(JSON.stringify(j.rules[0].verdict)),
+    /route 9999 is line .*, not 608/.test(JSON.stringify(j.rules[0].verdict)),
+    JSON.stringify(j.rules[0].verdict));
+
+  /* The bug that made real alerts never arrive. `webRoutesForStop` lists
+     every direction and variant of a line, so a rule saved off that list
+     can name route 2045 while the bus actually running is route 2046 —
+     same line, different code, and the old exact-code test dropped it. */
+  setup(rule, [{ route_code: "2046", veh_code: "V3", btime2: "4" }], true,
+    [{ RouteCode: "2045", LineID: "608" }, { RouteCode: "2046", LineID: "608" }]);
+  j = await ask();
+  ok("...but a different route code on the SAME line is matched anyway",
+    /WOULD FIRE/.test(JSON.stringify(j.rules[0].verdict)),
+    JSON.stringify(j.rules[0].verdict));
+  ok("...and says why it was matched, so the fallback is visible",
+    /different variant of line 608/.test(JSON.stringify(j.rules[0])),
     JSON.stringify(j.rules[0].verdict));
 
   setup(rule, []);

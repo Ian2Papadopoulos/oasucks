@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v71 defaults** — if you edit the
+breaks if you change it. Values here are the **v72 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -135,9 +135,9 @@ in v44) both read as *OASA staff*.
 | `sleepAfter` | **900 000 ms** (15 min) | No interaction → stop refreshing entirely. |  |
 | `walkSpeed` | **80 m/min** | Used for the "🚶 ~4′" walking estimate. |  |
 | `detour` | **1.35** | Straight-line distance × this ≈ real walking distance. |  |
-| `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`), pinned by double-tap. | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
+| `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`), pinned from the long-press menu. | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
 
-**Hide stops with no arrivals** (☰ → Settings, `localStorage.hideEmpty`, off by
+**Hide stops with no arrivals** (☰ → Settings, which ☰ opens directly, `localStorage.hideEmpty`, off by
 default): drops stops with nothing due within `imminentMin` from the list rather
 than demoting them. Favourites are exempt.
 
@@ -163,7 +163,7 @@ so it does not change the number of arrival calls.
 | `SCAN.maxRoutes` | **20** | Routes whose live vehicles are fetched. **Biggest cost driver.** |
 | `SCAN.keepM` | **800 m** | Vehicles farther than this are dropped from the response. Trims payload, **not** requests — `getBusLocation` is per route and always returns the whole fleet. Floor is set by `ONBOARD.maxStaleS`. |
 | `SCAN.cache` | **10 s** | Edge cache for a scan, on a ~110 m grid, so riders on the same bus share one answer. |
-| `LIVE.radius` | **900 m** | Radius for the ☰ → live bus map. |
+| `LIVE.radius` | **900 m** | Radius for the live bus map (the orange dot). |
 | `LIVE.stopProbe` | **10** | Stops probed for that map. |
 | `LIVE.maxRoutes` | **28** | Routes fetched for that map. |
 | `LIVE.cache` | **15 s** | Edge cache for it. |
@@ -243,12 +243,11 @@ your privacy policy becomes false.
 | `maxMs` | **900 ms** | Slower than this isn't a swipe. |
 | `edge` | **34 px** | On the map, only a swipe starting this close to the left edge counts; the rest pans the map. |
 
-`public/index.html` → `DTAP` (double-tap = pin a favourite)
+`public/index.html` → `TAP_GUARD`
 
 | Parameter | Default | What it means |
 |---|---|---|
-| `ms` | **320 ms** | Longest gap between the two taps. |
-| `slop` | **24 px** | How far apart the two taps may land and still count. |
+| `TAP_GUARD` | **440 ms** | How long a freshly opened map popup ignores clicks, so the tail of the gesture that opened it cannot land on a line chip and draw a route. All that is left of the old double-tap window: pinning is the long-press menu now. |
 
 ### The route preview and the drawn route
 
@@ -265,7 +264,7 @@ at costs nothing.
 | Parameter | Default | What it means |
 |---|---|---|
 | `.slide-l/.slide-r` | **0.3 s** | Tab transition duration (CSS). Changing it changes only how long the motion takes; how *smooth* it is depends on whether the incoming tab still has work to do, which is what `warmMap` exists to prevent. |
-| `onLongPress` | **430 ms** | Hold before a preview opens. Previews only; pinning is double-tap. |
+| `onLongPress` | **430 ms** | Hold before the stop menu (or, on an arrival row, the route preview) opens. On a mouse the press still ends in a click, which the helper swallows in the capture phase so the held element's own handler does not fire behind the menu. |
 
 `public/index.html` → `REPMAP`
 
