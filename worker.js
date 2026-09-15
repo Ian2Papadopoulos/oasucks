@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v77";
+const APP_VERSION = "v78";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -134,9 +134,12 @@ async function timedFetch(urlStr, cacheTtl, opts) {
     try {
       const res = await fetch(urlStr, {
         method: "GET",
-        headers: { "User-Agent": UA, "Accept": "application/json, */*" },
+        headers: { "User-Agent": UA, "Accept": "application/json, */*",
+          ...((opts && opts.headers) || {}) },
         signal: ctrl.signal,
-        cf: { cacheTtl, cacheEverything: true },
+        // cacheTtl 0 means "do not cache"; asking for cacheEverything then
+        // is contradictory, and a caller that passes 0 wants the live answer.
+        ...(cacheTtl ? { cf: { cacheTtl, cacheEverything: true } } : {}),
       });
       clearTimeout(timer);
       return res;
@@ -1127,6 +1130,31 @@ async function arrivalsForAlert(stopCode) {
    the cap, and going over THROWS, which before v74 was a silent total
    failure. Raise this with the plan, not before. */
 const ALERT_MAX_STOPS = 10;
+/* The Worker's own public origin, learned from real traffic. A scheduled
+   invocation has no Request, so it has no other way to know what it is
+   called — and it needs to know, because of what the traces showed:
+   the identical OASA call succeeds every time from `fetch` and aborts
+   every time from `scheduled`. Not intermittently. Every time, for weeks.
+   Whatever the cause — a colo the upstream tarpits, a different egress
+   path, something about the context — the app cannot fix it from inside.
+   What it CAN do is stop running the work in the context that fails.
+   So the cron pokes this origin over HTTP and the arrivals fetch happens
+   inside a normal request, which demonstrably works. */
+let selfOrigin = null;
+function noteSelfOrigin(url, env, ctx) {
+  const o = url.origin;
+  if (!o || o === selfOrigin) return;
+  selfOrigin = o;
+  if (ctx) ctx.waitUntil(setMeta(env, "self_origin", o).catch(() => {}));
+}
+async function knownOrigin(env) {
+  if (selfOrigin) return selfOrigin;
+  if (env && env.SELF_ORIGIN) return String(env.SELF_ORIGIN).replace(/\/$/, "");
+  const m = await getMeta(env, "self_origin").catch(() => null);
+  if (m) { selfOrigin = m; return m; }
+  return null;
+}
+
 async function runAlerts(env, T = {}) {
   if (!pushReady(env)) { T.stopped = "push not configured"; return T; }
   const now = athensNow();
@@ -3584,6 +3612,7 @@ export default {
   async fetch(req, env, ctx) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
+    noteSelfOrigin(url, env, ctx);
     const p = url.pathname.replace(/\/+$/, "");
     const ip = clientIp(req);
 
@@ -3814,6 +3843,22 @@ export default {
           ? { ...lastCron, agoSec: nowS - (lastCron.at || nowS) }
           : "no cron run has yet found a rule inside its window",
         rules: out.length ? out : "no rules stored" });
+    }
+
+    /* The alert run, as a request. Same function the cron calls, but
+       executed inside a fetch invocation — which is the whole point: the
+       arrivals call works here and does not work in `scheduled`.
+       Admin-gated, because it sends real notifications. It makes no
+       subrequest to this origin, so the cron poking it cannot loop. */
+    if (p.endsWith("/alerts/run")) {
+      if (!adminOK(req, env)) return json({ error: "admin token required" }, 403);
+      if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      const T = { via: "fetch" };
+      try { await runAlerts(env, T); }
+      catch (e) { T.threw = String((e && e.stack) || e).slice(0, 400); }
+      ctx.waitUntil(setMeta(env, "cron_trace",
+        JSON.stringify({ at: Math.floor(Date.now() / 1000), ...T })).catch(() => {}));
+      return json(T);
     }
 
     /* What the cron schedule *should* be, from the live rules. Admin —
@@ -4322,6 +4367,33 @@ export default {
   },
 };
 
+/* Poke our own public URL so the alert run happens inside a request, and
+   only do the work here if that is impossible. The in-process path stays
+   because it is the one that works on a deployment whose origin we have
+   never seen (a fresh Worker nobody has visited yet), and because a
+   fallback that has never been exercised is not a fallback. */
+async function runAlertsViaRequest(env, T) {
+  const origin = await knownOrigin(env);
+  const token = env.ADMIN_TOKEN;
+  if (!origin || !token) {
+    T.via = origin ? "in-process (no ADMIN_TOKEN to call ourselves with)"
+                   : "in-process (this origin has had no traffic yet)";
+    return runAlerts(env, T);
+  }
+  try {
+    const r = await timedFetch(`${origin}/alerts/run`, 0,
+      { timeoutMs: 20000, tries: 1, headers: { "X-Admin-Token": token } });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const got = await r.json();
+    Object.assign(T, got, { via: "request" });
+    return T;
+  } catch (e) {
+    T.viaError = String((e && e.message) || e).slice(0, 160);
+    T.via = "in-process (the self-call failed)";
+    return runAlerts(env, T);
+  }
+}
+
 async function cronRun(event, env, T) {
     const now = athensNow();
     const daily = (() => {
@@ -4349,7 +4421,7 @@ async function cronRun(event, env, T) {
 
     const alertsDue = windowDue(windows, now);
     T.due = alertsDue;
-    if (alertsDue) await runAlerts(env, T);
+    if (alertsDue) await runAlertsViaRequest(env, T);
     /* Past the alerts on purpose. These are housekeeping, and a failure
        in either of them must not take the alerts down with it — which,
        in the original order, is exactly what it would have done. */

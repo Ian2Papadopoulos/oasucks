@@ -264,7 +264,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v77",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v78",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -667,6 +667,25 @@ Then read the per-rule fields:
 
 Run it **inside the window you set**, with a bus actually due. Outside the window every
 rule reports `blocked`, correctly and uselessly.
+
+**3a. Fire one right now, by hand.** This is the fastest way to separate
+"the scheduler cannot do it" from "push is broken", because it runs the real alert
+logic, sends real notifications, and prints the whole trace:
+
+```powershell
+curl.exe -H "X-Admin-Token: $env:ADMIN_TOKEN" "https://oasax.com/alerts/run"
+```
+
+Run it inside a window with a bus due. If your phone buzzes, the alert logic and the push
+chain are both fine and the fault is in the cron's context — check `via` in
+`lastCronWithWork`. If it does not, read `attempts` and `stops` in what it prints.
+
+> **Why this endpoint exists.** The same OASA call succeeded every time from a request and
+> aborted every time from a cron — for weeks, not intermittently. Rather than keep guessing
+> at the cause, the cron now pokes this URL over HTTP so the arrivals fetch happens inside a
+> normal request, which demonstrably works. `via` in the trace says which path served a run:
+> `request` is the good path, `in-process (…)` means the self-call could not be made and
+> says why.
 
 **3b. `WOULD FIRE` but the phone stayed quiet.** The rule is right; something downstream
 of it is not. In order of likelihood:

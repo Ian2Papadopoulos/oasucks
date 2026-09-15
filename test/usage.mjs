@@ -690,6 +690,38 @@ console.log("\n— what runAlerts does when the push fails —");
     Object.assign(ctx, { __realGet: realGet, __realPush: realPush }));
 }
 
+/* The identical OASA call succeeds every time from `fetch` and aborts
+   every time from `scheduled`. Not intermittently — every time. So the
+   cron stops doing the work itself and pokes its own public URL, and the
+   arrivals fetch happens inside a normal request. */
+console.log("\n— the cron runs the alerts as a request —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("there is an endpoint that runs the alerts on the fetch path",
+    /p\.endsWith\("\/alerts\/run"\)/.test(w) && /const T = \{ via: "fetch" \}/.test(w));
+  ok("...admin-gated, because it sends real notifications",
+    /\/alerts\/run"\)\) \{\s*\n\s*if \(!adminOK/.test(w));
+  ok("...and the cron calls it instead of doing the work itself",
+    /if \(alertsDue\) await runAlertsViaRequest\(env, T\)/.test(w));
+  ok("...falling back to in-process when it cannot, so the fallback is real",
+    /T\.via = "in-process \(the self-call failed\)"/.test(w)
+    && /return runAlerts\(env, T\)/.test(w));
+  ok("...and the trace says which path served it",
+    /Object\.assign\(T, got, \{ via: "request" \}\)/.test(w));
+  /* It learns its own name from real traffic: a scheduled invocation has
+     no Request to read it from. */
+  ok("the origin is learned from live requests, not hard-coded",
+    /function noteSelfOrigin/.test(w) && /noteSelfOrigin\(url, env, ctx\)/.test(w));
+  ok("...with an env var and a stored copy behind it",
+    /env\.SELF_ORIGIN/.test(w) && /getMeta\(env, "self_origin"\)/.test(w));
+  /* cacheTtl 0 means "do not cache". Asking for cacheEverything in the
+     same breath is contradictory, and the caller wants the live answer. */
+  ok("a zero TTL no longer ships a contradictory cf block",
+    /\.\.\.\(cacheTtl \? \{ cf: \{ cacheTtl, cacheEverything: true \} \} : \{\}\)/.test(w));
+  ok("...and timedFetch forwards a caller's headers, so it can authenticate",
+    /\.\.\.\(\(opts && opts\.headers\) \|\| \{\}\)/.test(w));
+}
+
 /* A promise handed to ctx.waitUntil that REJECTS is discarded by the
    runtime without a word. Everything the cron does runs in there, so one
    throw used to cost every alert after it, invisibly and forever. */

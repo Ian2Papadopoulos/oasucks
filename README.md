@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v77.**
+version: v78.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -22,7 +22,7 @@ becomes one marker carrying the head count.
 See [Live reports](#live-reports) for the exact rules.
 
 > The service-stats **screen** (line reliability, bunching, missing trips) was retired in
-> v18 to make room for reports, and its client code was deleted in v77 — it had been
+> v18 to make room for reports, and its client code was deleted in v78 — it had been
 > shipping in every page load for sixty versions with nothing able to open it. The
 > tracking **backend** is untouched and still collects the data, so the screen can come
 > back from `/track/*` whenever it earns its place. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 835 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 844 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
@@ -128,7 +128,7 @@ The app auto-detects its backend at startup:
   used to be a third mode here that routed every call through free open CORS relays, so
   one 404 from the Worker could silently start sending riders' coordinates to a
   stranger's server for the rest of the session, with nothing on screen to say so.
-  Removed in v77 — a missing backend is now a missing backend.
+  Removed in v78 — a missing backend is now a missing backend.
 
 ## Deploy in ~5 minutes
 
@@ -822,7 +822,34 @@ Three changes close it:
 `/alerts/why` returns the last trace from a minute that actually had a rule due, as
 `lastCronWithWork`. Quiet minutes do not overwrite it.
 
-#### And what finally fixed it
+#### The fetch/scheduled split
+
+Then the trace said `NO ANSWER from OASA on this run — The operation was aborted`, and
+kept saying it — while `/alerts/why`, run seconds later against the **same stop**, read a
+full list of arrivals. Not intermittently. **Every cron run failed and every request
+succeeded**, for as long as alerts have existed.
+
+That is not a network being flaky, and it is not something this app can fix from inside.
+So it stops running the work in the context that fails. `/alerts/run` is the same
+`runAlerts()`, exposed as an admin-gated endpoint, and the cron pokes its own public URL
+instead of doing the work itself — so the arrivals fetch happens inside a normal request.
+
+The Worker learns its own origin from live traffic (`noteSelfOrigin`), because a scheduled
+invocation has no `Request` to read it from; `SELF_ORIGIN` and a stored copy in D1 sit
+behind that. If the self-call cannot be made or fails, it runs in-process exactly as
+before — a fallback nobody exercises is not a fallback. `via` in the trace says which path
+served each run.
+
+`/alerts/run` is also the fastest manual test there is: it sends real notifications and
+prints the whole trace, so one curl separates "the scheduler cannot do it" from "push is
+broken".
+
+While measuring this, one more thing turned up: `timedFetch` was sending
+`cf: { cacheTtl: 0, cacheEverything: true }` on every uncached call — a contradiction,
+since a zero TTL means "do not cache". The `cf` block is now omitted entirely when the TTL
+is zero.
+
+#### And what came before it
 
 The trace named the breaker (see below), and exempting the alert path from it was
 necessary but not sufficient: the next reading said
@@ -881,7 +908,7 @@ instead of only a tally, and `circuitState().lastFail` carries it into every dia
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by
 calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
 the rest of the session on third-party CORS proxies: no stops, no markers, no error.
-(Those proxies are gone as of v77; see above.)
+(Those proxies are gone as of v78; see above.)
 Then, briefly, by calling `/health`, which asked the right question but still hung the
 entire boot on one request winning. Both failed in production. Both looked to the rider
 like an app that simply does not work.
