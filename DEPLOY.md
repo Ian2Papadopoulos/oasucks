@@ -264,7 +264,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v74",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v75",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -678,6 +678,8 @@ of it is not. In order of likelihood:
   early exit, `threw` carries the stack if the run died. Note `upstream.open` in the top
   of the response reflects the *web* isolate — a cron runs in its own, so a circuit can be
   open there and closed here; `stops` is the one that tells you about the cron's isolate.
+  Since v75 the alert path is exempt from the breaker entirely, so a stop that reports
+  `NO ANSWER from OASA on this run` names the real upstream failure after the dash.
 - **`subscription` is `found` but the phone is a second device.** A rule names the
   subscription of the device it was made on. The push is being delivered — to the other
   phone.

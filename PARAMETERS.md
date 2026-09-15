@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v74 defaults** — if you edit the
+breaks if you change it. Values here are the **v75 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -136,6 +136,13 @@ in v44) both read as *OASA staff*.
 | `walkSpeed` | **80 m/min** | Used for the "🚶 ~4′" walking estimate. |  |
 | `detour` | **1.35** | Straight-line distance × this ≈ real walking distance. |  |
 | `FAV_MAX` | **6** | Maximum pinned favourite stops (`FAV_KEY = "favStops"`), pinned from the long-press menu. | Favourites count *within* `listStops`, and always lead the list whether or not a bus is coming. |
+
+`worker.js` → `ALERT_MAX_STOPS`: **20**. Distinct stops the alert cron fetches in one
+minute, tightest lead first. A Worker invocation gets 50 subrequests on the free plan and
+exceeding it throws, so this is the ceiling that keeps a growing rule set from taking the
+whole run down. Raise it with the plan, not before. The alert path is exempt from the
+upstream circuit breaker (`ALERT_FETCH = { ignoreCircuit: true }`) — one call per stop per
+minute is not the load the breaker exists to shed, and being refused by it loses the bus.
 
 `public/index.html` → `WIN_BACK` / `WIN_AHEAD`: **5** and **30** minutes. The window a
 new alert opens on, measured from the clock — `now − 5 → now + 30`. It used to be a

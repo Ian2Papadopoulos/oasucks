@@ -603,6 +603,29 @@ console.log("\n— what runAlerts does when the push fails —");
     vm.runInContext(`getJSON = async (u) => u.includes("getStopArrivals") ? __arr()
       : u.includes("webRoutesForStop") ? __routes() : null;`, ctx);
   }
+  /* The fault that cost every alert this service has ever tried to send:
+     an isolate serves fetch AND scheduled events from one module state, so
+     user traffic could open the breaker and starve a cron sharing it —
+     while a different isolate answered /alerts/why with a closed one. The
+     alert path is one call per stop per minute; refusing it protects
+     nobody and loses the bus. */
+  {
+    const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+    ok("the breaker cannot refuse the alert cron",
+      /const ALERT_FETCH = \{ ignoreCircuit: true \}/.test(w)
+      && /getStopArrivals[\s\S]{0,80}ALERT_FETCH/.test(w),
+      "one call per stop per minute is not what a breaker is for");
+    ok("...and the line lookup behind it is exempt too",
+      /fetchStopRoutes\(stopCode, ALERT_FETCH\)/.test(w));
+    ok("...but the read path, which is what got us blocked, still is not",
+      /if \(upstream && !\(opts && opts\.ignoreCircuit\) && circuitOpen\(\)\)/.test(w));
+    ok("...so it carries its own ceiling instead, under the subrequest cap",
+      /ALERT_MAX_STOPS = 20/.test(w) && /T\.overCapacity/.test(w));
+    ok("a refused upstream call keeps the reason, not just a tally",
+      /circuitNote\(false, `HTTP \$\{r\.status\}`\)/.test(w)
+      && /lastFail: circuit\.lastFail/.test(w),
+      "a 403, a timeout and an HTML error page need different fixes");
+  }
   {
     const T = {}; ctx.__env = env; ctx.__T = T;
     store.set("rules:index", JSON.stringify([{ ...rule, days: [(now.day + 1) % 7] }]));

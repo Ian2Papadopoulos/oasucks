@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v74";
+const APP_VERSION = "v75";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -190,7 +190,7 @@ async function proxy(targetUrl, cacheSeconds, skipCache) {
  * a ban, and it costs a blocked rider seconds instead of minutes.
  * ------------------------------------------------------------------- */
 const CIRCUIT = { openAfter: 6, openMs: 120000, probeEveryMs: 20000 };
-const circuit = { fails: 0, openedAt: 0, lastProbe: 0 };
+const circuit = { fails: 0, openedAt: 0, lastProbe: 0, lastFail: null };
 function circuitOpen() {
   if (!circuit.openedAt) return false;
   const since = Date.now() - circuit.openedAt;
@@ -201,26 +201,48 @@ function circuitOpen() {
   }
   return true;
 }
-function circuitNote(ok) {
+/* The reason is kept, not just the count. "OASA is refusing us" and "OASA
+   is timing out" and "OASA is returning HTML" all open the same circuit
+   and need different responses, and a breaker that records only a tally
+   turns every one of them into the same shrug. */
+function circuitNote(ok, why) {
   if (ok) { circuit.fails = 0; circuit.openedAt = 0; return; }
   circuit.fails++;
+  circuit.lastFail = { at: Date.now(), why: String(why || "unknown").slice(0, 160) };
   if (circuit.fails >= CIRCUIT.openAfter && !circuit.openedAt) circuit.openedAt = Date.now();
 }
 function circuitState() {
   return { open: !!circuit.openedAt, fails: circuit.fails,
-    openForSec: circuit.openedAt ? Math.round((Date.now() - circuit.openedAt) / 1000) : 0 };
+    openForSec: circuit.openedAt ? Math.round((Date.now() - circuit.openedAt) / 1000) : 0,
+    lastFail: circuit.lastFail
+      ? { agoSec: Math.round((Date.now() - circuit.lastFail.at) / 1000), why: circuit.lastFail.why }
+      : null };
 }
 
+/* `ignoreCircuit` is for callers whose volume cannot possibly be the
+   problem the breaker exists to solve. The breaker protects OASA from the
+   app's READ path, which is tens of calls a minute per rider and is what
+   got the Worker blocked. The alert cron is one call per stop per minute,
+   total, for the whole service — refusing that protects nobody and costs
+   the rider the entire feature, because the bus arrives and goes while we
+   wait for a probe slot to line up.
+   Worse, a Worker isolate serves fetch AND scheduled events from the same
+   module state, so user traffic opening the circuit could starve a cron
+   sharing that isolate — while a different isolate answered /alerts/why
+   with a perfectly closed one. Failures are still recorded either way. */
 async function getJSON(urlStr, cacheTtl, opts) {
   const upstream = urlStr.startsWith(OASA);
-  if (upstream && circuitOpen()) return null;        // refusing to pile on
+  if (upstream && !(opts && opts.ignoreCircuit) && circuitOpen()) return null;
   try {
     const r = await timedFetch(urlStr, cacheTtl, opts);
-    if (!r.ok) { if (upstream) circuitNote(false); return null; }
+    if (!r.ok) { if (upstream) circuitNote(false, `HTTP ${r.status}`); return null; }
     const j = await r.json();
     if (upstream) circuitNote(true);
     return j;
-  } catch { if (upstream) circuitNote(false); return null; }
+  } catch (e) {
+    if (upstream) circuitNote(false, String((e && e.message) || e));
+    return null;
+  }
 }
 
 /* ======================= greeklish → greek ======================== */
@@ -1003,6 +1025,18 @@ function athensUtcOffsetHours() {
    unanswerable for three rounds: the heartbeat proved the run STARTED and
    /alerts/why proved a rule SHOULD fire, and nothing covered the ground
    between them. So every exit says which one it was. */
+/* The alert cron's whole upstream budget is one call per stop per minute.
+   That is not what the breaker is for, and being refused by it costs a
+   rider the bus. See getJSON. */
+const ALERT_FETCH = { ignoreCircuit: true };
+/* Bypassing the breaker means this path needs its own ceiling, and the
+   runtime imposes one anyway: a Worker invocation gets 50 subrequests on
+   the free plan, and going over throws — which, before the cron was
+   wrapped, was a silent total failure. Twenty distinct stops leaves room
+   for the line lookups, the pushes and the D1 writes in the same minute.
+   It is also the honest scaling limit of alerts on one Worker: past it,
+   this is the number to raise together with the plan. */
+const ALERT_MAX_STOPS = 20;
 async function runAlerts(env, T = {}) {
   if (!pushReady(env)) { T.stopped = "push not configured"; return T; }
   const now = athensNow();
@@ -1028,16 +1062,28 @@ async function runAlerts(env, T = {}) {
   T.stops = {};
   T.attempts = 0;
 
-  for (const [stopCode, stopRules] of Object.entries(byStop)) {
-    const arrivals = await getJSON(`${OASA}?act=getStopArrivals&p1=${encodeURIComponent(stopCode)}`, 0);
+  let entries = Object.entries(byStop);
+  if (entries.length > ALERT_MAX_STOPS) {
+    /* Serve the tightest leads first: a 3-minute alert has one chance and
+       a 15-minute one has twelve, so if anything must wait, it is the one
+       that can afford to. */
+    entries = entries
+      .sort((a, b) => Math.min(...a[1].map(r => Math.max(...(r.leads || [10]))))
+                    - Math.min(...b[1].map(r => Math.max(...(r.leads || [10])))));
+    T.overCapacity = `${entries.length} stops due, serving ${ALERT_MAX_STOPS}`;
+    entries = entries.slice(0, ALERT_MAX_STOPS);
+  }
+  for (const [stopCode, stopRules] of entries) {
+    const arrivals = await getJSON(
+      `${OASA}?act=getStopArrivals&p1=${encodeURIComponent(stopCode)}`, 0, ALERT_FETCH);
     /* getJSON never throws — it returns null, for a timeout, a non-200, an
        open circuit and a parse failure alike. So this `continue` is a
        silent dead end unless it says so: a cron that cannot reach OASA and
        a cron that is not running look identical on the phone. */
     if (!Array.isArray(arrivals)) {
-      T.stops[stopCode] = circuitState().open
-        ? "SKIPPED — circuit open, we are backing off OASA"
-        : "NO ANSWER from OASA on this run";
+      const f = circuitState().lastFail;
+      T.stops[stopCode] = "NO ANSWER from OASA on this run"
+        + (f ? ` — last upstream failure ${f.agoSec}s ago: ${f.why}` : "");
       continue;
     }
     T.stops[stopCode] = `${arrivals.length} arrivals`;
@@ -1063,7 +1109,7 @@ async function runAlerts(env, T = {}) {
            past every rule still waiting, including the one whose bus was
            pulling in. A miss here costs a fallback, not an alert. */
         try {
-          const r = await fetchStopRoutes(stopCode);
+          const r = await fetchStopRoutes(stopCode, ALERT_FETCH);
           lineOf = new Map(((r && r.routes) || []).map(x => [String(x.code), String(x.id)]));
         } catch (_) { lineOf = new Map(); }
       }
@@ -1619,9 +1665,9 @@ function slSet(map, code, n, now) { map.set(code, { n, t: now }); slDirty = true
 
 // Fetch a stop's routes; returns null if the call failed (so we don't record
 // a transient failure as "this stop is dead").
-async function fetchStopRoutes(code) {
+async function fetchStopRoutes(code, opts) {
   const raw = await getJSON(
-    `${OASA}?act=webRoutesForStop&p1=${encodeURIComponent(code)}`, ACT_TTL.webRoutesForStop);
+    `${OASA}?act=webRoutesForStop&p1=${encodeURIComponent(code)}`, ACT_TTL.webRoutesForStop, opts);
   if (!Array.isArray(raw)) return null;
   const routes = [], lines = [], seen = new Set();
   for (const r of raw) {
