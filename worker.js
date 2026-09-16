@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v85";
+const APP_VERSION = "v86";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v85, and only safe because of v79: the age of a
+     Raised from 50 in v86, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -3749,6 +3749,9 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     noteSelfOrigin(url, env, ctx);
+    /* Not on the alert endpoints themselves: /alerts/run IS the sweep, and
+       /alerts/why must be able to report on a run without starting one. */
+    if (!url.pathname.includes("/alerts/")) alertsOnTraffic(env, ctx);
     const p = url.pathname.replace(/\/+$/, "");
     const ip = clientIp(req);
 
@@ -4553,6 +4556,76 @@ async function runAlertsViaRequest(env, T) {
     T.via = "in-process (the self-call failed)";
     return runAlerts(env, T);
   }
+}
+
+/* ------------- running the alerts on a rider's request --------------- *
+ * Two independent findings now say the same thing, and it is not a
+ * coincidence:
+ *
+ *   - alerts have never once been delivered by the cron, while /alerts/run
+ *     (a request) delivers them with status 201;
+ *   - vehicle tracking collected 779 events a day for 25 days, stopped
+ *     dead on 27 August with no code change of ours, and POST
+ *     /track/sample (a request) produces events today.
+ *
+ * Both do the same thing — call OASA — and both work from `fetch` and fail
+ * from `scheduled`. v78 tried to bridge that by having the cron poke its
+ * own public URL; this zone answers HTTP 522, because a Worker reaching
+ * its own hostname is not guaranteed to work.
+ *
+ * So use the requests that are already arriving. Every rider opening the
+ * board is a `fetch` invocation — the context that works — and running the
+ * alert sweep inside one costs no extra subrequest and no extra call to
+ * OASA beyond what the sweep itself needs. It also scales the right way:
+ * more riders means more chances for an alert to go out, and the hours
+ * with alert windows in them are the hours with riders in them.
+ *
+ * The cron still runs, in-process, as it does today. Whichever gets there
+ * first wins, and the `sent:` keys make a double run harmless. */
+const PIGGYBACK_EVERY_MS = 50000;
+let piggybackAt = 0, piggybackBusy = false;
+let windowCache = { at: 0, windows: [] };
+async function anyWindowOpen(env) {
+  const now = Date.now();
+  if (now - windowCache.at > 60000) {
+    windowCache = { at: now, windows: [] };
+    try { windowCache.windows = windowsOf(await readRules(env)); } catch (_) { }
+  }
+  return windowDue(windowCache.windows, athensNow());
+}
+function alertsOnTraffic(env, ctx) {
+  if (!ctx || !pushReady(env)) return;
+  const now = Date.now();
+  if (piggybackBusy || now - piggybackAt < PIGGYBACK_EVERY_MS) return;
+  piggybackAt = now;
+  piggybackBusy = true;
+  ctx.waitUntil((async () => {
+    const T = { via: "a rider's request" };
+    try {
+      /* Tracking stopped for the same reason and gets the same ride. It is
+         cheap — at most TRACK.maxRoutes calls, and only when routes are
+         actually being tracked — and it is the other half of the evidence
+         that put this function here. */
+      try {
+        if (await trackingActive(env)) T.tracked = await sampleVehicles(env);
+      } catch (e) { T.trackError = String((e && e.message) || e).slice(0, 160); }
+      /* One small KV read a minute, cached in the isolate. Most requests
+         cost nothing here because most minutes have no window open. */
+      T.due = await anyWindowOpen(env);
+      if (T.due) await runAlerts(env, T);
+    } catch (e) {
+      T.threw = String((e && e.stack) || e).slice(0, 400);
+    } finally {
+      piggybackBusy = false;
+      /* Only a run that did something overwrites the record, for the same
+         reason the cron's does: a quiet minute burying the interesting one
+         is how a trace becomes useless. */
+      if (T.due || T.threw || T.tracked || T.trackError) {
+        await setMeta(env, "cron_trace",
+          JSON.stringify({ at: Math.floor(Date.now() / 1000), ...T })).catch(() => {});
+      }
+    }
+  })());
 }
 
 async function cronRun(event, env, T) {

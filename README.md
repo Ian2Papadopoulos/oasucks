@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v85.**
+version: v86.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -22,7 +22,7 @@ becomes one marker carrying the head count.
 See [Live reports](#live-reports) for the exact rules.
 
 > The service-stats **screen** (line reliability, bunching, missing trips) was retired in
-> v18 to make room for reports, and its client code was deleted in v85 — it had been
+> v18 to make room for reports, and its client code was deleted in v86 — it had been
 > shipping in every page load for sixty versions with nothing able to open it. The
 > tracking **backend** is untouched and still collects the data, so the screen can come
 > back from `/track/*` whenever it earns its place. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 876 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 884 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app how it is and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
@@ -129,7 +129,7 @@ The app auto-detects its backend at startup:
   used to be a third mode here that routed every call through free open CORS relays, so
   one 404 from the Worker could silently start sending riders' coordinates to a
   stranger's server for the rest of the session, with nothing on screen to say so.
-  Removed in v85 — a missing backend is now a missing backend.
+  Removed in v86 — a missing backend is now a missing backend.
 
 ## Deploy in ~5 minutes
 
@@ -823,6 +823,36 @@ Three changes close it:
 `/alerts/why` returns the last trace from a minute that actually had a rule due, as
 `lastCronWithWork`. Quiet minutes do not overwrite it.
 
+#### The sweep rides on a rider's request
+
+Two independent findings, and it stopped being a coincidence:
+
+- alerts have **never once** been delivered by the cron, while `/alerts/run` — the same
+  function, reached as a request — delivers them with status 201;
+- vehicle tracking collected **779 events a day for 25 days**, stopped dead on 27 August
+  with no code change of ours, and `POST /track/sample` produces events today.
+
+Both do the same thing: call OASA. Both work from `fetch` and fail from `scheduled`. v78
+tried to bridge that by having the cron poke its own public URL, and this zone answers
+**HTTP 522** — a Worker reaching its own hostname is not guaranteed to work.
+
+So use the requests that are already arriving. Every rider opening the board is a `fetch`
+invocation, which is the context that works, and running the sweep inside one costs no
+extra subrequest and no call to OASA beyond what the sweep needs anyway. At most once
+every 50 seconds, never twice at once, and one small KV read a minute to know whether any
+window is even open — cached in the isolate, because most minutes have none.
+
+It also scales the right way: **more riders means more chances for an alert to go out**,
+and the hours with alert windows in them are the hours with riders in them.
+
+The cron still runs it too. A fallback nobody exercises is not a fallback, a deployment
+with no traffic still has alerts to send, and the `sent:` keys make whichever gets there
+second harmless. `via` in the trace says which path served a run: `a rider's request`,
+`request`, or `in-process (…)`.
+
+Tracking rides along, being the other half of the same fault, guarded so it cannot take
+the alerts down with it.
+
 #### Saying whose fault it is
 
 When the board is thin the rider's question is always "is it me?", and the honest answer
@@ -955,7 +985,7 @@ instead of only a tally, and `circuitState().lastFail` carries it into every dia
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by
 calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
 the rest of the session on third-party CORS proxies: no stops, no markers, no error.
-(Those proxies are gone as of v85; see above.)
+(Those proxies are gone as of v86; see above.)
 Then, briefly, by calling `/health`, which asked the right question but still hung the
 entire boot on one request winning. Both failed in production. Both looked to the rider
 like an app that simply does not work.

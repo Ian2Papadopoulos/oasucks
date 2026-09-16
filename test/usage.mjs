@@ -757,6 +757,40 @@ console.log("\n— a ceiling on what we ask of OASA —");
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
 }
 
+/* Two independent findings say the same thing: alerts have never been
+   delivered by the cron while /alerts/run delivers them, and tracking
+   collected 779 events a day for 25 days, stopped dead with no code change
+   of ours, and POST /track/sample produces events today. Both call OASA;
+   both work from `fetch` and fail from `scheduled`. */
+console.log("\n— the alert sweep rides on a rider's request —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("a request can carry the sweep, not only the cron",
+    /function alertsOnTraffic\(env, ctx\)/.test(w)
+    && /alertsOnTraffic\(env, ctx\)/.test(w.split("async fetch(req, env, ctx)")[1] || ""),
+    "every rider opening the board is a fetch invocation, which is the context that works");
+  ok("...not on the alert endpoints themselves",
+    /if \(!url\.pathname\.includes\("\/alerts\/"\)\) alertsOnTraffic/.test(w),
+    "/alerts/run IS the sweep, and /alerts/why must report without starting one");
+  ok("...at most once every 50 seconds, and never twice at once",
+    /PIGGYBACK_EVERY_MS = 50000/.test(w) && /if \(piggybackBusy \|\| now - piggybackAt </.test(w));
+  ok("...costing one small KV read a minute, cached in the isolate",
+    /now - windowCache\.at > 60000/.test(w),
+    "most minutes have no window open and must cost nothing");
+  ok("...and it says so in the trace, so the two paths stay tellable apart",
+    /via: "a rider's request"/.test(w));
+  /* Tracking is the other half of the evidence, so it gets the same ride. */
+  ok("tracking rides along, being the other half of the same fault",
+    /if \(await trackingActive\(env\)\) T\.tracked = await sampleVehicles\(env\)/.test(w));
+  ok("...without being able to take the alerts down with it",
+    /catch \(e\) \{ T\.trackError/.test(w));
+  /* The cron stays. A fallback nobody exercises is not a fallback, and a
+     deployment with no traffic still has alerts to send. */
+  ok("the cron still runs it too, and a double run is harmless",
+    /if \(alertsDue\) await runAlertsViaRequest\(env, T\)/.test(w),
+    "the sent: keys dedupe whichever gets there second");
+}
+
 /* The identical OASA call succeeds every time from `fetch` and aborts
    every time from `scheduled`. Not intermittently — every time. So the
    cron stops doing the work itself and pokes its own public URL, and the
