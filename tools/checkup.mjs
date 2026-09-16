@@ -186,6 +186,21 @@ if (!selfTunes && al.rules > 0 && Array.isArray(al.cronSuggestion)
     "With no rules there is nothing to narrow it to, and narrowing it now would "
     + "stop the first alert you set from ever firing.");
 }
+/* The gap that stops alerts being set-and-forget: the cron cannot reach
+   OASA on this Worker, a rider's own request can, and an alert at 06:40
+   with nobody awake has neither. */
+if ((health.bindings || {}).push && al.rules > 0 && !(health.bindings || {}).runToken) {
+  say("LOOK", "Alerts depend on someone using the app at the time they are due.",
+    "A rider's phone does NOT need to be open to RECEIVE one — but something has to run "
+    + "the check, and the built-in scheduler cannot reach OASA on this setup.\n      "
+    + "For alerts that fire with nobody around, set RUN_TOKEN and point a free cron "
+    + "service at /alerts/run once a minute. See DEPLOY.md, 'Making alerts fire with "
+    + "nobody using the app'.");
+} else if ((health.bindings || {}).runToken) {
+  say("OK", "An outside pinger can trigger alerts, so they do not need a rider awake.",
+    "Check it is actually calling: `via` should say 'request' in the last alert run.");
+}
+
 const tr = health.tracking || {};
 if (tr.routes > 0 && tr.eventsLast24h === 0) {
   /* Worked-then-stopped and never-worked look identical in a 24-hour

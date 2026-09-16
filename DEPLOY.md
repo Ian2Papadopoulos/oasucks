@@ -278,7 +278,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v86",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v87",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -708,6 +708,41 @@ chain are both fine and the fault is in the cron's context — check `via` in
 > normal request, which demonstrably works. `via` in the trace says which path served a run:
 > `request` is the good path, `in-process (…)` means the self-call could not be made and
 > says why.
+
+### Making alerts fire with nobody using the app
+
+**The rider receiving an alert does not need the app open** — Web Push delivers to a fully
+closed app. But *something* has to run the sweep that decides an alert is due, and on this
+Worker the cron cannot reliably reach OASA (see the fetch/scheduled split in README).
+Since v86 a rider's own request carries the sweep, which covers any hour the app is in
+use — but a 06:40 alert with nobody awake has nothing to ride on.
+
+The fix is an external pinger calling `/alerts/run` once a minute, which turns the trigger
+into the inbound request that works. Any free cron service does it — cron-job.org,
+UptimeRobot, a GitHub Action.
+
+Give it its **own key**, not the admin one:
+
+```powershell
+npx wrangler secret put RUN_TOKEN     # paste something long and random
+npx wrangler deploy
+```
+
+Then point the service at:
+
+```
+https://oasax.com/alerts/run
+  method: POST (GET also works)
+  header: X-Run-Token: <the RUN_TOKEN value>
+```
+
+`RUN_TOKEN` opens exactly one door — "run the sweep now". It cannot read diagnostics,
+rules, reports or usage, so a third-party service holding it learns nothing about you or
+your riders. Leave it unset and nothing changes; `ADMIN_TOKEN` still works on that
+endpoint.
+
+Cost: 1,440 requests a day out of the free plan's 100,000, and no calls to OASA beyond
+what a sweep needs anyway. Most minutes have no alert window open and return immediately.
 
 **3b. `WOULD FIRE` but the phone stayed quiet.** The rule is right; something downstream
 of it is not. In order of likelihood:

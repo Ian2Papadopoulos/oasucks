@@ -757,6 +757,32 @@ console.log("\n— a ceiling on what we ask of OASA —");
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
 }
 
+/* An external pinger is the only trigger that works for a deployment with
+   nobody awake, and handing it the ADMIN_TOKEN would give a third party
+   every diagnostic this Worker has. */
+console.log("\n— a key that opens one door —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("there is a run-only token, separate from the admin one",
+    /function runTokenOK\(req, env\)/.test(w) && /env\.RUN_TOKEN/.test(w));
+  ok("...accepted on /alerts/run",
+    /if \(!adminOK\(req, env\) && !runTokenOK\(req, env\)\)/.test(w));
+  ok("...and nowhere else",
+    (w.match(/[^n] runTokenOK\(req, env\)|&& runTokenOK\(req, env\)|!runTokenOK\(req, env\)/g) || []).length === 1,
+    "one door, not a second admin token");
+  ok("...and unset by default, changing nothing",
+    /const want = env && env\.RUN_TOKEN;\s*\n\s*if \(!want\) return false;/.test(w));
+  /* Every OASA call from the cron times out and every one from a request
+     succeeds. Either they leave Cloudflare from different places or they
+     do not, and that is checkable rather than guessable. */
+  ok("where each path runs from is checkable, not guessable",
+    /async function whereAmI\(\)/.test(w) && /cdn-cgi\/trace/.test(w));
+  ok("...recorded by the cron only on a minute that has work",
+    /if \(alertsDue\) T\.from = await whereAmI\(\)/.test(w));
+  ok("...and by a request only when asked, so neither costs anything idle",
+    /url\.searchParams\.get\("where"\) === "1"/.test(w));
+}
+
 /* Two independent findings say the same thing: alerts have never been
    delivered by the cron while /alerts/run delivers them, and tracking
    collected 779 events a day for 25 days, stopped dead with no code change

@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v86";
+const APP_VERSION = "v87";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v86, and only safe because of v79: the age of a
+     Raised from 50 in v87, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -116,6 +116,24 @@ function tooMany() { return json({ error: "rate limited, slow down" }, 429); }
 /* Tracking mutations are admin actions, not public ones. They're allowed
  * only when the ADMIN_TOKEN secret is set AND the caller presents it
  * (header X-Admin-Token, or ?token=). No secret configured → denied. */
+/* A second, narrower key that opens exactly one door: /alerts/run.
+ *
+ * The cron cannot reliably call OASA from this Worker, so the sweep has to
+ * be triggered by an inbound request — and for a deployment with no
+ * riders awake at 06:40, that request has to come from somewhere outside.
+ * Handing an external pinger the ADMIN_TOKEN would give a third party the
+ * ability to read every diagnostic this Worker has. This one can only say
+ * "run the sweep now", which is the one thing it is for.
+ *
+ * Set it with:  npx wrangler secret put RUN_TOKEN
+ * Leave it unset and nothing changes; ADMIN_TOKEN still works. */
+function runTokenOK(req, env) {
+  const want = env && env.RUN_TOKEN;
+  if (!want) return false;
+  const got = req.headers.get("X-Run-Token") ||
+    new URL(req.url).searchParams.get("run") || "";
+  return got.length === want.length && got === want;
+}
 function adminOK(req, env) {
   const want = env && env.ADMIN_TOKEN;
   if (!want) return false;
@@ -3955,6 +3973,10 @@ export default {
       const nowS = Math.floor(Date.now() / 1000);
       const cronLast = Number(await getMeta(env, "cron_last")) || 0;
       const alertLast = Number(await getMeta(env, "alert_last")) || 0;
+      /* The other half of the comparison: where THIS request is running
+         from. Set ?where=1 to spend the call. */
+      let here = null;
+      if (url.searchParams.get("where") === "1") here = await whereAmI();
       let lastTry = null, lastCron = null;
       try { lastTry = JSON.parse(await getMeta(env, "alert_last_try") || "null"); } catch (_) {}
       try { lastCron = JSON.parse(await getMeta(env, "cron_trace") || "null"); } catch (_) {}
@@ -3973,6 +3995,10 @@ export default {
           ? { ...lastTry, agoSec: nowS - (lastTry.at || nowS) }
           : "no alert push has ever been attempted",
         lastDelivered: alertLast ? { agoSec: nowS - alertLast } : "never",
+        /* Compare `thisRequestRanFrom` with `from` inside lastCronWithWork.
+           Different colo or address is the whole explanation; the same one
+           kills the theory and sends us looking elsewhere. */
+        ...(here ? { thisRequestRanFrom: here } : {}),
         /* The last cron minute that actually had a rule due: how many
            windows it saw, whether OASA answered for each stop, and
            anything it threw. This is the stretch between "the scheduler is
@@ -3990,7 +4016,9 @@ export default {
        Admin-gated, because it sends real notifications. It makes no
        subrequest to this origin, so the cron poking it cannot loop. */
     if (p.endsWith("/alerts/run")) {
-      if (!adminOK(req, env)) return json({ error: "admin token required" }, 403);
+      if (!adminOK(req, env) && !runTokenOK(req, env)) {
+        return json({ error: "admin or run token required" }, 403);
+      }
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
       const T = { via: "fetch" };
       try { await runAlerts(env, T); }
@@ -4206,7 +4234,9 @@ export default {
         // so "why is the walk a straight line" and "why are house numbers
         // missing" are usually the same question, answered here.
         ors: !!env.ORS_KEY,
-        push: pushReady(env), admin: true, selfTuneCron: !!(env.CF_API_TOKEN && env.CF_ACCOUNT_ID) };
+        push: pushReady(env), admin: true, selfTuneCron: !!(env.CF_API_TOKEN && env.CF_ACCOUNT_ID),
+        // whether an outside pinger can trigger the sweep without the admin key
+        runToken: !!env.RUN_TOKEN };
 
       if (env.ALERTS) {
         try {
@@ -4628,6 +4658,24 @@ function alertsOnTraffic(env, ctx) {
   })());
 }
 
+/* Where this code is running from, and as whom.
+ *
+ * Every OASA call from the cron times out; every one from a request
+ * succeeds. The obvious explanation is that the two leave Cloudflare from
+ * different places, and one of those places is being refused or tarpitted
+ * by OASA. That is checkable rather than guessable: /cdn-cgi/trace names
+ * the colo and the egress address, and comparing the cron's answer with a
+ * request's answer either shows a difference to act on or rules the whole
+ * theory out. One tiny call, only when asked. */
+async function whereAmI() {
+  try {
+    const r = await timedFetch("https://cloudflare.com/cdn-cgi/trace", 0, { timeoutMs: 4000, tries: 1 });
+    const txt = await r.text();
+    const f = k => (txt.match(new RegExp(`^${k}=(.*)$`, "m")) || [])[1] || null;
+    return { colo: f("colo"), ip: f("ip"), loc: f("loc") };
+  } catch (e) { return { error: String((e && e.message) || e).slice(0, 80) }; }
+}
+
 async function cronRun(event, env, T) {
     const now = athensNow();
     const daily = (() => {
@@ -4655,6 +4703,8 @@ async function cronRun(event, env, T) {
 
     const alertsDue = windowDue(windows, now);
     T.due = alertsDue;
+    // only on a minute that has work, so it costs nothing the rest of the time
+    if (alertsDue) T.from = await whereAmI();
     if (alertsDue) await runAlertsViaRequest(env, T);
     /* Past the alerts on purpose. These are housekeeping, and a failure
        in either of them must not take the alerts down with it — which,
