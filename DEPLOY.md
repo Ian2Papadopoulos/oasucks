@@ -92,6 +92,20 @@ https://oasa-stop.<your-subdomain>.workers.dev
 
 ## 6. Check it's actually working
 
+### The short way
+
+```powershell
+$env:ADMIN_TOKEN="your-token"
+npm run checkup
+```
+
+One command. It asks the app how it is and answers in plain words — what is fine, what to
+look at, what to fix, and what to do about each. Run it after every deploy, and again any
+morning the app feels wrong. Everything below is what it checks *for* you, kept here for
+when you want the raw numbers.
+
+### The long way
+
 - **The board:** each stop shows its name + distance, and rows of `line · to
   destination · minutes`. Numbers should tick down and the list should refresh on its own.
 - **The API, directly:** in any browser, open
@@ -264,7 +278,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v82",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v83",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
