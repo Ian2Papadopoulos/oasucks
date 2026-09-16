@@ -747,6 +747,41 @@ console.log("\n— one direction, however many codes OASA has for it —");
     g.filter(x => x.id === "022").length === 2,
     g.filter(x => x.id === "022").map(x => x.label).join(" | "));
   ok("a different line is untouched", g.filter(x => x.id === "224").length === 1);
+  ok("nothing unique is decorated", g.every(x => !x.tag),
+    "the point is to stop a rider guessing, not to letter every row");
+  await v.ctx.close();
+}
+/* Asking for line 022 comes back as four rows reading "Ν. ΚΥΨΕΛΗ, Ν.
+   ΚΥΨΕΛΗ, ΑΚΑΔΗΜΙΑ, ΑΚΑΔΗΜΙΑ" — two pairs of identical words, and no way
+   to choose between them except at random. */
+{
+  const v = await open();
+  const d = await v.page.evaluate(() => {
+    const routes = [
+      { code: "1", el: "ΑΚΑΔΗΜΙΑ - Ν. ΚΥΨΕΛΗ", en: "AKADIMIA - N. KYPSELI" },
+      { code: "2", el: "*** ΑΚΑΔΗΜΙΑ - Ν. ΚΥΨΕΛΗ", en: "*** AKADIMIA - N. KYPSELI" },
+      { code: "3", el: "ΠΛ. ΒΑΘΗΣ - Ν. ΚΥΨΕΛΗ", en: "PL. VATHIS - N. KYPSELI" },
+      { code: "4", el: "Ν. ΚΥΨΕΛΗ - ΑΚΑΔΗΜΙΑ", en: "N. KYPSELI - AKADIMIA" },
+    ];
+    return dedupeRoutes(routes).map(x =>
+      ({ dest: x.dest, tag: x.tag || null, codes: x.codes, full: x.full }));
+  });
+  ok("the starred twin does not get its own row", d.length === 3,
+    JSON.stringify(d.map(x => x.dest + (x.tag ? ` (${x.tag})` : ""))));
+  ok("...it folds into its sibling, codes and all",
+    d.some(x => x.codes.join(",") === "1,2"), JSON.stringify(d.map(x => x.codes)));
+  /* Two genuinely different journeys to the same place: same words, so
+     they must not both be offered unmarked. */
+  const same = d.filter(x => /KYPSELI/i.test(x.dest));
+  ok("two real ways to reach one place are lettered apart",
+    same.length === 2 && same[0].tag === "A" && same[1].tag === "B",
+    JSON.stringify(same.map(x => [x.dest, x.tag])));
+  ok("...and the one with no twin stays plain",
+    d.filter(x => /AKADIMIA/i.test(x.dest) && !/KYPSELI/i.test(x.dest))
+      .every(x => !x.tag));
+  ok("no asterisk survives anywhere in a label",
+    d.every(x => !/\*/.test(x.dest) && !/\*/.test(x.full)),
+    JSON.stringify(d.map(x => x.full)));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
 }

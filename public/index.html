@@ -849,6 +849,12 @@
     text-transform:uppercase;letter-spacing:.1em}
   /* Deliberately not a modal. A maintenance notice interrupts; this one
      reports weather, and the board underneath it is still worth reading. */
+  /* Small, muted, and only present when two rows would otherwise read the
+     same. Deliberately not styled like a line number: OASA has lines
+     called Α1 and Β5, and a bold letter next to "022" would read as one. */
+  .vtag{display:inline-block;margin-left:5px;padding:0 4px;border:1px solid var(--rule);
+    border-radius:2px;font-family:var(--mono);font-size:9px;font-weight:400;
+    color:var(--ink3);vertical-align:1px}
   .sysbar{display:flex;align-items:center;gap:8px;margin:8px 0 0;
     background:var(--card);border:1px solid var(--toner);border-left:4px solid var(--flag);
     border-radius:2px;padding:8px 8px 8px 10px}
@@ -983,7 +989,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v91</span></div>
+  <div class="foot"><span class="ver">v92</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1915,7 +1921,13 @@ function haversine(a1,o1,a2,o2){ const R=6371000,r=x=>x*Math.PI/180;
   return 2*R*Math.asin(Math.min(1,Math.sqrt(h))); }
 function fmtDist(m){ const n=Number(m); if(!isFinite(n))return ""; return n<950?`${Math.round(n)} m`:`${(n/1000).toFixed(1)} km`; }
 function walkMin(m){ const n=Number(m); if(!isFinite(n))return null; return Math.max(1,Math.round(n*CONFIG.detour/CONFIG.walkSpeed)); }
-function destOf(d){ if(!d)return ""; const p=String(d).split(" - "); return (p.length>1?p[p.length-1]:d).trim(); }
+/* OASA marks some route variants with a leading `***`. It means nothing a
+   rider can act on — see routeGroups — and it is the first thing they see,
+   so it comes off before anything is drawn. One cleaner, applied at the
+   choke points, rather than a strip() sprinkled at each call site. */
+function cleanDescr(d){ return String(d||"").replace(/\*+/g," ").replace(/\s+/g," ").trim(); }
+function destOf(d){ const c=cleanDescr(d); if(!c)return "";
+  const p=c.split(" - "); return (p.length>1?p[p.length-1]:c).trim(); }
 /* OASA hands back several route codes per line per direction, and their
    descriptions are often identical except for a leading `***`. To a rider
    they are one choice — "the 022 towards Ν. Κυψέλη" — and offering the
@@ -1923,12 +1935,46 @@ function destOf(d){ if(!d)return ""; const p=String(d).split(" - "); return (p.l
    alert ends up on the variant the bus was not running.
    So: strip the stars, fold the whitespace and case, and treat what is
    left as the identity of a direction. */
-function baseDest(d){
-  return String(d||"").replace(/\*+/g," ").replace(/\s+/g," ").trim().toUpperCase();
-}
+function baseDest(d){ return cleanDescr(d).toUpperCase(); }
 /* One entry per line-and-direction, carrying EVERY route code that serves
    it. A rule saved from a group matches any of them, which is the whole
    point: the rider picked a destination, not a code. */
+/* One row per journey a rider can tell apart.
+ *
+ * OASA returns a route code per variant, so asking for line 022 comes back
+ * as four rows reading "022 · Ν. ΚΥΨΕΛΗ, 022 · Ν. ΚΥΨΕΛΗ, 022 · ΑΚΑΔΗΜΙΑ,
+ * 022 · ΑΚΑΔΗΜΙΑ" — two pairs of identical words, and no way to choose
+ * between them except at random.
+ *
+ * Identical description means identical journey as far as anyone outside
+ * OASA can tell, so those fold into one row carrying both codes. Variants
+ * that genuinely differ — a different origin, a short working — keep their
+ * own row and get a letter, because two rows that look the same are worse
+ * than two rows that admit they are different. The full text goes in the
+ * title, so the letter is a label and not a riddle. */
+function dedupeRoutes(routes){
+  const byText=new Map();
+  (routes||[]).forEach(r=>{
+    const full=cleanDescr(LANG==="en"?(r.en||r.el):(r.el||r.en));
+    const hit=byText.get(full);
+    if(hit){ hit.codes.push(String(r.code)); return; }
+    byText.set(full,{code:String(r.code),codes:[String(r.code)],full,dest:destOf(full),el:r.el,en:r.en});
+  });
+  return letterClashes([...byText.values()], x => x.dest);
+}
+/* Letter only what would otherwise read identically. Anything unique keeps
+   a clean name — the point is to stop a rider guessing, not to decorate
+   every row. */
+function letterClashes(items, keyOf){
+  const by={};
+  items.forEach(x=>{ const k=keyOf(x); (by[k]||(by[k]=[])).push(x); });
+  Object.keys(by).forEach(k=>{
+    const g=by[k];
+    if(g.length<2) return;
+    g.forEach((x,i)=>{ x.tag=String.fromCharCode(65+i); });   // A, B, C…
+  });
+  return items;
+}
 function routeGroups(routes){
   const out=[], byKey={};
   (routes||[]).forEach(r=>{
@@ -1937,11 +1983,13 @@ function routeGroups(routes){
     if(byKey[key]){ byKey[key].codes.push(String(r.code)); return; }
     /* Keep the cleanest label of the group — the one without the stars —
        rather than whichever happened to come back first. */
-    const g={key,id:r.id||"",label:String(d).replace(/\*+/g,"").replace(/\s+/g," ").trim(),
-      codes:[String(r.code)]};
+    const g={key,id:r.id||"",label:cleanDescr(d),dest:destOf(d),codes:[String(r.code)]};
     byKey[key]=g; out.push(g);
   });
-  return out;
+  /* Two directions can end at the same place by different roads. They read
+     the same in a dropdown, which is the collision this whole change is
+     about, so they get the same treatment. */
+  return letterClashes(out, g => `${g.id}|${g.dest}`);
 }
 function clean(s){ const v=String(s==null?"":s).trim(); return /^[.\-–—·•_\s]*$/.test(v)?"":v; }
 function stopName(s){
@@ -4590,7 +4638,7 @@ async function doLineSearch(){
   }
   lineHits.forEach(l=>{
     const b=document.createElement("button"); b.className="res";
-    b.innerHTML=`<b class="num">${esc(l.id)}</b> · ${esc((LANG==="en"?(l.en||l.el):(l.el||l.en))||"")}`;
+    b.innerHTML=`<b class="num">${esc(l.id)}</b> · ${esc(cleanDescr(LANG==="en"?(l.en||l.el):(l.el||l.en)))}`;
     b.onclick=()=>pickLineDirection(l);
     box.appendChild(b);
   });
@@ -4645,11 +4693,14 @@ async function pickLineDirection(line){
   if(!routes.length){ box.innerHTML=`<div class="res-msg">${t("noRoute")}</div>`; return; }
   const show=r=>{ closeLineSearch();
     openRoutePreview(null,r.code,null,{line:line.id,el:r.el,en:r.en}); };
-  if(routes.length===1){ show(routes[0]); return; }
+  const dirs=dedupeRoutes(routes);
+  if(dirs.length===1){ show(dirs[0]); return; }
   box.innerHTML=`<div class="res-msg">${t("pickDir")}</div>`;
-  routes.slice(0,6).forEach(r=>{
+  dirs.slice(0,6).forEach(r=>{
     const b=document.createElement("button"); b.className="res";
-    b.innerHTML=`<b class="num">${esc(line.id)}</b> · ${esc(destOf((LANG==="en"?(r.en||r.el):(r.el||r.en))||""))}`;
+    b.title=r.full;                       // the letter is a label, not a riddle
+    b.innerHTML=`<b class="num">${esc(line.id)}</b> · ${esc(r.dest)}`
+      +(r.tag?` <span class="vtag">${esc(r.tag)}</span>`:"");
     b.onclick=()=>show(r);
     box.appendChild(b);
   });
@@ -5396,7 +5447,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v91</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v92</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5627,7 +5678,8 @@ function renderForm(edit,onStop){
        is a position in a list, which tells a reader nothing; the codes are
        the thing worth being able to see. */
     rs.innerHTML=groups.map((g,i)=>
-      `<option value="${i}" data-codes="${esc(g.codes.join(","))}">${esc(g.id)} · ${esc(g.label)}</option>`)
+      `<option value="${i}" data-codes="${esc(g.codes.join(","))}">`
+      + `${esc(g.id)} · ${esc(g.label)}${g.tag?` (${esc(g.tag)})`:""}</option>`)
       .join("")||`<option value="">—</option>`;
   }
 

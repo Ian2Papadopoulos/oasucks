@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v91.**
+version: v92.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -22,7 +22,7 @@ becomes one marker carrying the head count.
 See [Live reports](#live-reports) for the exact rules.
 
 > The service-stats **screen** (line reliability, bunching, missing trips) was retired in
-> v18 to make room for reports, and its client code was deleted in v91 — it had been
+> v18 to make room for reports, and its client code was deleted in v92 — it had been
 > shipping in every page load for sixty versions with nothing able to open it. The
 > tracking **backend** is untouched and still collects the data, so the screen can come
 > back from `/track/*` whenever it earns its place. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 911 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 917 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app how it is and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
@@ -129,7 +129,7 @@ The app auto-detects its backend at startup:
   used to be a third mode here that routed every call through free open CORS relays, so
   one 404 from the Worker could silently start sending riders' coordinates to a
   stranger's server for the rest of the session, with nothing on screen to say so.
-  Removed in v91 — a missing backend is now a missing backend.
+  Removed in v92 — a missing backend is now a missing backend.
 
 ## Deploy in ~5 minutes
 
@@ -846,6 +846,29 @@ ten-minute warning at one minute is an announcement, not a warning. It is **reco
 than suppressed**, because a late alert is still the only one that rider is going to get,
 and suppressing it would trade a strange notification for no notification.
 
+#### Neat line names
+
+The asterisks are gone everywhere a rider can see them. `cleanDescr()` strips them at the
+choke points — `destOf()`, `baseDest()`, the line search rows, the direction picker — so no
+call site has to remember.
+
+And identical-looking rows are either merged or told apart, never left ambiguous:
+
+- **Same description** → same journey as far as anyone outside OASA can tell → **one row**,
+  carrying every route code.
+- **Different description, same destination** → genuinely different journeys that would
+  read alike → **kept apart with a small letter**, `A` / `B` / `C`, with the full text in
+  the `title`.
+- **Unique** → left plain. The point is to stop a rider guessing, not to decorate
+  every row.
+
+Asking for line 022 used to return four rows reading `Ν. ΚΥΨΕΛΗ`, `Ν. ΚΥΨΕΛΗ`,
+`ΑΚΑΔΗΜΙΑ`, `ΑΚΑΔΗΜΙΑ` — two pairs of identical words with no way to choose between them
+except at random. It now returns as many rows as there are journeys, each nameable.
+
+The letter is styled small, light and outlined — deliberately *not* like a line number,
+because OASA has lines called Α1 and Β5 and a bold letter beside `022` would read as one.
+
 #### One direction, however many codes OASA has for it
 
 OASA returns several route codes per line per direction, and their descriptions often
@@ -1039,7 +1062,7 @@ instead of only a tally, and `circuitState().lastFail` carries it into every dia
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by
 calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
 the rest of the session on third-party CORS proxies: no stops, no markers, no error.
-(Those proxies are gone as of v91; see above.)
+(Those proxies are gone as of v92; see above.)
 Then, briefly, by calling `/health`, which asked the right question but still hung the
 entire boot on one request winning. Both failed in production. Both looked to the rider
 like an app that simply does not work.
