@@ -443,6 +443,9 @@ console.log("\n— an alert can be edited, not only deleted —");
     route: document.getElementById("f-route").value,
     routeText: (() => { const r = document.getElementById("f-route");
       return r.options[r.selectedIndex] ? r.options[r.selectedIndex].textContent.trim() : ""; })(),
+    // what the rule would actually save, which is the thing that matters
+    routeCodes: (() => { const r = document.getElementById("f-route");
+      return r.options[r.selectedIndex] ? (r.options[r.selectedIndex].dataset.codes || "") : ""; })(),
     from: document.getElementById("f-from").value,
     to: document.getElementById("f-to").value,
     days: [...document.querySelectorAll("#f-days .chip")].filter(c => c.classList.contains("on"))
@@ -462,7 +465,8 @@ console.log("\n— an alert can be edited, not only deleted —");
      rule's own line has to survive that, or saving would quietly move the
      alert to whichever bus happened to sort first. */
   ok("...keeping the line even when the stop's directions do not load",
-    form.route === "rc-9" && /608/.test(form.routeText), `${form.route} · ${form.routeText}`);
+    form.routeCodes === "rc-9" && /608/.test(form.routeText),
+    `${form.routeCodes} · ${form.routeText}`);
   ok("the row being edited says so", form.marked,
     "otherwise the form is indistinguishable from a new alert");
   ok("...and the form says which alert it is changing", /PANORMOU/.test(form.head), form.head);
@@ -713,6 +717,48 @@ console.log("\n— the header row, and a ☰ that is just Settings —");
     opened.alerts && !opened.settings, JSON.stringify(opened));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
+}
+
+/* OASA hands back several route codes per line per direction, their
+   descriptions differing only by a leading `***`. Offering the same words
+   twice in a dropdown is offering a coin flip — and losing it means the
+   alert sits on the variant the bus was not running. */
+console.log("\n— one direction, however many codes OASA has for it —");
+{
+  const v = await open();
+  const g = await v.page.evaluate(() => {
+    const routes = [
+      { code: "1", id: "022", el: "ΑΚΑΔΗΜΙΑ - Ν. ΚΥΨΕΛΗ", en: "AKADIMIA - N. KYPSELI" },
+      { code: "2", id: "022", el: "*** ΑΚΑΔΗΜΙΑ - Ν. ΚΥΨΕΛΗ", en: "*** AKADIMIA - N. KYPSELI" },
+      { code: "3", id: "022", el: "Ν. ΚΥΨΕΛΗ - ΑΚΑΔΗΜΙΑ", en: "N. KYPSELI - AKADIMIA" },
+      { code: "9", id: "224", el: "ΚΑΙΣΑΡΙΑΝΗ - ΕΛ. ΒΕΝΙΖΕΛΟΥ", en: "KAISARIANI - EL. VENIZELOU" },
+    ];
+    return routeGroups(routes).map(x => ({ id: x.id, label: x.label, codes: x.codes }));
+  });
+  ok("the starred twin folds into its sibling", g.length === 3, JSON.stringify(g.map(x => x.label)));
+  const both = g.find(x => x.codes.length > 1);
+  ok("...and the group carries BOTH codes, so either bus matches",
+    both && both.codes.join(",") === "1,2", JSON.stringify(both));
+  ok("...keeping the label without the stars", both && !/\*/.test(both.label), both && both.label);
+  /* The opposite direction is a different journey and must stay separate:
+     grouping on the line alone would put a rider on a bus going the wrong
+     way, which is the one mistake worse than a missed alert. */
+  ok("the other direction stays its own entry",
+    g.filter(x => x.id === "022").length === 2,
+    g.filter(x => x.id === "022").map(x => x.label).join(" | "));
+  ok("a different line is untouched", g.filter(x => x.id === "224").length === 1);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+{
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("a saved rule carries every code of the direction, not one of them",
+    /routeCodes:g\.codes/.test(html),
+    "the rider picked a destination, not a code");
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("and the sweep says why nothing fired, not just that nothing did",
+    /const skip = m =>/.test(w) && /further than any lead/.test(w),
+    "`attempts: 0` answers no question anyone is asking");
 }
 
 /* A rider whose board is thin always asks "is it me?", and the honest

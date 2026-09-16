@@ -983,7 +983,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v89</span></div>
+  <div class="foot"><span class="ver">v90</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1916,6 +1916,33 @@ function haversine(a1,o1,a2,o2){ const R=6371000,r=x=>x*Math.PI/180;
 function fmtDist(m){ const n=Number(m); if(!isFinite(n))return ""; return n<950?`${Math.round(n)} m`:`${(n/1000).toFixed(1)} km`; }
 function walkMin(m){ const n=Number(m); if(!isFinite(n))return null; return Math.max(1,Math.round(n*CONFIG.detour/CONFIG.walkSpeed)); }
 function destOf(d){ if(!d)return ""; const p=String(d).split(" - "); return (p.length>1?p[p.length-1]:d).trim(); }
+/* OASA hands back several route codes per line per direction, and their
+   descriptions are often identical except for a leading `***`. To a rider
+   they are one choice — "the 022 towards Ν. Κυψέλη" — and offering the
+   same words twice in a dropdown is offering a coin flip, which is how an
+   alert ends up on the variant the bus was not running.
+   So: strip the stars, fold the whitespace and case, and treat what is
+   left as the identity of a direction. */
+function baseDest(d){
+  return String(d||"").replace(/\*+/g," ").replace(/\s+/g," ").trim().toUpperCase();
+}
+/* One entry per line-and-direction, carrying EVERY route code that serves
+   it. A rule saved from a group matches any of them, which is the whole
+   point: the rider picked a destination, not a code. */
+function routeGroups(routes){
+  const out=[], byKey={};
+  (routes||[]).forEach(r=>{
+    const d=(LANG==="en"?(r.en||r.el):(r.el||r.en))||"";
+    const key=`${r.id||""}|${baseDest(d)}`;
+    if(byKey[key]){ byKey[key].codes.push(String(r.code)); return; }
+    /* Keep the cleanest label of the group — the one without the stars —
+       rather than whichever happened to come back first. */
+    const g={key,id:r.id||"",label:String(d).replace(/\*+/g,"").replace(/\s+/g," ").trim(),
+      codes:[String(r.code)]};
+    byKey[key]=g; out.push(g);
+  });
+  return out;
+}
 function clean(s){ const v=String(s==null?"":s).trim(); return /^[.\-–—·•_\s]*$/.test(v)?"":v; }
 function stopName(s){
   const n=LANG==="en"?(clean(s.name_en)||clean(s.name_el)):(clean(s.name_el)||clean(s.name_en));
@@ -5369,7 +5396,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v89</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v90</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5578,6 +5605,7 @@ function renderForm(edit,onStop){
     c.className="chip"+(leads.has(L)?" on":""); c.textContent=L+"′";
     c.onclick=()=>{ leads.has(L)?leads.delete(L):leads.add(L); c.classList.toggle("on"); }; lb.appendChild(c); });
   const rs=wrap.querySelector("#f-route");
+  let groups=[];          // one entry per line+direction, each holding its codes
   const stopSel=wrap.querySelector("#f-stop");
   const findBox=wrap.querySelector("#f-find");
   const qIn=wrap.querySelector("#f-q");
@@ -5594,9 +5622,13 @@ function renderForm(edit,onStop){
       try{ await loadRoutes(s); }catch(_){}
       if(stops[+stopSel.value]!==s) return;          // user moved on
     }
-    rs.innerHTML=(s.routes||[]).map(r=>{ const d=LANG==="en"?(r.en||r.el):(r.el||r.en);
-      return `<option value="${esc(r.code)}">${esc(r.id)} · ${esc(d||"")}</option>`; }).join("")
-      ||`<option value="">—</option>`;
+    groups=routeGroups(s.routes);
+    /* data-codes is what the rule will actually save. The option's value
+       is a position in a list, which tells a reader nothing; the codes are
+       the thing worth being able to see. */
+    rs.innerHTML=groups.map((g,i)=>
+      `<option value="${i}" data-codes="${esc(g.codes.join(","))}">${esc(g.id)} · ${esc(g.label)}</option>`)
+      .join("")||`<option value="">—</option>`;
   }
 
   function addStop(s){
@@ -5654,19 +5686,26 @@ function renderForm(edit,onStop){
   qIn.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); clearTimeout(qTimer); runFind(); } };
   if(edit||onStop) stopSel.value="0";            // the named stop, pushed first
   fill().then(()=>{
-    const want=(edit&&edit.routeCodes||[])[0];
-    if(!want) return;
-    rs.value=String(want);
+    const want=(edit&&edit.routeCodes||[]).map(String);
+    if(!want.length) return;
+    /* Any of the rule's codes landing in a group is that group: a rule
+       saved before grouping holds one code, and it belongs with its
+       siblings now. */
+    const i=groups.findIndex(g=>g.codes.some(c=>want.includes(c)));
+    if(i>=0){ rs.value=String(i); return; }
     /* The stop's directions did not come back, or this one has been
        retired since. Either way the rule's own line is the answer here —
        switching it silently to whatever sorted first would change the
        alert into one for a different bus. */
-    if(rs.value!==String(want)){
-      const o=document.createElement("option");
-      o.value=String(want);
-      o.textContent=`${edit.lineId||""} · ${edit.routeName||""}`.replace(/^ · | · $/,"")||String(want);
-      rs.insertBefore(o,rs.firstChild); rs.value=String(want);
-    }
+    groups.unshift({key:"kept",id:edit.lineId||"",
+      label:edit.routeName||String(want[0]),codes:want});
+    const o=document.createElement("option");
+    o.value="0"; o.dataset.codes=want.join(",");
+    o.textContent=`${edit.lineId||""} · ${edit.routeName||""}`.replace(/^ · | · $/,"")||String(want[0]);
+    rs.insertBefore(o,rs.firstChild);
+    // every other option shifted by one
+    [...rs.options].forEach((op,n)=>{ if(n) op.value=String(n); });
+    rs.value="0";
   });
   const save=document.createElement("button"); save.className="primary"; save.textContent=t("save");
   save.onclick=async()=>{
@@ -5674,11 +5713,13 @@ function renderForm(edit,onStop){
     try{
       const id=await ensurePush();
       const s=stops[+stopSel.value];
-      const rc=rs.value;
-      if(!s||!rc) throw new Error("pick");
-      const route=(s.routes||[]).find(r=>r.code===rc)||{};
-      const rule={sub:id,stopCode:s.code,stopName:stopName(s),lineId:route.id||"",routeCodes:[rc],
-        routeName:(LANG==="en"?(route.en||route.el):(route.el||route.en))||"",
+      const g=groups[+rs.value];
+      if(!s||!g) throw new Error("pick");
+      /* Every code of the direction, not the one that happened to be
+         selected. A 022 towards Ν. Κυψέλη is a 022 towards Ν. Κυψέλη
+         whichever of OASA's variants is running it today. */
+      const rule={sub:id,stopCode:s.code,stopName:stopName(s),lineId:g.id||"",routeCodes:g.codes,
+        routeName:g.label||"",
         days:[...sel].sort(),from:wrap.querySelector("#f-from").value,to:wrap.querySelector("#f-to").value,
         leads:[...leads].sort((a,b)=>b-a),enabled:true};
       /* Carrying the id turns the same POST into a replace, which is why
@@ -5688,7 +5729,7 @@ function renderForm(edit,onStop){
       if(edit){
         rule.id=edit.id;
         if(edit.enabled!=null) rule.enabled=edit.enabled;
-        if(!route.id&&String(rc)===String((edit.routeCodes||[])[0])){
+        if(!g.id&&g.key==="kept"){
           rule.lineId=edit.lineId||""; rule.routeName=edit.routeName||"";
         }
       }

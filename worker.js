@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v89";
+const APP_VERSION = "v90";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v89, and only safe because of v79: the age of a
+     Raised from 50 in v90, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -1175,7 +1175,7 @@ function athensUtcOffsetHours() {
 /* The alert cron gets a longer rope than a rider does. A rider is looking
    at the screen and an 8-second wait is worse than an error; the cron has
    a whole minute and nobody watching, and its failure costs the bus. */
-/* Trimmed in v89 from 12s x3. Thirty-six seconds on one stop is longer
+/* Trimmed in v90 from 12s x3. Thirty-six seconds on one stop is longer
    than the whole sweep is allowed, and the retries were doing the work the
    stale fallback already does better — a second attempt into the same bad
    second rarely differs, while a two-minute-old answer with the clock
@@ -1398,21 +1398,36 @@ async function runAlerts(env, T = {}) {
          round trip against the invocation's subrequest budget. */
       let subRead = false, sub = null;
 
+      /* Why nothing fired is the question every test of this asks, and
+         `attempts: 0` does not answer it. Capped, because a busy stop has
+         thirteen arrivals and the interesting ones are the near ones. */
+      const skip = m => { if (!T.skipped) T.skipped = [];
+        if (T.skipped.length < 10) T.skipped.push(m); };
       for (const a of arrivals) {
         const rc = String(a.route_code ?? a.RouteCode ?? "");
         if (codes.length && !codes.includes(rc)) {
           const want = String(rule.lineId || "");
-          if (!want || (await lineFor(rc)) !== want) continue;
+          const got = await lineFor(rc);
+          if (!want || got !== want) {
+            skip(`${rc} is line ${got || "?"}, not ${want || codes.join(",")}`);
+            continue;
+          }
         }
         const min = parseInt(a.btime2 ?? a.btime ?? "", 10);
-        if (!isFinite(min)) continue;
+        if (!isFinite(min)) { skip(`${rc} has no readable time`); continue; }
 
         // Does this bus reach the stop inside the user's window?
         const eta = now.minutes + min;
-        if (eta < from - 1 || eta > to) continue;
+        if (eta < from - 1 || eta > to) {
+          skip(`${rc} arrives ${minToHhmm(eta)}, outside ${rule.from}–${rule.to}`);
+          continue;
+        }
 
         const applicable = leads.filter(L => min <= L);
-        if (!applicable.length) continue;
+        if (!applicable.length) {
+          skip(`${rc} is ${min}′ away, further than any lead (${leads.join(",")})`);
+          continue;
+        }
 
         const veh = String(a.veh_code ?? a.VEH_NO ?? rc);
         const unsent = [];
@@ -1420,7 +1435,7 @@ async function runAlerts(env, T = {}) {
           const k = `sent:${rule.id}:${veh}:${L}`;
           if (!(await env.ALERTS.get(k))) unsent.push([k, L]);
         }
-        if (!unsent.length) continue;
+        if (!unsent.length) { skip(`${rc} already alerted for vehicle ${veh}`); continue; }
 
         const etaClock = (() => {
           const t = (eta % (24 * 60) + 24 * 60) % (24 * 60);
