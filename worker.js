@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v84";
+const APP_VERSION = "v85";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v84, and only safe because of v79: the age of a
+     Raised from 50 in v85, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -4266,7 +4266,13 @@ export default {
             "SELECT COUNT(*) n FROM stop_event WHERE ts > ?").bind(nowS - 86400).first();
           out.history = { reportsLogged: (d1 && d1.total) || 0,
             last24h: (d1 && d1.day) || 0, last7d: (d1 && d1.week) || 0 };
-          out.tracking = { routes: (tr && tr.n) || 0, eventsLast24h: (ev && ev.n) || 0 };
+          /* "Nothing in 24 hours" reads the same whether it never worked
+             or worked for a month and stopped, and those need opposite
+             responses. The last event's age tells them apart. */
+          const last = await env.DB.prepare("SELECT MAX(ts) t FROM stop_event").first();
+          const lastTs = (last && last.t) || 0;
+          out.tracking = { routes: (tr && tr.n) || 0, eventsLast24h: (ev && ev.n) || 0,
+            lastEventAgoSec: lastTs ? nowS - lastTs : null };
         } catch (_) { }
       }
 

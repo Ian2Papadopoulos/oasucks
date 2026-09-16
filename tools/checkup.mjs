@@ -188,8 +188,20 @@ if (!selfTunes && al.rules > 0 && Array.isArray(al.cronSuggestion)
 }
 const tr = health.tracking || {};
 if (tr.routes > 0 && tr.eventsLast24h === 0) {
-  say("LOOK", `${tr.routes} route(s) are being tracked but produced nothing in 24 hours.`,
-    "This costs an OASA call every single minute for no result. Worth turning off.");
+  /* Worked-then-stopped and never-worked look identical in a 24-hour
+     window and need opposite responses: one is a route OASA has retired
+     under you, the other is a setup that never took. */
+  if (tr.lastEventAgoSec == null) {
+    say("LOOK", `${tr.routes} tracked route(s) have never recorded anything.`,
+      "Costs an OASA call a minute for nothing. Turn it off, or check the route code.");
+  } else {
+    say("LOOK", `Tracking stopped ${ago(tr.lastEventAgoSec)} after working normally.`,
+      "It still costs an OASA call every minute. Usually the route code was retired "
+      + "upstream. Test it with:  curl.exe -X POST -H \"X-Admin-Token: TOKEN\" "
+      + `${HOST}/track/sample`
+      + "\n      events:0 means OASA no longer serves that route — remove it. "
+      + "Removing keeps the history already collected.");
+  }
 }
 
 /* ------------------------------ output ------------------------------ */
