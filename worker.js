@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v81";
+const APP_VERSION = "v82";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v81, and only safe because of v79: the age of a
+     Raised from 50 in v82, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -282,7 +282,7 @@ function circuitState() {
  * breaker: ten calls a minute cannot be the problem, and losing them costs
  * a rider the bus. */
 const UPSTREAM_BUDGET = { perMin: 150 };
-const budget = { windowStart: 0, spent: 0, shed: 0 };
+const budget = { windowStart: 0, spent: 0, shed: 0, hits: 0, misses: 0, aged: 0 };
 function budgetAllows() {
   const now = Date.now();
   if (now - budget.windowStart >= 60000) { budget.windowStart = now; budget.spent = 0; }
@@ -297,8 +297,19 @@ function budgetAllows() {
 function budgetRefund() { if (budget.spent > 0) budget.spent--; }
 function budgetState() {
   const leftMs = Math.max(0, 60000 - (Date.now() - budget.windowStart));
+  const seen = budget.hits + budget.misses;
   return { perMin: UPSTREAM_BUDGET.perMin, spentThisMinute: budget.spent,
-    shedThisIsolate: budget.shed, windowEndsInSec: Math.round(leftMs / 1000) };
+    shedThisIsolate: budget.shed, windowEndsInSec: Math.round(leftMs / 1000),
+    /* The whole upstream-load story rests on the edge cache actually being
+       hit, and until now that was an assumption. These are the measurement.
+       `cachedShare` low while riders are active means the cache is not
+       doing its job and the real upstream load is the raw call count.
+       `withAge` is the share of those hits that also carried an `Age`
+       header — which is what the countdown correction needs, and what the
+       budget refund used to depend on entirely. */
+    upstreamCalls: seen,
+    cachedShare: seen ? Math.round((budget.hits / seen) * 100) + "%" : "no calls yet",
+    hitsCarryingAge: budget.hits ? Math.round((budget.aged / budget.hits) * 100) + "%" : "n/a" };
 }
 
 async function getJSONAged(urlStr, cacheTtl, opts) {
@@ -309,7 +320,17 @@ async function getJSONAged(urlStr, cacheTtl, opts) {
   try {
     const r = await timedFetch(urlStr, cacheTtl, opts);
     const ageS = Math.max(0, parseInt(r.headers.get("Age") || "0", 10) || 0);
-    if (upstream && !spared && ageS > 0) budgetRefund();
+    /* Two signals, because neither is guaranteed alone. `Age` is what the
+       countdown correction needs and is what a cache SHOULD send;
+       CF-Cache-Status is what Cloudflare reliably does send. Refunding on
+       Age alone meant that if the header were ever absent, every cache hit
+       would be charged to the budget — inflating it until the Worker shed
+       traffic that was costing OASA nothing. */
+    const cached = ageS > 0 || /^(HIT|REVALIDATED)$/i.test(r.headers.get("CF-Cache-Status") || "");
+    if (upstream) {
+      if (cached) { budget.hits++; if (ageS > 0) budget.aged++; } else budget.misses++;
+      if (!spared && cached) budgetRefund();
+    }
     if (!r.ok) { if (upstream) circuitNote(false, `HTTP ${r.status}`); return { data: null, ageS: 0 }; }
     const data = await r.json();
     if (upstream) circuitNote(true);

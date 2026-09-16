@@ -711,8 +711,18 @@ console.log("\n— a ceiling on what we ask of OASA —");
   /* A cache hit never reached OASA. Charging it would shed traffic that
      costs them nothing, which is the opposite of the point. */
   ok("...and a cache hit gives its token back",
-    /if \(upstream && !spared && ageS > 0\) budgetRefund\(\)/.test(w),
+    /if \(!spared && cached\) budgetRefund\(\)/.test(w),
     "the budget measures what we ask of them, not what we serve");
+  /* Refunding on `Age` alone meant that if that header were ever absent —
+     and it is not guaranteed — every cache hit would be charged, inflating
+     the budget until the Worker shed traffic costing OASA nothing. */
+  ok("...recognised by two signals, not one that might not be sent",
+    /ageS > 0 \|\| \/\^\(HIT\|REVALIDATED\)\$\/i\.test\(r\.headers\.get\("CF-Cache-Status"\)/.test(w));
+  /* The entire upstream-load story rests on the edge cache being hit, and
+     that was an assumption until it was counted. */
+  ok("...and whether the cache is working at all is measured, not assumed",
+    /cachedShare/.test(w) && /hitsCarryingAge/.test(w),
+    "a low share while riders are active means the real load is the raw count");
   ok("...with the operator able to see how close it is",
     /out\.budget = budgetState\(\)/.test(w));
   /* Two implementations of "fetch some JSON" would drift, and the circuit,
@@ -736,7 +746,15 @@ console.log("\n— a ceiling on what we ask of OASA —");
     return budgetAllows();
   })()`, ctx);
   ok("...and the window rolls, so a busy minute is not a permanent ban", rolls);
-  vm.runInContext(`budget.windowStart = 0; budget.spent = 0; budget.shed = 0;`, ctx);
+  const counted = vm.runInContext(`(() => {
+    budget.hits = 3; budget.misses = 1; budget.aged = 2;
+    const b = budgetState();
+    return { share: b.cachedShare, withAge: b.hitsCarryingAge, calls: b.upstreamCalls };
+  })()`, ctx);
+  ok("the share is reported as a share, ready to read", counted.share === "75%"
+    && counted.withAge === "67%" && counted.calls === 4, JSON.stringify(counted));
+  vm.runInContext(`budget.windowStart = 0; budget.spent = 0; budget.shed = 0;
+    budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
 }
 
 /* The identical OASA call succeeds every time from `fetch` and aborts
