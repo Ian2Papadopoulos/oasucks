@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v80";
+const APP_VERSION = "v81";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -57,9 +57,16 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 // act → edge cache seconds. Live positions/arrivals must stay fresh;
 // route geometry and stop lists never change, so cache them for a day.
 const ACT_TTL = {
-  // above the app's refresh interval on purpose: two people waiting at the
-  // same stop should cost OASA one call, not two
-  getStopArrivals: 50,
+  /* Above the app's refresh interval on purpose: two people waiting at the
+     same stop should cost OASA one call, not two.
+     Raised from 50 in v81, and only safe because of v79: the age of a
+     cached answer is now subtracted from the minutes before anyone sees
+     them, so a 90-second cache shows the same countdown a 50-second one
+     did. It is the single biggest lever on upstream load — arrivals are
+     the only call that is not cached for an hour or a day — and it costs
+     nothing a rider can see. The one real cost: a bus that enters OASA's
+     feed mid-window is noticed up to 90 seconds late. */
+  getStopArrivals: 90,
   getBusLocation: 12,
   getClosestStops: 3600,
   webRoutesForStop: 86400,
@@ -254,13 +261,56 @@ function circuitState() {
    `Age` header, and for arrivals that number is not bookkeeping — it is
    minutes. A 50-second-old "4 minutes" is really three, and the rider is
    looking at a number that has already expired. */
+/* ------------------- the upstream budget ---------------------------- *
+ * The circuit breaker answers "OASA has stopped talking to us". This
+ * answers the question before it: "are we about to become the reason".
+ *
+ * Load here is O(riders) and unbounded — every new rider at a new corner
+ * adds arrivals calls, and nothing in the system says no. That is what got
+ * this Worker blocked: not a bug, just arithmetic nobody had capped. A
+ * budget turns the failure mode inside out. Past the ceiling, riders get
+ * slightly older numbers from the cache instead of the service getting
+ * blocked, which is a trade worth making at any user count.
+ *
+ * Honest limitation: this counts per ISOLATE, not globally — Workers run
+ * in many places at once and there is no shared counter without a Durable
+ * Object. It is still worth having, because the traffic that matters
+ * concentrates in the colo nearest Athens, which is one isolate doing most
+ * of the asking. Read it as a governor, not a guarantee.
+ *
+ * The alert path is exempt, by the same reasoning that exempts it from the
+ * breaker: ten calls a minute cannot be the problem, and losing them costs
+ * a rider the bus. */
+const UPSTREAM_BUDGET = { perMin: 150 };
+const budget = { windowStart: 0, spent: 0, shed: 0 };
+function budgetAllows() {
+  const now = Date.now();
+  if (now - budget.windowStart >= 60000) { budget.windowStart = now; budget.spent = 0; }
+  if (budget.spent >= UPSTREAM_BUDGET.perMin) { budget.shed++; return false; }
+  budget.spent++;
+  return true;
+}
+/* A cache hit never reached OASA, so it must not count against a budget
+   whose whole purpose is "how much are we asking of them". We cannot know
+   before the call, so the token is taken up front and given back when the
+   response turns out to have come from the edge. */
+function budgetRefund() { if (budget.spent > 0) budget.spent--; }
+function budgetState() {
+  const leftMs = Math.max(0, 60000 - (Date.now() - budget.windowStart));
+  return { perMin: UPSTREAM_BUDGET.perMin, spentThisMinute: budget.spent,
+    shedThisIsolate: budget.shed, windowEndsInSec: Math.round(leftMs / 1000) };
+}
+
 async function getJSONAged(urlStr, cacheTtl, opts) {
   const upstream = urlStr.startsWith(OASA);
-  if (upstream && !(opts && opts.ignoreCircuit) && circuitOpen()) return { data: null, ageS: 0 };
+  const spared = opts && opts.ignoreCircuit;
+  if (upstream && !spared && circuitOpen()) return { data: null, ageS: 0 };
+  if (upstream && !spared && !budgetAllows()) return { data: null, ageS: 0 };
   try {
     const r = await timedFetch(urlStr, cacheTtl, opts);
-    if (!r.ok) { if (upstream) circuitNote(false, `HTTP ${r.status}`); return { data: null, ageS: 0 }; }
     const ageS = Math.max(0, parseInt(r.headers.get("Age") || "0", 10) || 0);
+    if (upstream && !spared && ageS > 0) budgetRefund();
+    if (!r.ok) { if (upstream) circuitNote(false, `HTTP ${r.status}`); return { data: null, ageS: 0 }; }
     const data = await r.json();
     if (upstream) circuitNote(true);
     return { data, ageS };
@@ -293,19 +343,11 @@ function ageArrivals(list, ageS) {
   return list.map(a => ({ ...a, min: a.min - drift })).filter(a => a.min >= 0);
 }
 
+/* The same call, for the callers that do not care how old the answer is.
+   One implementation: two that had to be kept in step would drift, and the
+   circuit, the budget and the age accounting all live in here. */
 async function getJSON(urlStr, cacheTtl, opts) {
-  const upstream = urlStr.startsWith(OASA);
-  if (upstream && !(opts && opts.ignoreCircuit) && circuitOpen()) return null;
-  try {
-    const r = await timedFetch(urlStr, cacheTtl, opts);
-    if (!r.ok) { if (upstream) circuitNote(false, `HTTP ${r.status}`); return null; }
-    const j = await r.json();
-    if (upstream) circuitNote(true);
-    return j;
-  } catch (e) {
-    if (upstream) circuitNote(false, String((e && e.message) || e));
-    return null;
-  }
+  return (await getJSONAged(urlStr, cacheTtl, opts)).data;
 }
 
 /* ======================= greeklish → greek ======================== */
@@ -1095,6 +1137,11 @@ function athensUtcOffsetHours() {
    at the screen and an 8-second wait is worse than an error; the cron has
    a whole minute and nobody watching, and its failure costs the bus. */
 const ALERT_FETCH = { ignoreCircuit: true, timeoutMs: 12000, tries: 3 };
+/* The alert path keeps the shorter cache. It is ten stops a minute for the
+   whole service — its upstream cost is a rounding error — and a
+   three-minute lead is where staleness actually hurts. The expensive path
+   gets the long cache; the cheap one gets the freshness. */
+const ALERT_ARRIVALS_TTL = 45;
 /* Stop STARTING new stop fetches past this point in a run. Without it, ten
    stops each burning three 12-second timeouts is six minutes of a cron
    minute, and the runtime cuts it off somewhere in the middle with no
@@ -1132,7 +1179,7 @@ async function arrivalsForAlert(stopCode) {
      OASA nothing, and at a quiet one it pays once for everybody. Fifty
      seconds of staleness against a three-minute lead is not a trade worth
      a request. */
-  const got = await getJSONAged(url, ACT_TTL.getStopArrivals, ALERT_FETCH);
+  const got = await getJSONAged(url, ALERT_ARRIVALS_TTL, ALERT_FETCH);
   /* The same correction the rider board gets, and for a sharper reason: a
      three-minute lead has no room for a fifty-second-old "3 minutes". The
      shared cache still saves the request; it just no longer costs the
@@ -4164,6 +4211,10 @@ export default {
          the KV block on purpose: this is about the scheduler, not storage,
          and it must report even when alerts are unconfigured. */
       out.upstream = circuitState();
+      /* How close we are to the ceiling we set ourselves. "Are we about to
+         become the reason OASA stops answering" is a question the operator
+         should be able to ask before the answer is yes. */
+      out.budget = budgetState();
 
       if (dbReady(env)) {
         try {

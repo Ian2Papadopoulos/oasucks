@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v80 defaults** — if you edit the
+breaks if you change it. Values here are the **v81 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -495,13 +495,40 @@ for an hour or a day, which makes them the whole of the upstream load.
 |---|---|---|---|
 | `CONFIG.refreshMs` | 30 s | **45 s** | Sweeps per rider per minute. A countdown in whole minutes barely moves in fifteen seconds. |
 | `CONFIG.listPool` | 14 | **11** | Stops that get an arrivals call per sweep. |
-| `ACT_TTL.getStopArrivals` | 12 s | **50 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. |
+| `ACT_TTL.getStopArrivals` | 12 s | **90 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. Raised from 50 in v81, and only safe because of v79: the age of a cached answer is subtracted from the minutes before anyone sees them, so a 90-second cache shows the same countdown a 50-second one did. |
+| `ALERT_ARRIVALS_TTL` | — | **45 s** | The alert path keeps the shorter cache. It is ten stops a minute for the whole service, so its upstream cost is a rounding error, and a three-minute lead is where staleness actually hurts. |
+| `UPSTREAM_BUDGET.perMin` | — | **150** | A hard ceiling on calls to OASA per minute, per isolate. Past it, riders get slightly older numbers from the cache instead of the service getting blocked. |
 | `CIRCUIT.openAfter` | — | **6** | Consecutive upstream failures before the Worker stops calling. |
 | `CIRCUIT.openMs` | — | **120 s** | How long it stays shut, after which one request is let through to look. |
 | `STALE_KEEP` | — | **900 s** | How long a good sweep stays worth showing once the upstream goes quiet. |
 
 Together the first three take one rider with the app open from roughly **28 upstream calls
-a minute to about 11**. Tune them back if OASA ever stops minding.
+a minute to about 6**. Tune them back if OASA ever stops minding.
+
+#### The budget, and why a cap matters more than a smaller number
+
+Every number above reduces load *per rider*. None of them changes the shape of the
+problem, which is that load is **O(riders) and unbounded** — each new rider at a new
+corner adds arrivals calls and nothing in the system says no. That is what got this Worker
+blocked: not a bug, just arithmetic nobody had capped.
+
+`UPSTREAM_BUDGET` inverts the failure mode. Past the ceiling, `getJSONAged` returns
+nothing and the caller falls back to cache and stale — riders get slightly older numbers
+instead of the service getting blocked, which is a trade worth making at any user count.
+A cache hit **gives its token back** (`budgetRefund`, driven by the response's `Age`
+header), because the budget measures what we ask of OASA, not what we serve.
+
+Two honest limitations:
+
+- **It counts per isolate, not globally.** Workers run in many places at once and there is
+  no shared counter without a Durable Object. It is worth having anyway, because the
+  traffic that matters concentrates in the colo nearest Athens — one isolate doing most of
+  the asking. Read it as a governor, not a guarantee.
+- **The alert path is exempt**, by the same reasoning that exempts it from the circuit:
+  ten calls a minute cannot be the problem, and shedding them costs a rider the bus.
+
+`/health?token=…` reports `budget` alongside `upstream`, so "are we about to become the
+reason OASA stops answering" is a question you can ask *before* the answer is yes.
 
 The circuit matters more than the numbers. Without it, an upstream that stops answering
 turns every rider request into a dozen calls that each wait 8 s and retry — the moment

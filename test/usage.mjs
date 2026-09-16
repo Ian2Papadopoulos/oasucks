@@ -652,7 +652,7 @@ console.log("\n— what runAlerts does when the push fails —");
   {
     const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
     ok("the alert fetch shares the rider's edge cache rather than bypassing it",
-      /getJSONAged\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
+      /getJSONAged\(url, ALERT_ARRIVALS_TTL, ALERT_FETCH\)/.test(w),
       "a stop somebody is watching costs OASA nothing");
     ok("...and gets a longer rope than a rider does",
       /ALERT_FETCH = \{ ignoreCircuit: true, timeoutMs: 12000, tries: 3 \}/.test(w));
@@ -672,12 +672,14 @@ console.log("\n— what runAlerts does when the push fails —");
     const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
     ok("the breaker cannot refuse the alert cron",
       /const ALERT_FETCH = \{ ignoreCircuit: true,/.test(w)
-      && /getJSONAged\(url, ACT_TTL\.getStopArrivals, ALERT_FETCH\)/.test(w),
+      && /getJSONAged\(url, ALERT_ARRIVALS_TTL, ALERT_FETCH\)/.test(w),
       "one call per stop per minute is not what a breaker is for");
     ok("...and the line lookup behind it is exempt too",
       /fetchStopRoutes\(stopCode, ALERT_FETCH\)/.test(w));
     ok("...but the read path, which is what got us blocked, still is not",
-      /if \(upstream && !\(opts && opts\.ignoreCircuit\) && circuitOpen\(\)\)/.test(w));
+      /if \(upstream && !spared && circuitOpen\(\)\)/.test(w)
+      && /if \(upstream && !spared && !budgetAllows\(\)\)/.test(w),
+      "the breaker and the budget both step aside for alerts, and only for alerts");
     ok("...so it carries its own ceiling instead, under the subrequest cap",
       /ALERT_MAX_STOPS = 10/.test(w) && /T\.overCapacity/.test(w));
     ok("a refused upstream call keeps the reason, not just a tally",
@@ -695,6 +697,46 @@ console.log("\n— what runAlerts does when the push fails —");
 
   vm.runInContext(`getJSON = __realGet; getJSONAged = __realAged; sendPush = __realPush;`,
     Object.assign(ctx, { __realGet: realGet, __realAged: realAged, __realPush: realPush }));
+}
+
+/* Load here is O(riders) and nothing said no. That is what got this Worker
+   blocked — not a bug, arithmetic nobody had capped. */
+console.log("\n— a ceiling on what we ask of OASA —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("there is a budget, and it is a number you can find",
+    /const UPSTREAM_BUDGET = \{ perMin: \d+ \}/.test(w));
+  ok("...checked before every upstream call on the read path",
+    /if \(upstream && !spared && !budgetAllows\(\)\)/.test(w));
+  /* A cache hit never reached OASA. Charging it would shed traffic that
+     costs them nothing, which is the opposite of the point. */
+  ok("...and a cache hit gives its token back",
+    /if \(upstream && !spared && ageS > 0\) budgetRefund\(\)/.test(w),
+    "the budget measures what we ask of them, not what we serve");
+  ok("...with the operator able to see how close it is",
+    /out\.budget = budgetState\(\)/.test(w));
+  /* Two implementations of "fetch some JSON" would drift, and the circuit,
+     the budget and the age accounting all live in one of them. */
+  ok("there is one fetcher, not two kept in step by hand",
+    /async function getJSON\(urlStr, cacheTtl, opts\) \{\s*\n\s*return \(await getJSONAged/.test(w));
+
+  const spend = vm.runInContext(`(() => {
+    const before = budgetState();
+    let allowed = 0;
+    for (let i = 0; i < UPSTREAM_BUDGET.perMin + 25; i++) if (budgetAllows()) allowed++;
+    const after = budgetState();
+    return { allowed, cap: UPSTREAM_BUDGET.perMin, shed: after.shedThisIsolate - before.shedThisIsolate };
+  })()`, ctx);
+  ok("the ceiling actually holds", spend.allowed === spend.cap,
+    `${spend.allowed} allowed of ${spend.cap}`);
+  ok("...and what it turned away is counted, not silently dropped",
+    spend.shed === 25, String(spend.shed));
+  const rolls = vm.runInContext(`(() => {
+    budget.windowStart = Date.now() - 61000;      // a minute has passed
+    return budgetAllows();
+  })()`, ctx);
+  ok("...and the window rolls, so a busy minute is not a permanent ban", rolls);
+  vm.runInContext(`budget.windowStart = 0; budget.spent = 0; budget.shed = 0;`, ctx);
 }
 
 /* The identical OASA call succeeds every time from `fetch` and aborts
