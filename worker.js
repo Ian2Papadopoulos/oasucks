@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v90";
+const APP_VERSION = "v91";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v90, and only safe because of v79: the age of a
+     Raised from 50 in v91, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -1175,7 +1175,7 @@ function athensUtcOffsetHours() {
 /* The alert cron gets a longer rope than a rider does. A rider is looking
    at the screen and an 8-second wait is worse than an error; the cron has
    a whole minute and nobody watching, and its failure costs the bus. */
-/* Trimmed in v90 from 12s x3. Thirty-six seconds on one stop is longer
+/* Trimmed in v91 from 12s x3. Thirty-six seconds on one stop is longer
    than the whole sweep is allowed, and the retries were doing the work the
    stale fallback already does better — a second attempt into the same bad
    second rarely differs, while a two-minute-old answer with the clock
@@ -1184,6 +1184,9 @@ const ALERT_FETCH = { ignoreCircuit: true, timeoutMs: 9000, tries: 2 };
 /* One sweep at a time. A pinger every minute plus a sweep that outlives
    its minute is how two runs end up racing for the same dedupe keys. */
 let runBusy = false;
+/* Per isolate, so a cold one reads null. The durable answer lives in D1
+   under sweep_last and is what /health reports. */
+let lastSweepAt = 0;
 /* The alert path keeps the shorter cache. It is ten stops a minute for the
    whole service — its upstream cost is a rounding error — and a
    three-minute lead is where staleness actually hurts. The expensive path
@@ -1308,6 +1311,17 @@ async function knownOrigin(env) {
 async function runAlerts(env, T = {}) {
   if (!pushReady(env)) { T.stopped = "push not configured"; return T; }
   const now = athensNow();
+  /* How long since the last sweep of any kind. The symptom that made this
+     worth recording: a notification arriving the moment the app is opened,
+     saying the bus is a minute away. That is not a delayed push — it is a
+     lead that came due while nothing was running the sweep, delivered by
+     the first thing that did. The gap IS the fault, and it was invisible. */
+  T.sinceLastSweepSec = lastSweepAt ? Math.round((Date.now() - lastSweepAt) / 1000) : null;
+  lastSweepAt = Date.now();
+  /* Durable, because the in-isolate number reads null on a cold start and
+     a cold start is exactly when the gap is worth knowing. Only written
+     while a window is open, so it is a couple of rows a minute at most. */
+  await setMeta(env, "sweep_last", Math.floor(Date.now() / 1000));
 
   const rules = (await readRules(env)).filter(r => r && r.enabled !== false);
   T.rules = rules.length;
@@ -1477,6 +1491,16 @@ async function runAlerts(env, T = {}) {
         } catch (e) { note = { ok: false, why: String((e && e.message) || e).slice(0, 200) }; }
 
         T.attempts++;
+        /* A lead fires when the bus is at or inside it. Firing at 1 minute
+           on a 10-minute lead is not a warning, it is an announcement —
+           and the rider notices, because it arrives as they open the app.
+           Recorded rather than suppressed: a late alert is still the only
+           one they are going to get, and suppressing it would trade a
+           strange notification for no notification. */
+        if (firingLead - min >= 3) {
+          T.late = (T.late || []).concat(
+            `${rc}: asked for ${firingLead}′ warning, sent at ${min}′`);
+        }
         /* One batch for the three things this used to write separately:
            the attempt, the last-delivered stamp, and the usage tally. */
         const stamp = Math.floor(Date.now() / 1000);
@@ -4321,9 +4345,15 @@ export default {
           out.cron = { lastRun: cronLast || null,
             agoSec: cronLast ? nowS - cronLast : null,
             healthy: !!cronLast && nowS - cronLast < 15 * 60 };
+          const sweepLast = Number(await getMeta(env, "sweep_last")) || 0;
           out.alerts = Object.assign(out.alerts || {}, {
             lastSent: alertLast || null,
-            lastSentAgoSec: alertLast ? nowS - alertLast : null });
+            lastSentAgoSec: alertLast ? nowS - alertLast : null,
+            /* Only advances while a rule's window is open, so a large
+               number outside every window means nothing. Inside one it
+               means the sweep is not being triggered, which is what a
+               notification arriving late feels like from the outside. */
+            lastSweepAgoSec: sweepLast ? nowS - sweepLast : null });
         } catch (_) { }
         try {
           // today and the last 30 days, the two numbers worth a glance

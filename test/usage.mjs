@@ -758,6 +758,29 @@ console.log("\n— a ceiling on what we ask of OASA —");
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
 }
 
+/* A notification arriving the instant the app is opened, saying the bus is
+   a minute away, is not a delayed push. It is a lead that came due while
+   nothing ran the sweep, delivered by the first thing that did — and the
+   gap that caused it was invisible. */
+console.log("\n— how often the sweep actually runs —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("every sweep records how long since the last one",
+    /T\.sinceLastSweepSec = lastSweepAt \?/.test(w));
+  ok("...durably, because a cold isolate is exactly when the gap matters",
+    /setMeta\(env, "sweep_last"/.test(w) && /getMeta\(env, "sweep_last"\)/.test(w));
+  ok("...and /health reports it beside the last delivery",
+    /lastSweepAgoSec: sweepLast \? nowS - sweepLast : null/.test(w));
+  /* Firing a 10-minute lead at 1 minute is an announcement, not a warning.
+     Recorded rather than suppressed: a late alert is still the only one
+     the rider is going to get. */
+  ok("a lead fired far later than asked is recorded, not hidden",
+    /if \(firingLead - min >= 3\)/.test(w) && /asked for \$\{firingLead\}′ warning/.test(w));
+  ok("...and not suppressed, because late beats never",
+    /T\.late = \(T\.late \|\| \[\]\)\.concat/.test(w)
+    && !/if \(firingLead - min >= 3\) continue/.test(w));
+}
+
 /* A cron service waits 30 seconds and gives up. The sweep can spend
    longer than that on one slow stop, and a client hanging up can take the
    request handler down with it — killing the very sweep it triggered. */

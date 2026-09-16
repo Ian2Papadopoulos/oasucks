@@ -186,6 +186,28 @@ if (!selfTunes && al.rules > 0 && Array.isArray(al.cronSuggestion)
     "With no rules there is nothing to narrow it to, and narrowing it now would "
     + "stop the first alert you set from ever firing.");
 }
+/* The symptom: a notification arrives the moment the app is opened,
+   saying the bus is a minute away. That is not a delayed push — it is a
+   lead that came due while nothing was running the sweep, delivered by the
+   first thing that did. */
+if (al.dueNow === true && typeof al.lastSweepAgoSec === "number") {
+  if (al.lastSweepAgoSec <= 150) {
+    say("OK", `A window is open and the check ran ${ago(al.lastSweepAgoSec)}.`,
+      "That is the cadence alerts need — roughly once a minute.");
+  } else {
+    say("FIX", `A window is open but the check last ran ${ago(al.lastSweepAgoSec)}.`,
+      "Alerts will arrive late, or all at once when someone next opens the app. "
+      + "The pinger is not calling /alerts/run — check it is enabled and not timing out.");
+  }
+}
+if (why && why.lastCronWithWork && Array.isArray(why.lastCronWithWork.late)
+    && why.lastCronWithWork.late.length) {
+  say("LOOK", "The last alerts went out later than they were asked for.",
+    why.lastCronWithWork.late.join(" | ")
+    + "\n      A 10-minute warning sent at 1 minute is an announcement, not a warning. "
+    + "It means the sweep is not running often enough.");
+}
+
 /* The gap that stops alerts being set-and-forget: the cron cannot reach
    OASA on this Worker, a rider's own request can, and an alert at 06:40
    with nobody awake has neither. */

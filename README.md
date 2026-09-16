@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v90.**
+version: v91.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -22,7 +22,7 @@ becomes one marker carrying the head count.
 See [Live reports](#live-reports) for the exact rules.
 
 > The service-stats **screen** (line reliability, bunching, missing trips) was retired in
-> v18 to make room for reports, and its client code was deleted in v90 — it had been
+> v18 to make room for reports, and its client code was deleted in v91 — it had been
 > shipping in every page load for sixty versions with nothing able to open it. The
 > tracking **backend** is untouched and still collects the data, so the screen can come
 > back from `/track/*` whenever it earns its place. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 906 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 911 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app how it is and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
@@ -129,7 +129,7 @@ The app auto-detects its backend at startup:
   used to be a third mode here that routed every call through free open CORS relays, so
   one 404 from the Worker could silently start sending riders' coordinates to a
   stranger's server for the rest of the session, with nothing on screen to say so.
-  Removed in v90 — a missing backend is now a missing backend.
+  Removed in v91 — a missing backend is now a missing backend.
 
 ## Deploy in ~5 minutes
 
@@ -823,6 +823,29 @@ Three changes close it:
 `/alerts/why` returns the last trace from a minute that actually had a rule due, as
 `lastCronWithWork`. Quiet minutes do not overwrite it.
 
+#### "It buzzed the moment I opened the app"
+
+Reported once alerts started arriving: the first notification comes on time, then opening
+the app produces another one immediately, saying the bus is a minute away.
+
+**That is not a delayed push.** Web Push does not queue and replay. It is a *lead that came
+due while nothing was running the sweep* — and the app being opened was the first thing
+that ran one. The notification is generated at that moment and delivered at once.
+
+Which means the gap between sweeps is the fault, and it was invisible. Every sweep now
+records `sinceLastSweepSec`, and `sweep_last` is persisted so a cold isolate can still
+answer. `/health` reports `alerts.lastSweepAgoSec`, and `npm run checkup` reads it against
+the one thing that makes it meaningful — whether a window is open:
+
+- window open, checked within 150s → the cadence alerts need
+- window open, checked minutes ago → **the pinger is not calling `/alerts/run`**, and
+  alerts will arrive late or all at once when someone next opens the app
+
+A lead fired much later than it was asked for is recorded too (`T.late`): firing a
+ten-minute warning at one minute is an announcement, not a warning. It is **recorded rather
+than suppressed**, because a late alert is still the only one that rider is going to get,
+and suppressing it would trade a strange notification for no notification.
+
 #### One direction, however many codes OASA has for it
 
 OASA returns several route codes per line per direction, and their descriptions often
@@ -1016,7 +1039,7 @@ instead of only a tally, and `circuitState().lastFail` carries it into every dia
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by
 calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
 the rest of the session on third-party CORS proxies: no stops, no markers, no error.
-(Those proxies are gone as of v90; see above.)
+(Those proxies are gone as of v91; see above.)
 Then, briefly, by calling `/health`, which asked the right question but still hung the
 entire boot on one request winning. Both failed in production. Both looked to the rider
 like an app that simply does not work.
