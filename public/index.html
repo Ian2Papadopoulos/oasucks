@@ -849,12 +849,6 @@
     text-transform:uppercase;letter-spacing:.1em}
   /* Deliberately not a modal. A maintenance notice interrupts; this one
      reports weather, and the board underneath it is still worth reading. */
-  /* Small, muted, and only present when two rows would otherwise read the
-     same. Deliberately not styled like a line number: OASA has lines
-     called Α1 and Β5, and a bold letter next to "022" would read as one. */
-  .vtag{display:inline-block;margin-left:5px;padding:0 4px;border:1px solid var(--rule);
-    border-radius:2px;font-family:var(--mono);font-size:9px;font-weight:400;
-    color:var(--ink3);vertical-align:1px}
   .sysbar{display:flex;align-items:center;gap:8px;margin:8px 0 0;
     background:var(--card);border:1px solid var(--toner);border-left:4px solid var(--flag);
     border-radius:2px;padding:8px 8px 8px 10px}
@@ -989,7 +983,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v92</span></div>
+  <div class="foot"><span class="ver">v93</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1960,19 +1954,15 @@ function dedupeRoutes(routes){
     if(hit){ hit.codes.push(String(r.code)); return; }
     byText.set(full,{code:String(r.code),codes:[String(r.code)],full,dest:destOf(full),el:r.el,en:r.en});
   });
-  return letterClashes([...byText.values()], x => x.dest);
-}
-/* Letter only what would otherwise read identically. Anything unique keeps
-   a clean name — the point is to stop a rider guessing, not to decorate
-   every row. */
-function letterClashes(items, keyOf){
-  const by={};
-  items.forEach(x=>{ const k=keyOf(x); (by[k]||(by[k]=[])).push(x); });
-  Object.keys(by).forEach(k=>{
-    const g=by[k];
-    if(g.length<2) return;
-    g.forEach((x,i)=>{ x.tag=String.fromCharCode(65+i); });   // A, B, C…
-  });
+  /* Two rows that would read the same say more instead of being labelled.
+     A letter is a code the rider has to decode and cannot act on; the
+     origin is the actual difference between the two journeys, in words
+     they already know. So a unique destination shows as the destination,
+     and a clashing one falls back to the whole description. */
+  const items=[...byText.values()];
+  const byDest={};
+  items.forEach(x=>{ (byDest[x.dest]||(byDest[x.dest]=[])).push(x); });
+  items.forEach(x=>{ x.clash=byDest[x.dest].length>1; });
   return items;
 }
 function routeGroups(routes){
@@ -1986,10 +1976,10 @@ function routeGroups(routes){
     const g={key,id:r.id||"",label:cleanDescr(d),dest:destOf(d),codes:[String(r.code)]};
     byKey[key]=g; out.push(g);
   });
-  /* Two directions can end at the same place by different roads. They read
-     the same in a dropdown, which is the collision this whole change is
-     about, so they get the same treatment. */
-  return letterClashes(out, g => `${g.id}|${g.dest}`);
+  /* No disambiguation needed here: a group's key IS its full description,
+     so two groups can never carry the same label. The letters this briefly
+     grew were decorating rows that already read differently. */
+  return out;
 }
 function clean(s){ const v=String(s==null?"":s).trim(); return /^[.\-–—·•_\s]*$/.test(v)?"":v; }
 function stopName(s){
@@ -4698,9 +4688,8 @@ async function pickLineDirection(line){
   box.innerHTML=`<div class="res-msg">${t("pickDir")}</div>`;
   dirs.slice(0,6).forEach(r=>{
     const b=document.createElement("button"); b.className="res";
-    b.title=r.full;                       // the letter is a label, not a riddle
-    b.innerHTML=`<b class="num">${esc(line.id)}</b> · ${esc(r.dest)}`
-      +(r.tag?` <span class="vtag">${esc(r.tag)}</span>`:"");
+    b.title=r.full;
+    b.innerHTML=`<b class="num">${esc(line.id)}</b> · ${esc(r.clash?r.full:r.dest)}`;
     b.onclick=()=>show(r);
     box.appendChild(b);
   });
@@ -5447,7 +5436,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v92</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v93</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5679,7 +5668,7 @@ function renderForm(edit,onStop){
        the thing worth being able to see. */
     rs.innerHTML=groups.map((g,i)=>
       `<option value="${i}" data-codes="${esc(g.codes.join(","))}">`
-      + `${esc(g.id)} · ${esc(g.label)}${g.tag?` (${esc(g.tag)})`:""}</option>`)
+      + `${esc(g.id)} · ${esc(g.label)}</option>`)
       .join("")||`<option value="">—</option>`;
   }
 

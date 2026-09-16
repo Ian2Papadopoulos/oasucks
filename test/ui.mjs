@@ -747,8 +747,8 @@ console.log("\n— one direction, however many codes OASA has for it —");
     g.filter(x => x.id === "022").length === 2,
     g.filter(x => x.id === "022").map(x => x.label).join(" | "));
   ok("a different line is untouched", g.filter(x => x.id === "224").length === 1);
-  ok("nothing unique is decorated", g.every(x => !x.tag),
-    "the point is to stop a rider guessing, not to letter every row");
+  ok("nothing here needs disambiguating at all", g.every(x => !x.tag),
+    "a group's key IS its full description, so two labels can never match");
   await v.ctx.close();
 }
 /* Asking for line 022 comes back as four rows reading "Ν. ΚΥΨΕΛΗ, Ν.
@@ -764,21 +764,26 @@ console.log("\n— one direction, however many codes OASA has for it —");
       { code: "4", el: "Ν. ΚΥΨΕΛΗ - ΑΚΑΔΗΜΙΑ", en: "N. KYPSELI - AKADIMIA" },
     ];
     return dedupeRoutes(routes).map(x =>
-      ({ dest: x.dest, tag: x.tag || null, codes: x.codes, full: x.full }));
+      ({ dest: x.dest, clash: !!x.clash, codes: x.codes, full: x.full,
+         shown: x.clash ? x.full : x.dest }));
   });
   ok("the starred twin does not get its own row", d.length === 3,
-    JSON.stringify(d.map(x => x.dest + (x.tag ? ` (${x.tag})` : ""))));
+    JSON.stringify(d.map(x => x.shown)));
   ok("...it folds into its sibling, codes and all",
     d.some(x => x.codes.join(",") === "1,2"), JSON.stringify(d.map(x => x.codes)));
-  /* Two genuinely different journeys to the same place: same words, so
-     they must not both be offered unmarked. */
+  /* Two genuinely different journeys to the same place. A letter would be
+     a code the rider has to decode and cannot act on; the origin is the
+     actual difference, in words they already know. */
   const same = d.filter(x => /KYPSELI/i.test(x.dest));
-  ok("two real ways to reach one place are lettered apart",
-    same.length === 2 && same[0].tag === "A" && same[1].tag === "B",
-    JSON.stringify(same.map(x => [x.dest, x.tag])));
-  ok("...and the one with no twin stays plain",
-    d.filter(x => /AKADIMIA/i.test(x.dest) && !/KYPSELI/i.test(x.dest))
-      .every(x => !x.tag));
+  ok("two real ways to reach one place say where they start from",
+    same.length === 2 && same.every(x => x.clash && x.shown === x.full)
+    && same[0].shown !== same[1].shown,
+    JSON.stringify(same.map(x => x.shown)));
+  ok("...and no letter, code or badge is used to tell them apart",
+    same.every(x => !/\b[A-C]\b\s*$/.test(x.shown)), JSON.stringify(same.map(x => x.shown)));
+  ok("...while the one with no twin stays the short name",
+    d.filter(x => !x.clash).every(x => x.shown === x.dest),
+    JSON.stringify(d.filter(x => !x.clash).map(x => x.shown)));
   ok("no asterisk survives anywhere in a label",
     d.every(x => !/\*/.test(x.dest) && !/\*/.test(x.full)),
     JSON.stringify(d.map(x => x.full)));
