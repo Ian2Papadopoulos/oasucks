@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v83 defaults** — if you edit the
+breaks if you change it. Values here are the **v84 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -495,7 +495,7 @@ for an hour or a day, which makes them the whole of the upstream load.
 |---|---|---|---|
 | `CONFIG.refreshMs` | 30 s | **45 s** | Sweeps per rider per minute. A countdown in whole minutes barely moves in fifteen seconds. |
 | `CONFIG.listPool` | 14 | **11** | Stops that get an arrivals call per sweep. |
-| `ACT_TTL.getStopArrivals` | 12 s | **90 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. Raised from 50 in v83, and only safe because of v79: the age of a cached answer is subtracted from the minutes before anyone sees them, so a 90-second cache shows the same countdown a 50-second one did. |
+| `ACT_TTL.getStopArrivals` | 12 s | **90 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. Raised from 50 in v84, and only safe because of v79: the age of a cached answer is subtracted from the minutes before anyone sees them, so a 90-second cache shows the same countdown a 50-second one did. |
 | `ALERT_ARRIVALS_TTL` | — | **45 s** | The alert path keeps the shorter cache. It is ten stops a minute for the whole service, so its upstream cost is a rounding error, and a three-minute lead is where staleness actually hurts. |
 | `UPSTREAM_BUDGET.perMin` | — | **150** | A hard ceiling on calls to OASA per minute, per isolate. Past it, riders get slightly older numbers from the cache instead of the service getting blocked. |
 | `CIRCUIT.openAfter` | — | **6** | Consecutive upstream failures before the Worker stops calling. |
@@ -531,7 +531,7 @@ Two honest limitations:
 reason OASA stops answering" is a question you can ask *before* the answer is yes.
 
 **`cachedShare` is the number that matters.** The whole upstream-load story rests on the
-edge cache actually being hit, and until v83 that was an assumption rather than a
+edge cache actually being hit, and until v84 that was an assumption rather than a
 measurement. A low share while riders are active means the cache is not doing its job and
 the real upstream load is the raw call count. `hitsCarryingAge` is the share of those hits
 that also carried an `Age` header — which is what the countdown correction needs, and what

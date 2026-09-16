@@ -278,7 +278,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v83",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v84",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -643,6 +643,14 @@ curl.exe "https://oasax.com/health?token=$env:ADMIN_TOKEN"
 `cron.agoSec` should be under 120. If it is null or large, alerts are dead at the source:
 check that `wrangler.toml` still has a `[triggers]` block with `crons`, and that Workers &
 Pages → your Worker → **Settings → Trigger Events** lists them. Redeploy to restore them.
+
+> **Do not narrow the schedule while you have no alert rules.** `/alerts/windows` and
+> `npm run checkup` size the suggestion against the rules that exist *at that moment*. With
+> none, the answer is the maintenance minute and nothing else — paste that in and the first
+> alert you set afterwards can never fire, with every other check still reporting healthy.
+> The broad default costs ~1,150 cron runs a day out of 100,000, which is not a number you
+> are short of. Narrow it only with rules in place, and re-check after adding one in a new
+> hour.
 
 > **The trap this had.** With `CF_API_TOKEN` and `CF_ACCOUNT_ID` set, the Worker narrows
 > its own cron schedule nightly to the hours your rules actually need. If it ever ran with

@@ -56,8 +56,24 @@ const ago = s => s == null ? "never"
   : s < 172800 ? `${Math.round(s / 3600)} hours ago`
   : `${Math.round(s / 86400)} days ago`;
 
-/* ---- is it alive, and is it the version you think ---- */
-say("OK", `The app is up, running ${health.version}.`);
+/* ---- is it alive, and is it the version you think ---- *
+   "Why does it still say v82" is a question with one answer and it is
+   always the same one: the code was pulled but not deployed. The tool can
+   see both sides, so it should say so rather than let you wonder. */
+let localVersion = null;
+try {
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const here = fileURLToPath(new URL(".", import.meta.url));
+  const m = readFileSync(here + "../worker.js", "utf8").match(/APP_VERSION = "([^"]+)"/);
+  if (m) localVersion = m[1];
+} catch (_) { }
+if (localVersion && localVersion !== health.version) {
+  say("LOOK", `Running ${health.version}, but this folder has ${localVersion}.`,
+    "You pulled the code but have not deployed it. Run:  npx wrangler deploy");
+} else {
+  say("OK", `The app is up, running ${health.version}.`);
+}
 
 /* ---- can OASA be reached ---- */
 const up = health.upstream || {};
@@ -149,14 +165,26 @@ if (typeof fp.kvWritesPercent === "number") {
 }
 
 /* ---- two standing savings, reported once each ---- */
-if ((health.bindings || {}).selfTuneCron === false && Array.isArray(al.cronSuggestion)) {
-  const now = 1152;   // the broad default in wrangler.toml
-  if (al.estimatedCronRunsPerDay && al.estimatedCronRunsPerDay < now * 0.7) {
-    say("LOOK", `The scheduler runs ~${now} times a day; your rules only need ~${al.estimatedCronRunsPerDay}.`,
-      `Put this in wrangler.toml under [triggers] crons and redeploy:\n      `
-      + JSON.stringify(al.cronSuggestion)
-      + "\n      Re-check after adding an alert in a new time window.");
-  }
+/* The narrowing is a real saving and a real trap, and the trap is quiet.
+   The suggestion covers the rules that exist AT THIS MOMENT. Narrow it by
+   hand, then set an alert in an hour the schedule no longer covers, and
+   that alert can never fire — with nothing on screen to say why, because
+   every other check still passes. Only offer it when there are rules to
+   size it against, and never without the warning. */
+const selfTunes = (health.bindings || {}).selfTuneCron === true;
+if (!selfTunes && al.rules > 0 && Array.isArray(al.cronSuggestion)
+    && al.estimatedCronRunsPerDay && al.estimatedCronRunsPerDay < 800) {
+  say("LOOK", `The scheduler runs ~1152 times a day; your ${al.rules} rules only need ~${al.estimatedCronRunsPerDay}.`,
+    `Optional saving. In wrangler.toml under [triggers] crons, then redeploy:\n      `
+    + JSON.stringify(al.cronSuggestion)
+    + "\n      WARNING: this fits the rules you have RIGHT NOW. Nothing widens it back"
+    + "\n      automatically, so an alert set later in an hour it does not cover will"
+    + "\n      never fire, silently. Re-run this after every new alert, or leave the"
+    + "\n      broad default alone — it costs nothing you are short of.");
+} else if (!selfTunes && al.rules === 0) {
+  say("OK", "The scheduler is on the broad default, which is the safe setting.",
+    "With no rules there is nothing to narrow it to, and narrowing it now would "
+    + "stop the first alert you set from ever firing.");
 }
 const tr = health.tracking || {};
 if (tr.routes > 0 && tr.eventsLast24h === 0) {
