@@ -278,7 +278,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v88",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v89",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -735,13 +735,22 @@ https://oasax.com/alerts/run
   method: GET or POST — the endpoint does not care
   header: X-Run-Token: <the RUN_TOKEN value>
   every:  1 minute
-  timeout: 30 seconds   (the sweep gives itself 25, so leave room)
+  timeout: 30 seconds   (plenty — the endpoint replies at once, see below)
 ```
 
 Worth turning on in the service: **notify on failure**, and — while you are verifying it —
 **save responses**, so you can see what the sweep returned. Turn saving off once it works;
 the response names stop codes and rule ids, and a third party has no business keeping
 those.
+
+**The endpoint replies immediately** and sweeps in the background, so the pinger sees
+`{"ok":true,"started":true}` in milliseconds whatever OASA is doing. It has to work that
+way: one slow stop can outlast any scheduler's patience, and a client hanging up can take
+the request handler — and the sweep it triggered — down with it. Inside `waitUntil` the
+work finishes whether or not anyone is still listening.
+
+To watch a sweep happen, add `?wait=1` and it blocks and returns the trace inline. That is
+for testing by hand; never set it on the pinger, or you are back to timeouts.
 
 Confirm it is actually arriving: `npm run checkup` should report an outside pinger, and
 `via` in `/alerts/why` should read `request` rather than `in-process (…)` after a minute

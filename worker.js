@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v88";
+const APP_VERSION = "v89";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v88, and only safe because of v79: the age of a
+     Raised from 50 in v89, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -1175,7 +1175,15 @@ function athensUtcOffsetHours() {
 /* The alert cron gets a longer rope than a rider does. A rider is looking
    at the screen and an 8-second wait is worse than an error; the cron has
    a whole minute and nobody watching, and its failure costs the bus. */
-const ALERT_FETCH = { ignoreCircuit: true, timeoutMs: 12000, tries: 3 };
+/* Trimmed in v89 from 12s x3. Thirty-six seconds on one stop is longer
+   than the whole sweep is allowed, and the retries were doing the work the
+   stale fallback already does better — a second attempt into the same bad
+   second rarely differs, while a two-minute-old answer with the clock
+   subtracted from it is genuinely useful. */
+const ALERT_FETCH = { ignoreCircuit: true, timeoutMs: 9000, tries: 2 };
+/* One sweep at a time. A pinger every minute plus a sweep that outlives
+   its minute is how two runs end up racing for the same dedupe keys. */
+let runBusy = false;
 /* The alert path keeps the shorter cache. It is ten stops a minute for the
    whole service — its upstream cost is a rounding error — and a
    three-minute lead is where staleness actually hurts. The expensive path
@@ -4020,12 +4028,33 @@ export default {
         return json({ error: "admin or run token required" }, 403);
       }
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      /* Answer first, sweep after.
+       *
+       * This used to run the whole sweep before replying, and a single
+       * slow stop can spend longer than any cron service will wait — so
+       * the pinger reported a timeout and gave up, and worse, a client
+       * hanging up can take the request handler down with it, killing the
+       * sweep it was waiting for. Inside waitUntil the work finishes
+       * whether or not anyone is still listening, which is exactly what a
+       * trigger wants.
+       *
+       * The trace goes where every other run's does: cron_trace, readable
+       * from /alerts/why. Add ?wait=1 to block and get it inline, which is
+       * what a human testing by hand wants and no scheduler ever does. */
+      if (runBusy) return json({ ok: true, started: false, note: "a sweep is already running" });
       const T = { via: "fetch" };
-      try { await runAlerts(env, T); }
-      catch (e) { T.threw = String((e && e.stack) || e).slice(0, 400); }
-      ctx.waitUntil(setMeta(env, "cron_trace",
-        JSON.stringify({ at: Math.floor(Date.now() / 1000), ...T })).catch(() => {}));
-      return json(T);
+      runBusy = true;
+      const job = (async () => {
+        try { await runAlerts(env, T); }
+        catch (e) { T.threw = String((e && e.stack) || e).slice(0, 400); }
+        finally { runBusy = false; }
+        await setMeta(env, "cron_trace",
+          JSON.stringify({ at: Math.floor(Date.now() / 1000), ...T })).catch(() => {});
+      })();
+      if (url.searchParams.get("wait") === "1") { await job; return json(T); }
+      ctx.waitUntil(job);
+      return json({ ok: true, started: true,
+        note: "sweeping in the background; read the result from /alerts/why" });
     }
 
     /* What the cron schedule *should* be, from the live rules. Admin —

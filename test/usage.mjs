@@ -655,7 +655,8 @@ console.log("\n— what runAlerts does when the push fails —");
       /getJSONAged\(url, ALERT_ARRIVALS_TTL, ALERT_FETCH\)/.test(w),
       "a stop somebody is watching costs OASA nothing");
     ok("...and gets a longer rope than a rider does",
-      /ALERT_FETCH = \{ ignoreCircuit: true, timeoutMs: 12000, tries: 3 \}/.test(w));
+      /ALERT_FETCH = \{ ignoreCircuit: true, timeoutMs: 9000, tries: 2 \}/.test(w),
+      "9s beats a rider's 8s, and two tries fit inside the sweep's own deadline");
     ok("...bounded by a deadline, so one dark stop cannot eat the run",
       /ALERT_DEADLINE_MS/.test(w) && /NOT REACHED/.test(w));
     ok("a retry waits before repeating itself into the same bad second",
@@ -755,6 +756,26 @@ console.log("\n— a ceiling on what we ask of OASA —");
     && counted.withAge === "67%" && counted.calls === 4, JSON.stringify(counted));
   vm.runInContext(`budget.windowStart = 0; budget.spent = 0; budget.shed = 0;
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
+}
+
+/* A cron service waits 30 seconds and gives up. The sweep can spend
+   longer than that on one slow stop, and a client hanging up can take the
+   request handler down with it — killing the very sweep it triggered. */
+console.log("\n— the trigger answers before it sweeps —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("the sweep runs in waitUntil, not in front of the reply",
+    /ctx\.waitUntil\(job\);\s*\n\s*return json\(\{ ok: true, started: true/.test(w),
+    "the work finishes whether or not the pinger is still listening");
+  ok("...with ?wait=1 for a human testing by hand",
+    /url\.searchParams\.get\("wait"\) === "1"\) \{ await job; return json\(T\); \}/.test(w));
+  ok("...and no second sweep while one is running",
+    /if \(runBusy\) return json/.test(w) && /finally \{ runBusy = false; \}/.test(w),
+    "a pinger every minute plus a slow sweep is two runs racing for one set of keys");
+  /* 12s x 3 tries is 36 seconds on a single stop — longer than the whole
+     sweep is allowed, and the retry was doing worse than the fallback. */
+  ok("one stop cannot spend longer than the sweep is allowed",
+    /timeoutMs: 9000, tries: 2/.test(w));
 }
 
 /* Getting a quoted JSON object through PowerShell intact is a fight
