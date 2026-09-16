@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v87";
+const APP_VERSION = "v88";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v87, and only safe because of v79: the age of a
+     Raised from 50 in v88, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -4495,8 +4495,15 @@ export default {
         return json({ ok: true });
       }
       if (p.endsWith("/track/remove") && req.method === "POST") {
-        const b = await req.json().catch(() => null);
-        if (!b || !b.route_code) return json({ error: "route_code required" }, 400);
+        /* The query string is accepted as well as a JSON body. Getting a
+           quoted JSON object through PowerShell intact is a fight nobody
+           should have to have to delete one row, and losing it silently
+           reads as "route_code required" on a request that carried one. */
+        const b = (await req.json().catch(() => null))
+          || { route_code: url.searchParams.get("route_code") };
+        if (!b || !b.route_code) {
+          return json({ error: "route_code required, in the body or as ?route_code=" }, 400);
+        }
         await env.DB.batch([
           env.DB.prepare("DELETE FROM tracked_route WHERE route_code=?").bind(String(b.route_code)),
           env.DB.prepare("DELETE FROM veh_state WHERE route_code=?").bind(String(b.route_code)),

@@ -278,7 +278,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v87",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v88",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -732,9 +732,20 @@ Then point the service at:
 
 ```
 https://oasax.com/alerts/run
-  method: POST (GET also works)
+  method: GET or POST — the endpoint does not care
   header: X-Run-Token: <the RUN_TOKEN value>
+  every:  1 minute
+  timeout: 30 seconds   (the sweep gives itself 25, so leave room)
 ```
+
+Worth turning on in the service: **notify on failure**, and — while you are verifying it —
+**save responses**, so you can see what the sweep returned. Turn saving off once it works;
+the response names stop codes and rule ids, and a third party has no business keeping
+those.
+
+Confirm it is actually arriving: `npm run checkup` should report an outside pinger, and
+`via` in `/alerts/why` should read `request` rather than `in-process (…)` after a minute
+that had a rule due.
 
 `RUN_TOKEN` opens exactly one door — "run the sweep now". It cannot read diagnostics,
 rules, reports or usage, so a third-party service holding it learns nothing about you or

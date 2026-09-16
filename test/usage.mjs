@@ -757,6 +757,21 @@ console.log("\n— a ceiling on what we ask of OASA —");
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
 }
 
+/* Getting a quoted JSON object through PowerShell intact is a fight
+   nobody should have to have to delete one row. */
+console.log("\n— a one-row delete should not need a quoting fight —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("track/remove takes the route code from the query string too",
+    /url\.searchParams\.get\("route_code"\)/.test(w));
+  ok("...and says both ways when it is missing",
+    /route_code required, in the body or as \?route_code=/.test(w));
+  /* The pinger sends GET; nothing should require it to send POST. */
+  ok("the sweep endpoint does not insist on a method",
+    !/p\.endsWith\("\/alerts\/run"\) && req\.method/.test(w),
+    "a cron service sending GET must work");
+}
+
 /* An external pinger is the only trigger that works for a deployment with
    nobody awake, and handing it the ADMIN_TOKEN would give a third party
    every diagnostic this Worker has. */
