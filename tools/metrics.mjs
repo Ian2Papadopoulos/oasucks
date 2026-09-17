@@ -1,9 +1,9 @@
 /* Cloudflare zone analytics, as a table you can paste into a conversation.
  *
- *     CF_API_TOKEN=... CF_ZONE_ID=... node tools/metrics.mjs [days]
+ *     CF_ANALYTICS_TOKEN=... CF_ZONE_ID=... node tools/metrics.mjs [days]
  *
  * On Windows PowerShell:
- *     $env:CF_API_TOKEN="..."; $env:CF_ZONE_ID="..."; node tools/metrics.mjs 30
+ *     $env:CF_ANALYTICS_TOKEN="..."; $env:CF_ZONE_ID="..."; node tools/metrics.mjs 30
  *
  * Why this exists: the dashboard draws a pretty graph and gives you no
  * numbers, so "is that spike real users or a scanner" cannot be answered by
@@ -14,12 +14,14 @@
  * It reads nothing and changes nothing. The token needs Zone → Analytics →
  * Read and nothing else.
  */
-const TOKEN = process.env.CF_API_TOKEN;
+/* Not CF_API_TOKEN: wrangler reads that name to authenticate, and an
+   Analytics-only token in it breaks `npx wrangler deploy`. */
+const TOKEN = process.env.CF_ANALYTICS_TOKEN || process.env.CF_API_TOKEN;
 const ZONE = process.env.CF_ZONE_ID;
 const DAYS = Math.min(90, Math.max(1, Number(process.argv[2]) || 30));
 
 if (!TOKEN || !ZONE) {
-  console.error("Set CF_API_TOKEN and CF_ZONE_ID. See DEPLOY.md → Reading the numbers.");
+  console.error("Set CF_ANALYTICS_TOKEN and CF_ZONE_ID. See DEPLOY.md → Reading the numbers.");
   process.exit(1);
 }
 

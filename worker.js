@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v94";
+const APP_VERSION = "v95";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v94, and only safe because of v79: the age of a
+     Raised from 50 in v95, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -1175,7 +1175,7 @@ function athensUtcOffsetHours() {
 /* The alert cron gets a longer rope than a rider does. A rider is looking
    at the screen and an 8-second wait is worse than an error; the cron has
    a whole minute and nobody watching, and its failure costs the bus. */
-/* Trimmed in v94 from 12s x3. Thirty-six seconds on one stop is longer
+/* Trimmed in v95 from 12s x3. Thirty-six seconds on one stop is longer
    than the whole sweep is allowed, and the retries were doing the work the
    stale fallback already does better — a second attempt into the same bad
    second rarely differs, while a two-minute-old answer with the clock

@@ -278,7 +278,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v94",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v95",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -544,7 +544,7 @@ the right-hand column, under API, labelled **Zone ID**.
 **Step 3 — run it.**
 
 ```powershell
-$env:CF_API_TOKEN = "the-token"
+$env:CF_ANALYTICS_TOKEN = "the-token"
 $env:CF_ZONE_ID   = "the-zone-id"
 $env:ADMIN_TOKEN  = "your-admin-token"
 
@@ -555,6 +555,19 @@ node tools/metrics.mjs 7   # or any number of days
 
 Both are read-only. The token carries Analytics → Read and nothing else, so it cannot
 change a setting, see a log, or touch DNS.
+
+> **Do not call it `CF_API_TOKEN`.** That name is wrangler's own, and an Analytics-only
+> token sitting in it makes `npx wrangler deploy` fail with
+> `Authentication error [code: 10000]` and a message about account IDs that points nowhere
+> near the cause. If a deploy suddenly fails right after you set up analytics, that is why:
+>
+> ```powershell
+> $env:CF_ANALYTICS_TOKEN = $env:CF_API_TOKEN
+> Remove-Item Env:CF_API_TOKEN
+> ```
+>
+> The Worker *secret* named `CF_API_TOKEN` (the one that lets it narrow its own cron
+> schedule) is a different thing living in a different place, and is unaffected.
 
 You get one row per day: requests, how many were served from cache, Cloudflare's own
 unique-visitor estimate, and how many requests it blocked outright as threats.

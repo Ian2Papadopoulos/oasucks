@@ -251,8 +251,20 @@ if (tr.routes > 0 && tr.eventsLast24h === 0) {
  * Optional. With no token this section is skipped and the rest still
  * works; the token needs Zone -> Analytics -> Read and nothing else.
  */
-const CF_TOKEN = process.env.CF_API_TOKEN;
+/* NOT CF_API_TOKEN. That name is what wrangler itself reads to
+   authenticate, so setting it to an Analytics-only token — which is what
+   this section wants — breaks `npx wrangler deploy` with an unhelpful
+   "Authentication error [code: 10000]". Asking for it here was a mistake
+   that cost a deploy; the old name is still accepted so nobody's setup
+   breaks twice, but it comes with a warning. */
+const CF_TOKEN = process.env.CF_ANALYTICS_TOKEN || process.env.CF_API_TOKEN;
 const CF_ZONE = process.env.CF_ZONE_ID;
+if (process.env.CF_API_TOKEN && !process.env.CF_ANALYTICS_TOKEN) {
+  say("FIX", "CF_API_TOKEN is set, and wrangler will try to deploy with it.",
+    "That variable is wrangler's own. An Analytics-only token in it makes "
+    + "`npx wrangler deploy` fail with Authentication error 10000.\n      Fix:  "
+    + "$env:CF_ANALYTICS_TOKEN = $env:CF_API_TOKEN; Remove-Item Env:CF_API_TOKEN");
+}
 if (CF_TOKEN && CF_ZONE) {
   const day = ms => new Date(ms).toISOString().slice(0, 10);
   const q = `query ($zone: String!, $since: Date!, $until: Date!) {
@@ -288,6 +300,24 @@ if (CF_TOKEN && CF_ZONE) {
     say("OK", `Cloudflare served ${mean(req)} requests a day on average over ${rows.length} days.`,
       `${total ? Math.round((cached / total) * 100) : 0}% came from its cache, `
       + `and it estimates ${mean(uni)} unique visitors a day.`);
+
+    /* The two halves of this tool finally saying something neither could
+       say alone. Cloudflare's `uniques` counts every address that touched
+       the zone — scanners, crawlers and one-off probes included. The app's
+       own open counter counts people who actually launched it. When the
+       first dwarfs the second, most of that "audience" never saw the app. */
+    const opens30 = ((health.usage || {}).last30 || {}).open;
+    if (typeof opens30 === "number" && opens30 >= 0) {
+      const opensDay = Math.round(opens30 / 30);
+      if (mean(uni) > Math.max(20, opensDay * 4)) {
+        say("LOOK", `Cloudflare counts ${mean(uni)} visitors a day; the app was opened about ${opensDay} times a day.`,
+          "Cloudflare counts every address that touches the domain, scanners included. "
+          + "The app's own counter is the one that means people. Judge growth by that.");
+      } else {
+        say("OK", `About ${opensDay} app opens a day, against ${mean(uni)} addresses Cloudflare saw.`,
+          "Those being close together means most of the traffic is real.");
+      }
+    }
 
     /* The free plan's ceiling is 100,000 requests a day, and the cron is a
        fixed ~1,150 of them however quiet the app is. */
@@ -327,7 +357,7 @@ if (CF_TOKEN && CF_ZONE) {
   }
 } else {
   say("OK", "Cloudflare figures not included.",
-    "Set CF_API_TOKEN and CF_ZONE_ID to have traffic, cache and visitor numbers "
+    "Set CF_ANALYTICS_TOKEN and CF_ZONE_ID to have traffic, cache and visitor numbers "
     + "read and interpreted here too. See DEPLOY.md → Reading the numbers.");
 }
 
