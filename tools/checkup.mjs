@@ -241,6 +241,96 @@ if (tr.routes > 0 && tr.eventsLast24h === 0) {
   }
 }
 
+/* ------------------------- the other half ---------------------------
+ * Cloudflare knows things the Worker cannot: how many requests the zone
+ * actually served, how many were cached at the edge, how many were
+ * blocked as threats, and its own estimate of unique visitors — which is
+ * the closest thing to a userbase figure that exists without tracking
+ * anybody.
+ *
+ * Optional. With no token this section is skipped and the rest still
+ * works; the token needs Zone -> Analytics -> Read and nothing else.
+ */
+const CF_TOKEN = process.env.CF_API_TOKEN;
+const CF_ZONE = process.env.CF_ZONE_ID;
+if (CF_TOKEN && CF_ZONE) {
+  const day = ms => new Date(ms).toISOString().slice(0, 10);
+  const q = `query ($zone: String!, $since: Date!, $until: Date!) {
+    viewer { zones(filter: { zoneTag: $zone }) {
+      httpRequests1dGroups(limit: 14, filter: { date_geq: $since, date_leq: $until },
+        orderBy: [date_ASC]) {
+        dimensions { date } sum { requests cachedRequests threats } uniq { uniques }
+      } } } }`;
+  try {
+    /* Overridable so the interpretation below can be driven against
+       known numbers. A tool whose judgement calls are untestable is a tool
+       shipped on faith, which is how tools/metrics.mjs came to exist
+       without anyone ever seeing it work. */
+    const CF_URL = process.env.CF_GRAPHQL_URL || "https://api.cloudflare.com/client/v4/graphql";
+    const r = await fetch(CF_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${CF_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: q, variables: { zone: CF_ZONE,
+        since: day(Date.now() - 13 * 86400e3), until: day(Date.now()) } }),
+    });
+    const j = await r.json();
+    if (j.errors && j.errors.length) throw new Error(j.errors[0].message);
+    const rows = j?.data?.viewer?.zones?.[0]?.httpRequests1dGroups || [];
+    if (!rows.length) throw new Error("no rows — check the zone id");
+
+    const req = rows.map(x => x.sum.requests);
+    const uni = rows.map(x => x.uniq.uniques);
+    const mean = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : 0;
+    const cached = rows.reduce((s, x) => s + x.sum.cachedRequests, 0);
+    const total = rows.reduce((s, x) => s + x.sum.requests, 0);
+    const threats = rows.reduce((s, x) => s + x.sum.threats, 0);
+
+    say("OK", `Cloudflare served ${mean(req)} requests a day on average over ${rows.length} days.`,
+      `${total ? Math.round((cached / total) * 100) : 0}% came from its cache, `
+      + `and it estimates ${mean(uni)} unique visitors a day.`);
+
+    /* The free plan's ceiling is 100,000 requests a day, and the cron is a
+       fixed ~1,150 of them however quiet the app is. */
+    const busiest = Math.max(...req);
+    if (busiest > 70000) {
+      say("FIX", `Busiest day was ${busiest} requests, against a free-plan limit of 100,000.`,
+        "Past the limit the Worker stops answering. Time to look at the paid plan.");
+    } else if (busiest > 40000) {
+      say("LOOK", `Busiest day was ${busiest} requests, of the free plan's 100,000.`,
+        "Comfortable, but worth watching if it keeps climbing.");
+    }
+
+    /* Real riders make a diffuse curve with commute peaks. A flat
+       baseline with one tall day is a scanner walking a list of paths. */
+    const half = Math.floor(rows.length / 2);
+    const older = mean(req.slice(0, half)), newer = mean(req.slice(half));
+    if (older > 0 && newer > older * 1.6 && busiest > mean(req) * 3) {
+      say("LOOK", `Traffic roughly ${Math.round((newer / older - 1) * 100)}% up, but one day dwarfs the rest.`,
+        "A spike that tall on a flat baseline is usually a scanner, not riders. "
+        + `Threats blocked in the same period: ${threats}.`);
+    } else if (older > 0 && newer > older * 1.3) {
+      say("OK", `Traffic is up about ${Math.round((newer / older - 1) * 100)}% on the previous week.`,
+        `Unique visitors a day went ${mean(uni.slice(0, half))} → ${mean(uni.slice(half))}.`);
+    } else if (older > 0 && newer < older * 0.7) {
+      say("LOOK", `Traffic is down about ${Math.round((1 - newer / older) * 100)}% on the previous week.`,
+        "Worth knowing whether that is quieter riders or something broken.");
+    }
+    if (threats > total * 0.05 && threats > 50) {
+      say("LOOK", `${threats} requests were blocked as threats.`,
+        "Cloudflare turned them away before they reached the Worker. Nothing to do "
+        + "unless it starts costing you request quota.");
+    }
+  } catch (e) {
+    say("LOOK", `Could not read the Cloudflare numbers: ${String(e.message || e).slice(0, 90)}`,
+      "The token needs Zone → Analytics → Read on this zone. This section is optional; "
+      + "everything above is unaffected.");
+  }
+} else {
+  say("OK", "Cloudflare figures not included.",
+    "Set CF_API_TOKEN and CF_ZONE_ID to have traffic, cache and visitor numbers "
+    + "read and interpreted here too. See DEPLOY.md → Reading the numbers.");
+}
+
 /* ------------------------------ output ------------------------------ */
 const headline = worst === 0 ? "ALL GOOD"
   : worst === 1 ? "FINE, BUT A COUPLE OF THINGS TO LOOK AT"

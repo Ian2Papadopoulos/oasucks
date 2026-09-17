@@ -278,7 +278,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v93",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v94",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -520,7 +520,16 @@ Three things worth knowing:
 ### Reading the numbers
 
 The dashboard draws a graph and gives you no figures, so "is that spike real people or a
-scanner" cannot be answered by looking at it. `npm run metrics` prints the figures.
+scanner" cannot be answered by looking at it.
+
+Set the same two variables `npm run metrics` uses and **`npm run checkup` reads Cloudflare
+too**, in the same plain words as everything else — average requests a day, cache share,
+Cloudflare's own unique-visitor estimate, how close the busiest day came to the free plan's
+100,000, and whether a rise is riders or a scanner. That is the one command to run, and the
+one output to paste when you want it interpreted.
+
+`npm run metrics` still prints the raw day-by-day table, which is what you want when you
+would rather read the numbers yourself.
 
 **Step 1 — make a token.** dash.cloudflare.com → the account menu, top right → **Profile**
 → **API Tokens** → **Create Token** → **Create Custom Token**.
@@ -537,9 +546,15 @@ the right-hand column, under API, labelled **Zone ID**.
 ```powershell
 $env:CF_API_TOKEN = "the-token"
 $env:CF_ZONE_ID   = "the-zone-id"
-npm run metrics            # last 30 days
+$env:ADMIN_TOKEN  = "your-admin-token"
+
+npm run checkup            # the app AND the Cloudflare numbers, interpreted
+npm run metrics            # the raw table, last 30 days
 node tools/metrics.mjs 7   # or any number of days
 ```
+
+Both are read-only. The token carries Analytics → Read and nothing else, so it cannot
+change a setting, see a log, or touch DNS.
 
 You get one row per day: requests, how many were served from cache, Cloudflare's own
 unique-visitor estimate, and how many requests it blocked outright as threats.
