@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v95 defaults** — if you edit the
+breaks if you change it. Values here are the **v96 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -167,6 +167,19 @@ failure. Raise this with the plan, not before.
 The alert path is exempt from the upstream circuit breaker
 (`ALERT_FETCH = { ignoreCircuit: true }`) — one call per stop per minute is not the load
 the breaker exists to shed, and being refused by it loses the bus.
+
+### The first ten seconds
+
+`public/index.html`
+
+| Parameter | Default | What it means |
+|---|---|---|
+| `POS_FRESH_MS` | **12 h** | How old a remembered fix may be and still be worth booting from. Was 15 minutes, which meant every morning opened on Syntagma. A remembered position is replaced the instant a real fix lands, so a long window costs nothing and a short one costs the wrong neighbourhood. |
+| `GPS_FIRST_WAIT_MS` | **2 500 ms** | With nothing remembered, how long the board waits for the radio before showing a guess. Long enough for a warm fix, short enough that nobody thinks the app has hung — and it saves the doomed first request. |
+| `fillVisibleArrivals` retry | **2 500 ms** | One quick second attempt at any stop whose arrivals failed, rather than waiting out a whole refresh interval. Once only; past that it is not a blip. |
+
+`npm run sim:boot` replays this window in a real browser. `GPS_DELAY_MS` and
+`LASTPOS_AGE_MIN` set the conditions.
 
 ### The upstream status bar
 
@@ -495,7 +508,7 @@ for an hour or a day, which makes them the whole of the upstream load.
 |---|---|---|---|
 | `CONFIG.refreshMs` | 30 s | **45 s** | Sweeps per rider per minute. A countdown in whole minutes barely moves in fifteen seconds. |
 | `CONFIG.listPool` | 14 | **11** | Stops that get an arrivals call per sweep. |
-| `ACT_TTL.getStopArrivals` | 12 s | **90 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. Raised from 50 in v95, and only safe because of v79: the age of a cached answer is subtracted from the minutes before anyone sees them, so a 90-second cache shows the same countdown a 50-second one did. |
+| `ACT_TTL.getStopArrivals` | 12 s | **90 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. Raised from 50 in v96, and only safe because of v79: the age of a cached answer is subtracted from the minutes before anyone sees them, so a 90-second cache shows the same countdown a 50-second one did. |
 | `ALERT_ARRIVALS_TTL` | — | **45 s** | The alert path keeps the shorter cache. It is ten stops a minute for the whole service, so its upstream cost is a rounding error, and a three-minute lead is where staleness actually hurts. |
 | `UPSTREAM_BUDGET.perMin` | — | **150** | A hard ceiling on calls to OASA per minute, per isolate. Past it, riders get slightly older numbers from the cache instead of the service getting blocked. |
 | `CIRCUIT.openAfter` | — | **6** | Consecutive upstream failures before the Worker stops calling. |
@@ -531,7 +544,7 @@ Two honest limitations:
 reason OASA stops answering" is a question you can ask *before* the answer is yes.
 
 **`cachedShare` is the number that matters.** The whole upstream-load story rests on the
-edge cache actually being hit, and until v95 that was an assumption rather than a
+edge cache actually being hit, and until v96 that was an assumption rather than a
 measurement. A low share while riders are active means the cache is not doing its job and
 the real upstream load is the raw call count. `hitsCarryingAge` is the share of those hits
 that also carried an `Age` header — which is what the countdown correction needs, and what

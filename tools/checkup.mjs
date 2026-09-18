@@ -190,15 +190,30 @@ if (!selfTunes && al.rules > 0 && Array.isArray(al.cronSuggestion)
    saying the bus is a minute away. That is not a delayed push — it is a
    lead that came due while nothing was running the sweep, delivered by the
    first thing that did. */
-if (al.dueNow === true && typeof al.lastSweepAgoSec === "number") {
+/* Not only while a window is open. /alerts/run advances this on EVERY
+   call, window or no window, so it is a true heartbeat for the pinger —
+   and the moment to find out it has stopped is before the morning it was
+   needed, not after. */
+if ((health.bindings || {}).push && typeof al.lastSweepAgoSec === "number") {
   if (al.lastSweepAgoSec <= 150) {
-    say("OK", `A window is open and the check ran ${ago(al.lastSweepAgoSec)}.`,
-      "That is the cadence alerts need — roughly once a minute.");
+    say("OK", `The alert check ran ${ago(al.lastSweepAgoSec)}.`,
+      "Roughly once a minute is the cadence alerts need.");
   } else {
-    say("FIX", `A window is open but the check last ran ${ago(al.lastSweepAgoSec)}.`,
-      "Alerts will arrive late, or all at once when someone next opens the app. "
-      + "The pinger is not calling /alerts/run — check it is enabled and not timing out.");
+    say(al.dueNow === true ? "FIX" : "LOOK",
+      `The alert check last ran ${ago(al.lastSweepAgoSec)}.`,
+      (al.dueNow === true
+        ? "A window is open right now, so alerts are already late — they will arrive "
+          + "when someone next opens the app."
+        : "No window is open this minute, but when one is, alerts will be late or "
+          + "arrive all at once.")
+      + "\n      The pinger is not calling /alerts/run. Check cron-job.org: is the job "
+      + "still enabled? It disables itself after repeated failures, and it did time out "
+      + "before v89 fixed that.");
   }
+} else if ((health.bindings || {}).push && al.rules > 0 && al.lastSweepAgoSec == null) {
+  say("LOOK", "No alert check has ever been recorded.",
+    "Nothing has called /alerts/run since this was deployed. If a pinger is "
+    + "configured, it is not reaching the app.");
 }
 if (why && why.lastCronWithWork && Array.isArray(why.lastCronWithWork.late)
     && why.lastCronWithWork.late.length) {

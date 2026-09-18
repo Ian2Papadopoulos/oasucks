@@ -983,7 +983,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v95</span></div>
+  <div class="foot"><span class="ver">v96</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1305,11 +1305,12 @@ const T={
  el:{change:"Αλλαγή",nobus:"Καμία άφιξη τα επόμενα λεπτά",
   now:"τώρα",min:"λεπτά",to:"προς",err:"Δεν φορτώθηκαν δεδομένα.",retry:"Δοκίμασε ξανά",
   errCode:c=>`Ο διακομιστής απάντησε με σφάλμα (${c}).`,
+  arrFail:"Δεν ήρθαν οι αφίξεις — νέα προσπάθεια σε λίγο",
   oasaDown:"Ο ΟΑΣΑ δεν απαντά αυτή τη στιγμή. Δεν φταίει η σύνδεσή σου — δοκίμασε σε λίγο.",
   sysDown:"Ο ΟΑΣΑ δεν απαντά. Δεν φταίει η σύνδεσή σου — οι αφίξεις θα γυρίσουν μόνες τους.",
   sysBusy:"Ο ΟΑΣΑ είναι υπερφορτωμένος και απορρίπτει αιτήματα. Δοκίμασε σε λίγο.",
   sysStale:"Δείχνουμε τα τελευταία στοιχεία που έχουμε — ο ΟΑΣΑ δεν απαντά αυτή τη στιγμή.",
-  locating:"Εντοπισμός τοποθεσίας…",denied:"Δεν δόθηκε πρόσβαση στην τοποθεσία.",sheetH:"Τοποθεσία",
+  locating:"Εντοπισμός τοποθεσίας…",lastSeen:"Εκεί που ήσουν",denied:"Δεν δόθηκε πρόσβαση στην τοποθεσία.",sheetH:"Τοποθεσία",
   /* Ο browser ρωτάει μία φορά. Μετά το «όχι», η εφαρμογή ΔΕΝ μπορεί να
      ξαναρωτήσει — μόνο ο χρήστης, από τις ρυθμίσεις. Άρα το κείμενο εδώ
      πρέπει να λέει ακριβώς πού να πατήσει. */
@@ -1600,11 +1601,12 @@ const T={
  en:{change:"Change",nobus:"No arrivals in the next few minutes",
   now:"now",min:"min",to:"to",err:"Couldn't load data.",retry:"Try again",
   errCode:c=>`The server answered with an error (${c}).`,
+  arrFail:"Arrivals didn't load — trying again shortly",
   oasaDown:"OASA is not responding right now. Nothing wrong with your connection — try again shortly.",
   sysDown:"OASA is not responding. Nothing wrong with your connection — arrivals will come back on their own.",
   sysBusy:"OASA is overloaded and is turning requests away. Try again shortly.",
   sysStale:"Showing the last arrivals we have — OASA is not responding right now.",
-  locating:"Getting your location…",denied:"Location access was blocked.",sheetH:"Location",
+  locating:"Getting your location…",lastSeen:"Where you were",denied:"Location access was blocked.",sheetH:"Location",
   /* The browser asks once. After a "no", the app CANNOT ask again — only
      the person can, in site settings. So this text has to say exactly
      where to tap. */
@@ -1902,6 +1904,32 @@ const PRESETS=[
 
 /* ------------------------------ state ------------------------------ */
 let here={lat:37.9755,lng:23.7348,label:null,gps:false};
+/* How long a remembered fix is worth booting from.
+ *
+ * This was fifteen minutes, which meant every morning — and any gap longer
+ * than a coffee — the app opened on Syntagma, fetched a board for a square
+ * the rider was nowhere near, showed it for as long as the phone's radio
+ * took to wake, and then fetched everything again. Measured: with a six
+ * second fix, six seconds of the wrong neighbourhood and two requests
+ * instead of one.
+ *
+ * Yesterday's position is still your neighbourhood. It is replaced the
+ * instant a real fix lands, and even after a flight it is no more wrong
+ * than a hard-coded city square — so the only thing the short window
+ * bought was the wrong answer more often. */
+const POS_FRESH_MS=12*3600*1000;
+/* With nothing remembered at all, wait this long for the radio before
+   showing a guess. Long enough for a warm fix, short enough that nobody
+   thinks the app has hung — and it saves the doomed first request. */
+const GPS_FIRST_WAIT_MS=2500;
+let boardStarted=false, firstWait=null;
+function beginBoard(){
+  if(firstWait){ clearTimeout(firstWait); firstWait=null; }
+  if(boardStarted) return;
+  boardStarted=true; startRefresh();
+}
+// the first fix resolved one way or the other: stop holding the board
+function geoDone(){ beginBoard(); }
 const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:600,
   dark:false,mapFitted:false,_mapCodes:null,rules:[],subId:null};
 let timer=null,nextAt=0,loading=false;
@@ -2412,19 +2440,22 @@ function renderList(){
     // rows: only rewritten when the rendered content actually differs
     let sig;
     const due=visibleArrivals(s);
-    if(!s.arrLoaded) sig="skel";
+    if(!s.arrLoaded&&s.arrFail) sig="arrfail";
+    else if(!s.arrLoaded) sig="skel";
     else if(!due.length) sig="empty";
     else sig=due.slice(0,CONFIG.maxRows)
       .map(a=>`${a.code}|${a.veh}|${etaOf(a)}`).join(";")+"|"+
       (activeReports().length?groupedReports().map(r=>r.veh||r.targetId).join(","):"");
     if(c.sig!==sig){
       c.sig=sig;
-      const mode=!s.arrLoaded?"skel":(!s.arrivals.length?"empty":"rows");
+      const mode=(!s.arrLoaded&&s.arrFail)?"arrfail"
+        :!s.arrLoaded?"skel":(!due.length?"empty":"rows");
       // Changing shape means the old children are the wrong kind entirely:
       // clear, or index-based reuse below would interleave leftover
       // skeletons with real rows.
       if(c.mode!==mode){ c.rows.innerHTML=""; c.mode=mode; }
-      if(!s.arrLoaded) c.rows.innerHTML='<div class="skel"></div><div class="skel"></div>';
+      if(!s.arrLoaded&&s.arrFail) c.rows.innerHTML=`<div class="empty">${t("arrFail")}</div>`;
+      else if(!s.arrLoaded) c.rows.innerHTML='<div class="skel"></div><div class="skel"></div>';
       else if(!due.length) c.rows.innerHTML=`<div class="empty">${t("nobus")}</div>`;
       else{
         const want=due.slice(0,CONFIG.maxRows);
@@ -2933,14 +2964,21 @@ async function loadRoutes(s){
   s.lines=lines.sort((a,b)=>String(a.id).localeCompare(String(b.id),undefined,{numeric:true}));
   s.routesLoaded=true;
 }
+/* A stop whose arrivals call failed used to keep its skeleton for ever.
+   The caller swallowed the error, arrLoaded stayed false, and the row
+   pulsed as if something were still happening — for forty-five seconds
+   until the next sweep, and longer if that one failed too. A pulsing
+   placeholder is a promise; this one was not being kept. */
 async function loadArrivals(s){
+  try{
   const arr=await oasa("getStopArrivals",s.code);
   s.arrivals=(Array.isArray(arr)?arr:[])
     .map(a=>({code:String(pick(a,"route_code","RouteCode")||""),
       veh:String(pick(a,"veh_code","VEH_NO","VEH_CODE")||""),
       min:parseInt(pick(a,"btime2","btime","stop_time")||"999",10)}))
     .filter(a=>isFinite(a.min)).sort((x,y)=>x.min-y.min);
-  s.arrLoaded=true;
+  s.arrLoaded=true; s.arrFail=false;
+  }catch(e){ s.arrFail=true; throw e; }   // say so, and let the sweep try again
 }
 
 /* One request instead of ~9: the Worker fans out to OASA for us. */
@@ -3004,13 +3042,21 @@ async function loadStopsBatch(){
    bounded by the cap, so at most a handful of requests, and it means a
    row can never sit on the grey loading bars forever. Favourites are left
    to loadFarFavs so we don't fetch the same stop twice. */
-async function fillVisibleArrivals(){
+let fillRetry=null;
+async function fillVisibleArrivals(again){
   const need=listStops().filter(s=>s&&!s.arrLoaded&&!isFav(s.code));
   if(!need.length) return;
   await withLimit(need.map(s=>async()=>{
     try{ if(!s.routesLoaded) await loadRoutes(s); await loadArrivals(s); }catch(_){}
   }),4);
   if(state.view==="list") renderView();
+  /* One quick second go for whatever is still missing, rather than making
+     the rider wait out the whole refresh interval for a single stop that
+     lost a race. Once only — past that it is not a blip. */
+  if(!again && listStops().some(s=>s&&s.arrFail&&!s.arrLoaded)){
+    clearTimeout(fillRetry);
+    fillRetry=setTimeout(()=>fillVisibleArrivals(true),2500);
+  }
 }
 
 /* One blip on the first sweep used to leave an empty board and a button,
@@ -3018,8 +3064,18 @@ async function fillVisibleArrivals(){
    buses — so the failure was invisible AND indistinguishable from an
    answer. It retries itself twice, quietly, before saying anything. */
 const LOAD_RETRY_MS=[600,1500,3200];
+/* A sweep asked for while one is in flight used to be dropped on the
+   floor, and the next one was forty-five seconds away.
+   That is the "it takes a couple of refreshes to find me" bug in one
+   line: the boot sweep starts on the fallback, the GPS fix lands two
+   seconds later, setLocation calls this — and it returns without doing
+   anything, leaving the wrong neighbourhood on screen until the timer
+   comes round. Remember the ask instead, and honour it the moment the
+   current one is done. */
+let reloadWanted=false;
 async function loadStops(attempt){
-  if(loading) return; loading=true;
+  if(loading){ reloadWanted=true; return; }
+  loading=true;
   const n=attempt||0;
   try{
     await ensureMode();
@@ -3047,6 +3103,9 @@ async function loadStops(attempt){
        staring at placeholders has already started wondering. */
     if(definite) showSys("down");
     if(n<LOAD_RETRY_MS.length && !(definite&&n>=1)){
+      /* A location change beats a retry: retrying the place the rider has
+         already left is work nobody wanted. */
+      if(reloadWanted){ reloadWanted=false; setTimeout(()=>loadStops(),0); return; }
       setTimeout(()=>loadStops(n+1),LOAD_RETRY_MS[n]);
       return;
     }
@@ -3055,6 +3114,7 @@ async function loadStops(attempt){
     bootFail=loadFailMsg(e); renderView();
   }
   loading=false;
+  if(reloadWanted){ reloadWanted=false; loadStops(); }
 }
 function retryBoot(){ bootFail=null; renderView(); startRefresh(); }
 
@@ -3298,6 +3358,34 @@ function startWatch() {
     enableHighAccuracy: true, maximumAge: GEO.maxAgeMs, timeout: 30000,
   });
 }
+/* The radio was not ready, and nothing ever asked again.
+ *
+ * getCurrentPosition fails on a cold phone with POSITION_UNAVAILABLE or a
+ * timeout, and the old code took that as final: it showed the fallback,
+ * opened the sheet, and waited for the rider to notice and tap. The normal
+ * watch cannot rescue it either, because onFix refuses to move a location
+ * that is not from GPS — which is right for a place you CHOSE and wrong
+ * for a fallback you were handed.
+ *
+ * So a failed first fix arms a watch of its own. It fires once, when the
+ * radio finally answers, and takes itself down. That is the difference
+ * between "it takes a couple of refreshes to find me" and not. */
+let coldWatch = null;
+function armColdWatch() {
+  if (coldWatch != null || !navigator.geolocation) return;
+  try {
+    coldWatch = navigator.geolocation.watchPosition(p => {
+      stopColdWatch();
+      geoUnblocked(); rememberPos(p);
+      setLocation(p.coords.latitude, p.coords.longitude, t("you"), true, true);
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 0, timeout: 60000 });
+  } catch (_) { coldWatch = null; }
+}
+function stopColdWatch() {
+  if (coldWatch == null) return;
+  try { navigator.geolocation.clearWatch(coldWatch); } catch (_) {}
+  coldWatch = null;
+}
 function stopWatch() {
   if (watchId == null) return;
   try { navigator.geolocation.clearWatch(watchId); } catch (_) {}
@@ -3356,7 +3444,10 @@ function setLocation(lat,lng,label,gps,fromSheet){
   if(fromSheet) closeSheet();
   // watching only makes sense while the board is meant to follow you
   if(gps) startWatch(); else stopWatch();
-  applyStatics(); startRefresh();
+  applyStatics();
+  /* If the board has not started yet, this IS its start — and the fix
+     arriving first is the good case: one request, at the right place. */
+  boardStarted ? startRefresh() : beginBoard();
 }
 /* One tap, not three. The old flow fired getCurrentPosition with an 8s
    timeout at boot; if you hadn't answered the browser's permission
@@ -3415,10 +3506,15 @@ function useGPS(){
     p=>{ geoUnblocked(); rememberPos(p);
       setLocation(p.coords.latitude,p.coords.longitude,t("you"),true,true); },
     err=>{
-      if(err&&err.code===1){ geoBlocked(); return; }
-      // not blocked, just no fix: a timeout or the phone's radio being cold
+      if(err&&err.code===1){ geoBlocked(); geoDone(); return; }
+      /* Not blocked, just no fix: a timeout or the phone's radio being
+         cold. Keep listening — this is the case that used to need "a
+         couple of refreshes" — and let the board start on whatever we
+         have rather than waiting on a radio that may never answer. */
+      armColdWatch();
       if(!here.gps){ openSheet(); toast(t("gbNoFix")); }
       $("#locwhere").textContent=here.label||PRESETS[0].el;
+      geoDone();
     },
     {enableHighAccuracy:true,timeout,maximumAge:30000});
   if(navigator.permissions&&navigator.permissions.query){
@@ -5436,7 +5532,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v95</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v96</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5923,12 +6019,20 @@ applyStatics();
 here.label=LANG==="el"?PRESETS[0].el:PRESETS[0].en;
 // boot from the last known fix (if recent) — the board fills instantly
 // with the right neighbourhood while the fresh GPS fix comes in
+let remembered=false;
 try{ const lp=JSON.parse(localStorage.getItem("lastPos")||"null");
-  if(lp&&Date.now()-lp.ts<15*60000&&isFinite(lp.lat)){
-    here={lat:lp.lat,lng:lp.lng,label:t("you"),gps:true}; } }catch(_){}
+  if(lp&&Date.now()-lp.ts<POS_FRESH_MS&&isFinite(lp.lat)){
+    /* gps:false on purpose — this is remembered, not measured. useGPS
+       sets it true when the radio actually answers, and until then the
+       header must not claim to know where you are. */
+    here={lat:lp.lat,lng:lp.lng,label:t("lastSeen"),gps:false}; remembered=true; } }catch(_){}
 $("#locwhere").textContent=here.label;
 updateRadiusLabel();
-startRefresh();
+/* Somewhere plausible to start: draw it now. Nothing to go on: hold the
+   board for a moment rather than fetching a square in the middle of a city
+   the rider may be nowhere near. useGPS() cancels the wait by arriving. */
+if(remembered) beginBoard();
+else firstWait=setTimeout(beginBoard,GPS_FIRST_WAIT_MS);
 dismissSplash();
 showMovedNotice();
 loadNotice();

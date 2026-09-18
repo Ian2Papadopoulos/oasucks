@@ -10,7 +10,8 @@
     "icons": "node tools/icons.mjs",
     "test": "node test/plan.mjs && node test/brand.mjs && node test/tiles.mjs && node test/journey.mjs && node test/geocode.mjs && node test/reports.mjs && node test/legal.mjs && node test/install.mjs && node test/usage.mjs && node test/origin.mjs && node test/fixes.mjs && node test/ui.mjs",
     "metrics": "node tools/metrics.mjs",
-    "checkup": "node tools/checkup.mjs"
+    "checkup": "node tools/checkup.mjs",
+    "sim:boot": "node tools/sim-boot.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.117.0",
