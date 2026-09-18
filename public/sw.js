@@ -8,7 +8,7 @@
  * anything with a query string, anything cross-origin) goes to the network
  * every time. New endpoints are safe by default.
  */
-const SHELL = "stop-shell-v42";
+const SHELL = "stop-shell-v43";
 /* Not a cache of anything fetched — the one store the page and this worker
    can both reach, holding the subscription id the page was given. The
    activate handler below must never sweep it: losing it means a rotated

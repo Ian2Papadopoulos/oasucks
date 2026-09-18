@@ -976,6 +976,38 @@ console.log("\n— how often it asks follows what is on screen —");
   ok("...and says so to a screen reader", chip.label.length > 0, chip.label);
   ok("...and a second tap in the same moment is not a second request",
     chip.after === 1, `${chip.after} request(s) for two taps`);
+
+  /* The bug this test exists for: the tap DID call loadStops, and nothing
+     on screen changed. The Worker answered from its own response cache, so
+     `generated` came back with the timestamp that body was built at, the
+     board dated itself from that, and the minutes stayed put with the ~
+     still on them. A refresh that cannot come back newer is not one. */
+  const asked = await v.page.evaluate(async () => {
+    const urls = [];
+    const real = window.fetch;
+    window.fetch = (u, o) => { urls.push(String(u)); return real(u, o); };
+    manualAt = 0; lastTouch = Date.now(); sleeping = false; loading = false;
+    document.querySelector("#fresh").click();
+    await new Promise(r => setTimeout(r, 600));
+    window.fetch = real;
+    return urls.filter(u => u.includes("/nearby"));
+  });
+  ok("a hand refresh asks the server to skip its own cached board",
+    asked.length > 0 && asked.every(u => /[?&]fresh=1\b/.test(u)),
+    asked.join(" ") || "no /nearby request at all");
+  /* And the automatic sweep must NOT carry it, or every rider on the
+     street corner stops sharing one assembled response. */
+  const auto = await v.page.evaluate(async () => {
+    const urls = [];
+    const real = window.fetch;
+    window.fetch = (u, o) => { urls.push(String(u)); return real(u, o); };
+    loading = false; await loadStops();
+    window.fetch = real;
+    return urls.filter(u => u.includes("/nearby"));
+  });
+  ok("...and the automatic one does not, so riders still share a board",
+    auto.length > 0 && auto.every(u => !/[?&]fresh=1\b/.test(u)),
+    auto.join(" ") || "no /nearby request at all");
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
 }

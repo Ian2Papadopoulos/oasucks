@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v100";
+const APP_VERSION = "v101";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -2149,7 +2149,19 @@ async function handleNearby(url, env, ctx) {
      never served while a fresh sweep is possible. */
   const ckStale = ck.replace("https://nearby/", "https://nearby-last/");
   const cache = caches.default;
-  const hit = await cache.match(new Request(ck));
+  /* A refresh the rider asked for by hand. It skips OUR OWN assembled
+     response — otherwise the tap hands back a body built a moment ago,
+     `generated` carries that older timestamp, and the board dates itself
+     from it: the minutes do not move and the estimate marker does not
+     clear. The tap worked, it just could not have an effect.
+     What it deliberately does NOT skip is the shared arrivals cache. So in
+     the common case this costs OASA nothing: the fan-out is answered from
+     the edge, the minutes are re-corrected for how old that answer now is,
+     and the rider gets a board honestly dated now. It only reaches OASA
+     when the shared entry has expired anyway — which is exactly the case
+     where the rider had something to gain by asking. */
+  const wantFresh = url.searchParams.get("fresh") === "1";
+  const hit = wantFresh ? null : await cache.match(new Request(ck));
   if (hit) {
     if (!favCodes.length) return withCors(hit);
     let body = null;
@@ -3935,7 +3947,17 @@ export default {
       return proxy(up.toString(), fresh ? 0 : (ACT_TTL[act] || OASA_CACHE), fresh);
     }
 
-    if (p.endsWith("/nearby")) return handleNearby(url, env, ctx);
+    /* The hand-refresh flag costs nothing upstream in the ordinary case,
+       but it does make the Worker reassemble the board, so it is capped —
+       and capped by DEGRADING, not refusing. Past the ceiling the tap
+       still returns a board, just the cached one: a rate limit that hands
+       a rider an error instead of a slightly older answer has picked the
+       wrong failure. */
+    if (p.endsWith("/nearby")) {
+      if (url.searchParams.get("fresh") === "1"
+          && !rateLimit(ip, "nearby-fresh", 20, 60)) url.searchParams.delete("fresh");
+      return handleNearby(url, env, ctx);
+    }
 
     /* Type-ahead fires on almost every keystroke, so the ceiling here is
      * about the ORS daily quota rather than about OASA. The 24h edge

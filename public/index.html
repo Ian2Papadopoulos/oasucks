@@ -251,6 +251,7 @@
   .locbar .fresh:active{transform:scale(.94)}
   .locbar .fresh:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
   .locbar .fresh.stale{color:var(--red)}
+  .locbar .fresh.busy{color:var(--ink2);opacity:.7}
   /* A minute we worked out ourselves rather than one the service gave us.
      Deliberately faint: it is a caveat, not an alarm. */
   .eta.guess .v,.eta.guess .u{opacity:.72}
@@ -1000,7 +1001,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v100</span></div>
+  <div class="foot"><span class="ver">v101</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -3028,8 +3029,18 @@ async function loadStopsBatch(){
      a session cost four times what it should. The server skips any that
      the sweep already returned. */
   const favQ=favs.length?`&favs=${favs.map(f=>encodeURIComponent(f.code)).join(",")}`:"";
+  /* A refresh you asked for by hand has to skip the Worker's own response
+     cache, or it is not a refresh. Without this the tap re-fetched a body
+     the Worker had already built, `generated` came back with the timestamp
+     it was built at, and the board dated itself from that — so the minutes
+     did not move and the ~ did not clear. The tap worked; it just could
+     not have any effect. Note what this does NOT bypass: the shared
+     arrivals cache. So in the common case a manual refresh costs OASA
+     nothing at all — it re-runs the assembly, re-corrects the minutes for
+     how old the cached arrivals now are, and hands back a board dated now. */
   const u=`${base()}/nearby?lat=${here.lat}&lng=${here.lng}&radius=${state.radius}`
-        +`&limit=${CONFIG.listPool}&markers=${CONFIG.maxMarkers}${favQ}`;
+        +`&limit=${CONFIG.listPool}&markers=${CONFIG.maxMarkers}${favQ}`
+        +(wantFresh?"&fresh=1":"");
   const r=await fetch(u,{cache:"no-store"});
   /* 503 + upstream:"down" is the Worker telling us OASA is not answering
      it. That is worth its own sentence: nothing the rider can do, nothing
@@ -3113,6 +3124,10 @@ const LOAD_RETRY_MS=[600,1500,3200];
    comes round. Remember the ask instead, and honour it the moment the
    current one is done. */
 let reloadWanted=false;
+/* Set for exactly one sweep, by manualRefresh. A flag rather than an
+   argument because loadStops is called from a dozen places and every one
+   of them wants the ordinary, cache-sharing behaviour. */
+let wantFresh=false;
 async function loadStops(attempt){
   if(loading){ reloadWanted=true; return; }
   loading=true;
@@ -3154,7 +3169,12 @@ async function loadStops(attempt){
     bootFail=loadFailMsg(e); renderView();
   }
   loading=false;
+  /* Held across a requeue on purpose: a tap that lands while a sweep is
+     already running is still a tap, and the sweep it queues is the one
+     that has to come back uncached. */
   if(reloadWanted){ reloadWanted=false; loadStops(); }
+  else wantFresh=false;
+  paintFresh();
 }
 function retryBoot(){ bootFail=null; renderView(); startRefresh(); }
 
@@ -3332,6 +3352,14 @@ function paintFresh(){
   /* Set once, not four times a second, and set here rather than in the
      markup so it follows the language. */
   if(el.title!==t("refreshNow")){ el.title=t("refreshNow"); el.setAttribute("aria-label",t("refreshNow")); }
+  /* A tap has to look like it did something even when the answer comes
+     back identical, which at a quiet stop it often will. */
+  el.classList.toggle("busy",wantFresh&&loading);
+  if(wantFresh&&loading){
+    if(el.textContent!=="…") el.textContent="…";
+    el.classList.remove("stale");
+    return;
+  }
   if(!lastLoad){ if(el.textContent){ el.textContent=""; el.classList.remove("stale"); } return; }
   const secs=Math.round((Date.now()-lastLoad)/1000);
   const txt=secs<15?t("freshNow"):t("freshAgo")(secs<90?`${secs}${t("secShort")}`
@@ -3372,6 +3400,8 @@ function manualRefresh(){
   if (now - manualAt < CONFIG.manualGapMs) return;
   manualAt = now;
   nextAt = now + currentInterval();
+  /* Uncached, or it is not a refresh — see loadStopsBatch. */
+  wantFresh = true;
   loadStops();
   paintFresh();
 }
@@ -5648,7 +5678,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v100</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v101</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
