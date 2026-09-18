@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v98 defaults** — if you edit the
+breaks if you change it. Values here are the **v99 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -551,6 +551,22 @@ that also carried an `Age` header — which is what the countdown correction nee
 the budget refund used to depend on entirely. A cache hit is now recognised by `Age`
 **or** `CF-Cache-Status`, because neither is guaranteed alone and refunding on `Age` by
 itself meant a missing header would charge every cache hit to the budget.
+
+**…and until v99 you could not read it.** The counters live in one isolate's memory, and
+Cloudflare starts and discards isolates constantly — a checkup is a rare outside request,
+so it nearly always landed on a cold isolate that had served nothing. A working app
+therefore reported "no cache figures", which reads exactly like a fault. It was not one:
+the measurement was scoped to the wrong thing. Since v99 each isolate appends its own
+deltas to a small D1 table every `BUDGET_FLUSH_MS` (5 minutes), and `/health` reports the
+rolling 24-hour totals as `budget.last24h` beside the instantaneous per-isolate ones.
+
+| Parameter | Default | What it means | If you change it |
+|---|---|---|---|
+| `BUDGET_FLUSH_MS` | **5 min** | How often an isolate writes its cache counters down. | One D1 row per isolate per flush — a few hundred a day against a 100,000 free allowance. Lower it and the figures are fresher and the writes more numerous; raise it and a short-lived isolate can be discarded before it ever flushes, losing its counts. |
+
+The write is an `INSERT`, never a read-modify-write, precisely so two isolates flushing at
+the same instant cannot lose each other's counts. Rows are pruned after 7 days by the
+nightly maintenance pass; only the last 24 hours is ever read.
 
 The circuit matters more than the numbers. Without it, an upstream that stops answering
 turns every rider request into a dozen calls that each wait 8 s and retry — the moment

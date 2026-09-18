@@ -14,7 +14,7 @@ the steps below are the two that need your login, plus checks.
 
 ```powershell
 npm install          # once — playwright-core and wrangler are dev dependencies
-npm test             # 922 assertions
+npm test             # 940 assertions
 npm run sim:boot     # the first ten seconds of a cold start, replayed
 ```
 
@@ -292,7 +292,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v98",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v99",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -693,6 +693,13 @@ Pages → your Worker → **Settings → Trigger Events** lists them. Redeploy t
 > The broad default costs ~1,150 cron runs a day out of 100,000, which is not a number you
 > are short of. Narrow it only with rules in place, and re-check after adding one in a new
 > hour.
+>
+> Since v99 `npm run checkup` no longer nags about this. It states the trade as settled —
+> a 1% saving against an alert that can silently never fire is not a trade worth making —
+> and only turns it back into a suggestion if Cloudflare reports a day over 40,000
+> requests, at which point the saving is worth something. Advice that is offered every
+> single run teaches you to skim past the findings, which is the one thing this tool must
+> not do.
 
 > **The trap this had.** With `CF_API_TOKEN` and `CF_ACCOUNT_ID` set, the Worker narrows
 > its own cron schedule nightly to the hours your rules actually need. If it ever ran with

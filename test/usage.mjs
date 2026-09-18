@@ -32,6 +32,7 @@ const stmt = q => ({
   _q: q, _b: [],
   bind(...b) { this._b = b; sql.push({ q, b }); return this; },
   async all() { sql.push({ q, b: this._b }); return { results: rows }; },
+  async first() { return rows[0] || null; },
   async run() { return { success: true }; },
 });
 const DB = {
@@ -378,6 +379,29 @@ console.log("\n— proof that the scheduler is alive —");
     j && j.cron && "agoSec" in j.cron && "healthy" in j.cron, JSON.stringify(j && j.cron));
   ok("...and a Worker that has never run one says so, rather than looking fine",
     j.cron.healthy === false && j.cron.lastRun === null, JSON.stringify(j.cron));
+}
+
+/* The narrowed schedule is a real saving and a real trap, and for an app
+   using 1% of its request allowance the saving is worth nothing while the
+   trap — an alert set outside the narrowed hours that silently never fires
+   — costs the whole point of the app. Offering it every single run trained
+   the operator to skim past the LOOK lines, which is the one thing a
+   health tool must never do. */
+console.log("\n— advice that waits until it is worth taking —");
+{
+  const c = readFileSync(path.join(REPO, "tools/checkup.mjs"), "utf8");
+  ok("the narrowing is only raised once traffic is near the ceiling",
+    /function sayCronSaving\(busiestDay\)/.test(c)
+    && /typeof busiestDay === "number" && busiestDay > 40000/.test(c));
+  ok("...and until then it is stated as a settled trade, not a task",
+    /there is nothing to save that you are short of/.test(c));
+  ok("...and it is decided after the traffic figures are in, not before",
+    c.indexOf("\nsayCronSaving(busiestDay);") > c.indexOf("\n    busiestDay = busiest;"),
+    "otherwise it would always be guessing");
+  ok("...and no token at all means leave it alone, which is the safe side",
+    /"cannot know" resolves to "leave it alone"/.test(c));
+  ok("the warning still travels with the instructions when they do appear",
+    /never fire, silently/.test(c));
 }
 
 /* The wording people read when an alert does not arrive. "Keep the app
@@ -757,6 +781,85 @@ console.log("\n— a ceiling on what we ask of OASA —");
     && counted.withAge === "67%" && counted.calls === 4, JSON.stringify(counted));
   vm.runInContext(`budget.windowStart = 0; budget.spent = 0; budget.shed = 0;
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
+}
+
+/* The figure above is the one the whole upstream-load story rests on, and
+   until now it was unreadable in practice. It lived in one isolate's
+   memory, and a checkup is a rare outside request that nearly always
+   lands on a cold isolate that has served nothing — so a working app
+   reported "no cache figures", which reads exactly like a fault. */
+console.log("\n— the cache figures survive the isolate that measured them —");
+{
+  vm.runInContext(`budget.hits = 0; budget.misses = 0; budget.aged = 0; budget.shed = 0;
+    budget.flushedAt = 0; budget.flushed = { hits:0, misses:0, aged:0, shed:0 };`, ctx);
+  ctx.__env = { DB };
+  sql = [];
+  const wrote = vm.runInContext(`(async () => {
+    budget.hits = 8; budget.misses = 2; budget.aged = 6; budget.shed = 1;
+    await flushBudget(__env);
+    return { flushed: { ...budget.flushed } };
+  })()`, ctx);
+  const after = await wrote;
+  const ins = sql.filter(s => /INSERT INTO upstream_stat/.test(s.q));
+  ok("an isolate writes down what it saw", ins.length === 1 && ins[0].b.slice(1).join(",") === "8,2,6,1",
+    ins.length ? JSON.stringify(ins[0].b) : "nothing written");
+  ok("...and remembers it did, so the next flush sends only what is new",
+    after.flushed.hits === 8 && after.flushed.misses === 2);
+
+  sql = [];
+  await vm.runInContext(`flushBudget(__env)`, ctx);
+  ok("...so a second flush inside the window writes nothing at all",
+    sql.filter(s => /INSERT INTO upstream_stat/.test(s.q)).length === 0);
+
+  sql = [];
+  const delta = await vm.runInContext(`(async () => {
+    budget.flushedAt = Date.now() - 6 * 60 * 1000;   // the window has passed
+    budget.hits = 11; budget.misses = 2;             // three more calls, all cached
+    await flushBudget(__env);
+    return null;
+  })()`, ctx);
+  const ins2 = sql.filter(s => /INSERT INTO upstream_stat/.test(s.q));
+  ok("...and the next one sends the difference, never the running total",
+    ins2.length === 1 && ins2[0].b[1] === 3 && ins2[0].b[2] === 0,
+    ins2.length ? JSON.stringify(ins2[0].b) : "nothing written");
+
+  /* An INSERT per isolate rather than a read-modify-write, precisely so
+     two isolates flushing at once cannot lose each other's counts. */
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("nothing here reads a total and writes it back",
+    !/UPDATE upstream_stat/.test(w) && /INSERT INTO upstream_stat/.test(w),
+    "append-only is what makes racing isolates safe");
+
+  rows = [{ hits: 600, misses: 400, aged: 500, shed: 7 }];   // what everyone else wrote
+  const read = await vm.runInContext(`(async () => {
+    budget.flushedAt = Date.now();                   // this isolate has unflushed counts
+    budget.hits = 111; budget.misses = 2;
+    return readUpstreamStat(__env, 24);
+  })()`, ctx);
+  ok("the day's figures cover every isolate, not just this one",
+    read && read.upstreamCalls === 1100 && read.cachedShare === "64%",
+    JSON.stringify(read));
+  ok("...including what this one has counted but not yet written down",
+    read.upstreamCalls === 1000 + 100, "otherwise the newest minutes vanish");
+  rows = [];
+  vm.runInContext(`budget.hits = 0; budget.misses = 0; budget.aged = 0; budget.shed = 0;
+    budget.flushedAt = 0; budget.flushed = { hits:0, misses:0, aged:0, shed:0 };`, ctx);
+
+  ok("the rider-facing path is what writes them, because that is where the calls are",
+    /flushBudgetSoon\(env, ctx\)/.test(w) && /ctx\.waitUntil\(flushBudget\(env\)\)/.test(w));
+  ok("...and they are dropped after a week, so the table cannot grow forever",
+    /DELETE FROM upstream_stat WHERE ts < \?/.test(w));
+  ok("/health reports the day beside the instant",
+    /out\.budget\.last24h = day/.test(w));
+
+  /* The tool has to stop calling a cold isolate a problem. A finding that
+     is routinely false teaches you to skim past the findings. */
+  const c = readFileSync(path.join(REPO, "tools/checkup.mjs"), "utf8");
+  ok("the checkup prefers the figures that survive", /b\.last24h/.test(c));
+  ok("...and no longer reports a fresh instance as a missing measurement",
+    !/say\("LOOK", "No cache figures yet\./.test(c));
+  ok("...while a whole silent day is still worth raising",
+    /no calls to OASA in the last 24 hours/.test(c));
 }
 
 /* "I asked for 10 and 5 and only the 5 came." Collapsing is right — a bus

@@ -89,24 +89,46 @@ if (!up.open) {
 /* ---- the sharing that keeps us off their bad side ---- *
    This is the one number the whole load story rests on. */
 const b = health.budget || {};
-if (typeof b.cachedShare === "string" && b.cachedShare.endsWith("%")) {
-  const share = parseInt(b.cachedShare, 10);
-  if (b.upstreamCalls < 20) {
-    say("OK", `Too quiet to judge sharing yet (${b.upstreamCalls} calls since this server started).`,
-      "Open the app on your phone for a minute, then run this again.");
-  } else if (share >= 50) {
-    say("OK", `${b.cachedShare} of requests to OASA were answered from our own cache.`,
-      "This is what keeps them from noticing us. Higher is better.");
+/* There are two sets of figures and only one of them is usable here. The
+   counters in the Worker live in a single isolate's memory, and Cloudflare
+   starts and discards isolates constantly — a checkup is a rare outside
+   request, so it nearly always lands on a fresh one that has served
+   nothing. That is why this used to report "no cache figures" on an app
+   that was demonstrably working: the measurement was scoped to the wrong
+   thing, not missing. The 24-hour figures are written to the database by
+   every isolate, so they survive; prefer them, and fall back to the local
+   ones only when talking to a deploy too old to have them. */
+const day = b.last24h && typeof b.last24h.upstreamCalls === "number" ? b.last24h : null;
+const src = day || (typeof b.upstreamCalls === "number" ? b : null);
+const span = day ? "in the last 24 hours" : "since this server instance started";
+if (src && src.upstreamCalls >= 20) {
+  const share = parseInt(src.cachedShare, 10);
+  if (share >= 50) {
+    say("OK", `${src.cachedShare} of calls to OASA ${span} were answered from our own cache.`,
+      `This is what keeps them from noticing us. Higher is better. (${src.upstreamCalls} calls.)`);
   } else {
-    say("FIX", `Only ${b.cachedShare} of requests to OASA came from cache.`,
+    say("FIX", `Only ${src.cachedShare} of calls to OASA ${span} came from cache.`,
       "The cache is not doing its job, so real load on OASA is much higher than intended. "
-      + "Tell Claude: 'cachedShare is " + b.cachedShare + "'.");
+      + "Tell Claude: 'cachedShare is " + src.cachedShare + "'.");
   }
+} else if (src && src.upstreamCalls > 0) {
+  say("OK", `Too quiet to judge sharing yet (${src.upstreamCalls} calls to OASA ${span}).`,
+    "Open the app on your phone for a minute, then run this again.");
+} else if (day) {
+  /* Zero over a whole day is a different thing entirely from zero on a
+     cold isolate, and now they can be told apart. */
+  say("LOOK", "The app made no calls to OASA in the last 24 hours.",
+    "Either nobody opened it, or arrivals are not being fetched at all. "
+    + "Open it on your phone, wait for times to appear, and run this again.");
 } else {
-  say("LOOK", "No cache figures yet.", "This server has not called OASA since it started.");
+  say("OK", "Cache figures are not kept across restarts on this version.",
+    "The counters live in one server instance's memory and this one has served "
+    + "nothing yet — normal, not a fault. Deploy the current version and the "
+    + "24-hour figures will be reported here instead.");
 }
-if (b.shedThisIsolate > 0) {
-  say("LOOK", `Hit our own ceiling ${b.shedThisIsolate} times.`,
+const shed = day ? day.shed : b.shedThisIsolate;
+if (shed > 0) {
+  say("LOOK", `Hit our own ceiling ${shed} times.`,
     "Riders got slightly older times instead of the app getting blocked. "
     + "That is the design working. If it happens a lot, the app has more users than "
     + "this setup was sized for — worth telling Claude.");
@@ -171,20 +193,42 @@ if (typeof fp.kvWritesPercent === "number") {
    that alert can never fire — with nothing on screen to say why, because
    every other check still passes. Only offer it when there are rules to
    size it against, and never without the warning. */
+/* Deferred, because whether this is worth raising at all depends on a
+   number that only the Cloudflare half of this tool knows. A saving you
+   have no use for is not a finding — it is noise that teaches you to skim
+   past the LOOK lines, which is exactly the habit this tool must not
+   build. So: an OK line stating the trade when there is request headroom,
+   and a real LOOK with the instructions only when there is not. */
 const selfTunes = (health.bindings || {}).selfTuneCron === true;
-if (!selfTunes && al.rules > 0 && Array.isArray(al.cronSuggestion)
-    && al.estimatedCronRunsPerDay && al.estimatedCronRunsPerDay < 800) {
-  say("LOOK", `The scheduler runs ~1152 times a day; your ${al.rules} rules only need ~${al.estimatedCronRunsPerDay}.`,
-    `Optional saving. In wrangler.toml under [triggers] crons, then redeploy:\n      `
+function sayCronSaving(busiestDay) {
+  if (selfTunes) return;
+  if (al.rules === 0) {
+    say("OK", "The scheduler is on the broad default, which is the safe setting.",
+      "With no rules there is nothing to narrow it to, and narrowing it now would "
+      + "stop the first alert you set from ever firing.");
+    return;
+  }
+  const runs = al.estimatedCronRunsPerDay;
+  if (!(Array.isArray(al.cronSuggestion) && runs && runs < 800)) return;
+  const saved = 1152 - runs;
+  /* Under 40,000 requests a day there is nothing to be short of, and the
+     40,000 line is the same one the traffic check uses. With no Cloudflare
+     token we cannot know — and "cannot know" resolves to "leave it alone",
+     because the broad schedule is the safe side of this trade. */
+  if (!(typeof busiestDay === "number" && busiestDay > 40000)) {
+    say("OK", `The scheduler runs ~1152 times a day where your ${al.rules} rules need ~${runs}.`,
+      `Those spare ~${saved} runs are about ${Math.max(1, Math.round(saved / 1000))}% of the free `
+      + "plan's 100,000 daily requests, so there is nothing to save that you are short of. "
+      + "Narrowing it would also silently break any alert set outside the narrowed hours. "
+      + "Leave it. This turns into a real suggestion if traffic ever approaches the limit.");
+    return;
+  }
+  say("LOOK", `Traffic is high enough to care: the scheduler runs ~1152 times a day, your ${al.rules} rules need ~${runs}.`,
+    `Now worth doing. In wrangler.toml under [triggers] crons, then redeploy:\n      `
     + JSON.stringify(al.cronSuggestion)
     + "\n      WARNING: this fits the rules you have RIGHT NOW. Nothing widens it back"
     + "\n      automatically, so an alert set later in an hour it does not cover will"
-    + "\n      never fire, silently. Re-run this after every new alert, or leave the"
-    + "\n      broad default alone — it costs nothing you are short of.");
-} else if (!selfTunes && al.rules === 0) {
-  say("OK", "The scheduler is on the broad default, which is the safe setting.",
-    "With no rules there is nothing to narrow it to, and narrowing it now would "
-    + "stop the first alert you set from ever firing.");
+    + "\n      never fire, silently. Re-run this after every new alert.");
 }
 /* The symptom: a notification arrives the moment the app is opened,
    saying the bus is a minute away. That is not a delayed push — it is a
@@ -289,6 +333,7 @@ if (tr.routes > 0 && tr.eventsLast24h === 0) {
    breaks twice, but it comes with a warning. */
 const CF_TOKEN = process.env.CF_ANALYTICS_TOKEN || process.env.CF_API_TOKEN;
 const CF_ZONE = process.env.CF_ZONE_ID;
+let busiestDay = null;          // requests on the busiest of the last 14 days
 if (process.env.CF_API_TOKEN && !process.env.CF_ANALYTICS_TOKEN) {
   say("FIX", "CF_API_TOKEN is set, and wrangler will try to deploy with it.",
     "That variable is wrangler's own. An Analytics-only token in it makes "
@@ -352,6 +397,7 @@ if (CF_TOKEN && CF_ZONE) {
     /* The free plan's ceiling is 100,000 requests a day, and the cron is a
        fixed ~1,150 of them however quiet the app is. */
     const busiest = Math.max(...req);
+    busiestDay = busiest;
     if (busiest > 70000) {
       say("FIX", `Busiest day was ${busiest} requests, against a free-plan limit of 100,000.`,
         "Past the limit the Worker stops answering. Time to look at the paid plan.");
@@ -390,6 +436,10 @@ if (CF_TOKEN && CF_ZONE) {
     "Set CF_ANALYTICS_TOKEN and CF_ZONE_ID to have traffic, cache and visitor numbers "
     + "read and interpreted here too. See DEPLOY.md → Reading the numbers.");
 }
+
+/* Last, because it needed the traffic figure above to know whether it is
+   a suggestion or just noise. */
+sayCronSaving(busiestDay);
 
 /* ------------------------------ output ------------------------------ */
 const headline = worst === 0 ? "ALL GOOD"

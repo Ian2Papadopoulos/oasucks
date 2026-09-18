@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v98.**
+version: v99.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 922 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 940 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app **and Cloudflare** how things are, and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/browser.mjs` | Finds a browser to drive without downloading one. `playwright-core` ships no browsers on purpose, so a fresh machine used to be told to `npx playwright install` — fetching a second Chromium next to the one already in Program Files. This checks `CHROME_PATH`, then where Chrome, Chromium and Edge actually live on this platform, and only then gives up, with both ways out. Used by every test and tool that drives a browser. |
@@ -1123,6 +1123,19 @@ has twelve. That number is the honest scaling limit of alerts on one Worker.
 
 Upstream failures now also keep their reason (`HTTP 403`, a timeout, a parse error)
 instead of only a tally, and `circuitState().lastFail` carries it into every diagnostic.
+
+**The same isolate boundary made the cache figures unreadable, and that took a year to
+notice** — because it never looked like a bug. `cachedShare` is the number the whole
+"do not become the reason OASA blocks us" story rests on, and it lived in one isolate's
+memory. A checkup is a rare request from outside, so it nearly always landed on a cold
+isolate that had served nothing, and the tool dutifully reported *no cache figures* on an
+app that was serving riders normally. The finding was false roughly every time it
+appeared, which is worse than no finding at all: it is how an operator learns to skim
+past the findings. Since v99 each isolate appends its deltas to a small D1 table every
+five minutes — an `INSERT`, never a read-modify-write, so racing isolates cannot lose
+each other's counts — and `/health` reports `budget.last24h` across all of them beside
+the per-isolate snapshot. Zero calls in a *day* is a real finding; zero calls in an
+isolate that started four seconds ago is not.
 
 **There is no probe on the boot path, and that is the fix.** The app used to prove a
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by

@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v98";
+const APP_VERSION = "v99";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -300,7 +300,9 @@ function circuitState() {
  * breaker: ten calls a minute cannot be the problem, and losing them costs
  * a rider the bus. */
 const UPSTREAM_BUDGET = { perMin: 150 };
-const budget = { windowStart: 0, spent: 0, shed: 0, hits: 0, misses: 0, aged: 0 };
+const budget = { windowStart: 0, spent: 0, shed: 0, hits: 0, misses: 0, aged: 0,
+  flushedAt: 0, flushed: { hits: 0, misses: 0, aged: 0, shed: 0 } };
+const ISOLATE_START = Date.now();
 function budgetAllows() {
   const now = Date.now();
   if (now - budget.windowStart >= 60000) { budget.windowStart = now; budget.spent = 0; }
@@ -326,8 +328,75 @@ function budgetState() {
        header — which is what the countdown correction needs, and what the
        budget refund used to depend on entirely. */
     upstreamCalls: seen,
+    isolateAgeSec: Math.round((Date.now() - ISOLATE_START) / 1000),
     cachedShare: seen ? Math.round((budget.hits / seen) * 100) + "%" : "no calls yet",
     hitsCarryingAge: budget.hits ? Math.round((budget.aged / budget.hits) * 100) + "%" : "n/a" };
+}
+
+/* ---- the same figures, where they survive ------------------------- *
+ * Everything above lives in one isolate's memory, and Cloudflare starts
+ * and discards isolates constantly. That made the one number the whole
+ * upstream-load story rests on unreadable in practice: a checkup is a
+ * rare outside request, so it usually lands on a cold isolate that has
+ * served nothing, and the honest answer "no calls yet" reads exactly like
+ * a fault. It is not one — it is the measurement being scoped wrongly.
+ *
+ * So each isolate adds its own deltas to a shared table every few
+ * minutes. Append-only, never read-modify-write, so isolates racing each
+ * other cannot lose a count. Cost: one D1 row per isolate per 5 minutes,
+ * a few hundred a day against a 100,000 free allowance. Rows older than a
+ * week are dropped by the nightly pass; only the last 24h is ever read. */
+const BUDGET_FLUSH_MS = 5 * 60 * 1000;
+async function flushBudget(env) {
+  if (!dbReady(env)) return;
+  const now = Date.now();
+  if (now - budget.flushedAt < BUDGET_FLUSH_MS) return;
+  const f = budget.flushed;
+  const d = { hits: budget.hits - f.hits, misses: budget.misses - f.misses,
+    aged: budget.aged - f.aged, shed: budget.shed - f.shed };
+  /* Claim the window before the write, so a slow or failing insert cannot
+     have every request behind it try again. Nothing is lost if it does
+     fail: the snapshot only advances on success, so the unwritten counts
+     ride along with the next flush. */
+  budget.flushedAt = now;
+  if (!(d.hits || d.misses || d.aged || d.shed)) return;
+  try {
+    await initSchema(env);
+    await env.DB.prepare(
+      "INSERT INTO upstream_stat(ts,hits,misses,aged,shed) VALUES(?,?,?,?,?)")
+      .bind(Math.floor(now / 1000), d.hits, d.misses, d.aged, d.shed).run();
+    budget.flushed = { hits: budget.hits, misses: budget.misses,
+      aged: budget.aged, shed: budget.shed };
+  } catch (_) { /* a counter must never break the request it is counting */ }
+}
+/* Cheap enough to sit on the hot path: everything but the 5-minute case
+   returns on the second line, and the write itself never blocks a reply. */
+function flushBudgetSoon(env, ctx) {
+  if (!ctx || !dbReady(env)) return;
+  if (Date.now() - budget.flushedAt < BUDGET_FLUSH_MS) return;
+  ctx.waitUntil(flushBudget(env));
+}
+/* What every isolate has seen in the last `hours`, plus whatever this one
+   has not flushed yet — so the answer is current even between flushes. */
+async function readUpstreamStat(env, hours) {
+  if (!dbReady(env)) return null;
+  try {
+    await initSchema(env);
+    const since = Math.floor(Date.now() / 1000) - hours * 3600;
+    const r = await env.DB.prepare(
+      `SELECT SUM(hits) hits, SUM(misses) misses, SUM(aged) aged, SUM(shed) shed
+       FROM upstream_stat WHERE ts > ?`).bind(since).first() || {};
+    const f = budget.flushed;
+    const hits = (r.hits || 0) + (budget.hits - f.hits);
+    const misses = (r.misses || 0) + (budget.misses - f.misses);
+    const aged = (r.aged || 0) + (budget.aged - f.aged);
+    const shed = (r.shed || 0) + (budget.shed - f.shed);
+    const seen = hits + misses;
+    return { upstreamCalls: seen, shed,
+      cachedShare: seen ? Math.round((hits / seen) * 100) + "%" : "no calls",
+      hitsCarryingAge: hits ? Math.round((aged / hits) * 100) + "%" : "n/a",
+      note: "every isolate, rolling 24h — the figures above are one isolate's and reset constantly" };
+  } catch (_) { return null; }
 }
 
 async function getJSONAged(urlStr, cacheTtl, opts) {
@@ -1584,6 +1653,11 @@ async function initSchema(env) {
     `CREATE TABLE IF NOT EXISTS sched_dep(line_code TEXT, dir TEXT, hhmm INTEGER,
        PRIMARY KEY(line_code, dir, hhmm))`,
     `CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)`,
+    // How much of what we ask OASA for comes back from our own cache.
+    // Append-only, one row per isolate per flush — see `flushBudget`.
+    `CREATE TABLE IF NOT EXISTS upstream_stat(ts INTEGER, hits INTEGER, misses INTEGER,
+       aged INTEGER, shed INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS ix_us_ts ON upstream_stat(ts)`,
     // Append-only history of every community report ever filed (the KV
     // side only keeps ACTIVE flags). This is what future statistics —
     // "which line gets the most breakdown reports" — will read from.
@@ -1952,6 +2026,10 @@ async function pruneOld(env) {
     .bind(now - TRACK.retentionDays * 86400).run();
   await env.DB.prepare("DELETE FROM report_log WHERE ts < ?")
     .bind(now - REPORT_LOG_DAYS * 86400).run();
+  // Only the last 24h is ever read; a week is kept in case a question
+  // turns up that wants yesterday's answer next to today's.
+  await env.DB.prepare("DELETE FROM upstream_stat WHERE ts < ?")
+    .bind(now - 7 * 86400).run();
 }
 
 /* ===================== batch "nearby" endpoint ==================== *
@@ -3832,6 +3910,9 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     noteSelfOrigin(url, env, ctx);
+    /* The isolate serving riders is the one whose cache figures matter, and
+       it is almost never the one a checkup lands on. Let it write them down. */
+    flushBudgetSoon(env, ctx);
     /* Not on the alert endpoints themselves: /alerts/run IS the sweep, and
        /alerts/why must be able to report on a run without starting one. */
     if (!url.pathname.includes("/alerts/")) alertsOnTraffic(env, ctx);
@@ -4357,6 +4438,12 @@ export default {
       out.budget = budgetState();
 
       if (dbReady(env)) {
+        /* The per-isolate figures above are whatever this isolate happens to
+           have done, which for a cold one is nothing. These are everyone's. */
+        try {
+          const day = await readUpstreamStat(env, 24);
+          if (day) out.budget.last24h = day;
+        } catch (_) { }
         try {
           const cronLast = Number(await getMeta(env, "cron_last")) || 0;
           const alertLast = Number(await getMeta(env, "alert_last")) || 0;
@@ -4811,6 +4898,9 @@ async function cronRun(event, env, T) {
     try {
       if (await trackingActive(env)) await sampleVehicles(env);
     } catch (e) { T.trackingError = String((e && e.message) || e).slice(0, 200); }
+    /* This isolate's share of the cache figures. Rate-limited inside, so
+       calling it every minute costs a comparison on all but one of them. */
+    await flushBudget(env);
     if (daily) {
       try {
         await syncSchedules(env);
