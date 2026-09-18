@@ -240,8 +240,20 @@
   .locbar .where{color:var(--toner);font-weight:700;white-space:nowrap;overflow:hidden;
     text-overflow:ellipsis;letter-spacing:.02em}
   /* how fresh the numbers are, stated once rather than animated */
-  .locbar .fresh{color:var(--ink3);font-size:10px;letter-spacing:.04em;white-space:nowrap;flex:none}
+  /* A chip, not a button that looks like one. It reads as the same quiet
+     label it has always been until you touch it — the point is that the
+     thing telling you how old the numbers are is also the thing that makes
+     them new, so nobody has to hunt for a refresh. */
+  .locbar .fresh{color:var(--ink3);font-size:10px;letter-spacing:.04em;white-space:nowrap;flex:none;
+    background:none;border:0;padding:2px 6px;margin:0;font:inherit;font-size:10px;
+    border-radius:999px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .locbar .fresh:hover{color:var(--ink2);background:var(--rule2)}
+  .locbar .fresh:active{transform:scale(.94)}
+  .locbar .fresh:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
   .locbar .fresh.stale{color:var(--red)}
+  /* A minute we worked out ourselves rather than one the service gave us.
+     Deliberately faint: it is a caveat, not an alarm. */
+  .eta.guess .v,.eta.guess .u{opacity:.72}
   .locbar button{margin-left:auto;background:var(--card);border:1px solid var(--rule);
     color:var(--toner);padding:5px 9px;font-size:10px;font-weight:700;cursor:pointer;flex:none;
     text-transform:uppercase;letter-spacing:.1em;border-radius:2px;font-family:var(--mono)}
@@ -764,6 +776,11 @@
   .pushhow{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--marker2);
     padding:9px 11px;margin-bottom:10px;font-size:10.5px;line-height:1.6;color:var(--ink3);
     border-radius:2px}
+  /* Same shape as .pushhow, in the colour that means "this one will not
+     work until you do something about it". */
+  .pushwarn{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--red);
+    padding:9px 11px;margin-bottom:10px;font-size:10.5px;line-height:1.6;color:var(--toner);
+    border-radius:2px}
   .fhead{margin-top:12px;color:var(--ink3);font-size:9.5px;letter-spacing:.16em;
     text-transform:uppercase;border-bottom:1px dashed var(--rule);padding-bottom:6px}
   .field{margin-top:11px}
@@ -956,7 +973,7 @@
     </nav>
     <div class="locbar">
       <span class="dot"></span><span id="locwhere" class="where">…</span>
-      <span class="fresh" id="fresh"></span>
+      <button type="button" class="fresh" id="fresh"></button>
       <button id="change">Αλλαγή</button>
     </div>
     <div class="seg" id="seg">
@@ -983,7 +1000,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v99</span></div>
+  <div class="foot"><span class="ver">v100</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1011,6 +1028,7 @@
   <!-- What people get wrong about this is not the app, it is the platform:
        an iPhone will not deliver a notification to a Safari tab, ever. -->
   <div class="pushhow" id="a-how"></div>
+  <div class="pushwarn" id="a-warn" hidden></div>
   <div id="rulelist"></div><div id="ruleform"></div>
 </div></div>
 
@@ -1176,6 +1194,20 @@ const CONFIG={proxyBase:"",refreshMs:45000,idleMs:75000,idleAfter:240000,sleepAf
      enough to look like an attack to a public API. Both are safe to tune
      back if OASA ever stops minding. */
   listStops:10,listPool:11,imminentMin:15,maxMarkers:120,maxRows:6,
+  /* The refresh rate follows the tightest bus on screen instead of being
+     one number for every situation. A board where the next bus is 20
+     minutes out does not need asking every 45 seconds — nothing on it can
+     change in a way you care about — while a board with a bus due in four
+     needs asking more often than that, because four is when being wrong by
+     two minutes means missing it. Averaged over a session this asks OASA
+     for LESS than the flat 45s did, and asks most in the ninety seconds
+     where the answer matters. */
+  hotMin:6,hotMs:25000,calmMin:15,calmMs:90000,
+  /* How long a fetched arrivals list may be counted down before the number
+     stops being worth printing plainly. The same 150 seconds the alert path
+     uses (ALERT_STALE_S), for the same reason: subtracting the clock assumes
+     the bus kept moving as predicted, and that assumption decays. */
+  trustS:150,manualGapMs:5000,
   walkSpeed:80,detour:1.35,onward:9};
 
 /* No probe on the boot path, at all.
@@ -1568,6 +1600,9 @@ const T={
   ti_detour:"Παράκαμψη", ti_other:"Άλλο", linesHere:"Γραμμές από εδώ", arrivingSoon:"Επόμενες αφίξεις", noLines:"Καμία γραμμή",
   wake:"Σε παύση. Πάτα για ανανέωση", stopFallback:"Στάση",radius:"Ακτίνα",stopsN:"στάσεις",
   freshNow:"μόλις τώρα", freshAgo:a=>`πριν ${a}`, secShort:"δ",
+  refreshNow:"Πάτα για ανανέωση τώρα",
+  etaGuess:s=>`Εκτίμηση: τα λεπτά μετριούνται από εμάς, η τελευταία απάντηση του ΟΑΣΑ ήταν πριν ${s}δ`,
+  pushIOSTab:"Σε καρτέλα Safari το iPhone δεν παραδίδει ειδοποιήσεις ποτέ. Πρόσθεσε το OASAx στην αρχική οθόνη και άνοιξέ το από εκεί.",
   ppHint:"Πάτα μια γραμμή για τη διαδρομή της", fromStop:n=>`από ${n}`,
   nextStops:"Επόμενες στάσεις",noRoute:"Δεν βρέθηκε διαδρομή",
   alertsH:"Ειδοποιήσεις",alertsNone:"καμία",alertsP:"Ειδοποίηση πριν φτάσει το λεωφορείο σε οποιαδήποτε στάση, όχι μόνο τις κοντινές.",
@@ -1863,6 +1898,9 @@ const T={
   ti_detour:"Detour", ti_other:"Other", linesHere:"Lines from here", arrivingSoon:"Arriving soon", noLines:"No lines listed",
   wake:"Paused. Tap to refresh", stopFallback:"Stop",radius:"Radius",stopsN:"stops",
   freshNow:"just now", freshAgo:a=>`${a} ago`, secShort:"s",
+  refreshNow:"Tap to refresh now",
+  etaGuess:s=>`Estimated: we are counting these minutes down ourselves — OASA last answered ${s}s ago`,
+  pushIOSTab:"In a Safari tab, iPhone never delivers notifications. Add OASAx to your Home Screen and open it from there.",
   ppHint:"Tap a line to draw its route", fromStop:n=>`from ${n}`,
   nextStops:"Next stops",noRoute:"No route data",
   alertsH:"Alerts",alertsNone:"none",alertsP:"Get notified before your bus reaches any stop, not just the ones near you.",
@@ -2371,15 +2409,17 @@ function paintRow(row,s,a){
 
   // the countdown changes on every single sweep, so it is written as text
   // into spans that already exist rather than re-parsed as markup
-  const m=etaOf(a), now=m<=1;
+  const p=etaParts(a), now=p.now;
   let v=eta.firstElementChild,u=v&&v.nextElementSibling;
   if(!v||!u){ eta.innerHTML='<span class="v num"></span><span class="u"></span>';
     v=eta.children[0]; u=eta.children[1]; }
-  const vs=now?t("now"):String(m), us=now?"":t("min");
+  const vs=String(p.v), us=p.u;
   if(v.textContent!==vs) v.textContent=vs;
   if(u.textContent!==us) u.textContent=us;
   v.className=now?"v":"v num";
-  eta.className="eta"+(now?" now":"");
+  eta.className="eta"+(now?" now":"")+(etaGuessed(a)?" guess":"");
+  const ttl=etaGuessed(a)?t("etaGuess")(boardAgeS()):"";
+  if(eta.title!==ttl) eta.title=ttl;
 }
 function headHtml(s){
   const w=walkMin(s.dist), fav=isFav(s.code);
@@ -2444,7 +2484,7 @@ function renderList(){
     else if(!s.arrLoaded) sig="skel";
     else if(!due.length) sig="empty";
     else sig=due.slice(0,CONFIG.maxRows)
-      .map(a=>`${a.code}|${a.veh}|${etaOf(a)}`).join(";")+"|"+
+      .map(a=>`${a.code}|${a.veh}|${etaOf(a)}${etaGuessed(a)?"~":""}`).join(";")+"|"+
       (activeReports().length?groupedReports().map(r=>r.veh||r.targetId).join(","):"");
     if(c.sig!==sig){
       c.sig=sig;
@@ -2638,11 +2678,11 @@ function popupHtml(s){
   const rows = !s.arrLoaded
     ? `<div class="pp-empty">${t("searching")}</div>`
     : (s.arrivals.length && s.routesLoaded
-        ? visibleArrivals(s).slice(0,5).map(a=>{ const now=etaOf(a)<=1;
+        ? visibleArrivals(s).slice(0,5).map(a=>{ const p=etaParts(a);
             return `<button type="button" class="pp-row${String(rline.code)===String(a.code)?" on":""}"
               data-rc="${esc(String(a.code))}"><span class="pp-tile num">${esc(String(arrLine(s,a.code)))}</span>
               <span class="pp-dest">${esc(arrDest(s,a.code))}</span>
-              <span class="pp-min">${now?t("now"):etaOf(a)+"′"}</span></button>`; }).join("")
+              <span class="pp-min">${esc(p.v)}${p.now?"":"′"}</span></button>`; }).join("")
         : `<div class="pp-empty">${t("nobus")}</div>`);
   return `<div class="pp-name">${esc(stopName(s))}</div>
     <div class="pp-walk">🚶 ${w?`~${w}′ ${t("walk")} · `:""}${fmtDist(s.dist)}</div>
@@ -3241,23 +3281,99 @@ function markLoaded(gen){
    and the number on screen stops being a photograph of a minute ago. */
 let boardAt = 0, etaDrift = 0;
 function driftMin(){ return boardAt ? Math.floor((Date.now()-boardAt)/60000) : 0; }
-function etaOf(a){ const m = a.min - driftMin(); return m > 0 ? m : 0; }
+function boardAgeS(){ return boardAt ? Math.round((Date.now()-boardAt)/1000) : 0; }
+/* ---- what the countdown may and may not claim ----------------------
+ * Counting down locally costs no request and stops the board being a
+ * photograph of a minute ago. What it cannot do is see traffic. OASA's
+ * next answer for a bus stuck on Alexandras can be LARGER than its last
+ * one; ours can only ever be smaller. So the extrapolation is allowed to
+ * take a bus from six minutes to four, and is not allowed to take it to
+ * the kerb.
+ *
+ *   - "NOW" is something OASA said, never something we worked out. A
+ *     locally-counted bus stops at one minute and stays there until a
+ *     real answer moves it.
+ *   - a minute we computed is drawn with a ~. It is the difference
+ *     between "the service says four" and "the service said six, ninety
+ *     seconds ago", and a rider deciding whether to run deserves to know
+ *     which one they are reading.
+ *
+ * Neither costs a single extra call. */
+function etaNow(a){ return a.min <= 1; }
+function etaGuessed(a){ return driftMin() > 0 && a.min > 1; }
+function etaOf(a){
+  const m = a.min - driftMin();
+  if (a.min > 1) return m > 1 ? m : 1;
+  return m > 0 ? m : 0;
+}
+/* One place decides how a minute is written, so the list, the map bubble
+   and the stop card cannot disagree about the same bus. */
+function etaParts(a){
+  if (etaNow(a)) return { v: t("now"), u: "", now: true };
+  return { v: (etaGuessed(a) ? "~" : "") + etaOf(a), u: t("min"), now: false };
+}
 /* A bus more than a minute past due has gone. Keeping it is worse than
-   showing nothing: it is the row people step out to the kerb for. */
+   showing nothing: it is the row people step out to the kerb for.
+   Deliberately reads the RAW extrapolation, not etaOf: the floor above is
+   about what we print, and must not keep a bus on the board forever. */
 function stillDue(a){ return isFinite(a.min) && (a.min - driftMin()) > -1; }
+/* The tightest thing on screen, which is what the refresh rate follows. */
+function tightestEta(){
+  let best = Infinity;
+  const seen = (state.stops||[]).concat(Object.values(state.favLive||{}));
+  for (const s of seen) for (const a of visibleArrivals(s)) {
+    const m = etaOf(a); if (m < best) best = m;
+  }
+  return best;
+}
 function visibleArrivals(s){ return (s.arrivals||[]).filter(stillDue); }
 function paintFresh(){
   const el=$("#fresh"); if(!el) return;
+  /* Set once, not four times a second, and set here rather than in the
+     markup so it follows the language. */
+  if(el.title!==t("refreshNow")){ el.title=t("refreshNow"); el.setAttribute("aria-label",t("refreshNow")); }
   if(!lastLoad){ if(el.textContent){ el.textContent=""; el.classList.remove("stale"); } return; }
   const secs=Math.round((Date.now()-lastLoad)/1000);
   const txt=secs<15?t("freshNow"):t("freshAgo")(secs<90?`${secs}${t("secShort")}`
     :`${Math.round(secs/60)}${t("minShort")}`);
   // called four times a second, so never write what is already there
   if(el.textContent!==txt) el.textContent=txt;
-  el.classList.toggle("stale",secs>150);
+  /* Named rather than hard-coded, and the same 150 seconds the alert path
+     refuses a stale list at: past this, subtracting the clock has stopped
+     being a fair guess about where the bus is. The rows say so with a ~
+     from the first whole minute; this is the point where the chip stops
+     being a detail and turns red. */
+  el.classList.toggle("stale",secs>CONFIG.trustS);
 }
+/* Not one number for every situation. A board whose nearest bus is twenty
+   minutes out cannot change in a way anybody cares about inside ninety
+   seconds; a board with a bus due in four can change completely inside
+   forty-five. Asking at the same rate for both means asking too often for
+   one and not often enough for the other — and it is the second one that
+   makes the app look wrong, because that is when a rider is deciding
+   whether to run. Idle and asleep still win over all of this. */
 function currentInterval(){
-  return (Date.now()-lastTouch > CONFIG.idleAfter) ? CONFIG.idleMs : CONFIG.refreshMs;
+  if (Date.now()-lastTouch > CONFIG.idleAfter) return CONFIG.idleMs;
+  const soon = tightestEta();
+  if (soon <= CONFIG.hotMin) return CONFIG.hotMs;
+  if (soon >= CONFIG.calmMin) return CONFIG.calmMs;
+  return CONFIG.refreshMs;
+}
+/* The refresh you ask for yourself, on the freshness chip beside the
+   location. Two reasons it exists: the automatic cadence is a guess about
+   what you are doing, and a countdown drawn with a ~ should have an
+   obvious way to turn it back into a real number. Rate-limited so a
+   repeated tap cannot become a request storm. */
+let manualAt = 0;
+function manualRefresh(){
+  const now = Date.now();
+  lastTouch = now;
+  if (sleeping) return wake();
+  if (now - manualAt < CONFIG.manualGapMs) return;
+  manualAt = now;
+  nextAt = now + currentInterval();
+  loadStops();
+  paintFresh();
 }
 function showSleep(){
   sleeping=true; stopTimers(); stopWatch();
@@ -4603,12 +4719,12 @@ function renderStopCard(){
   else{
     rows.innerHTML="";
     s.arrivals.slice(0,CONFIG.maxRows).forEach(a=>{
-      const m=etaOf(a),now=m<=1,d=arrDest(s,a.code);
+      const m=etaOf(a),p=etaParts(a),now=p.now,d=arrDest(s,a.code);
       const row=document.createElement("div"); row.className="row";
       row.innerHTML=`<div class="tile num">${esc(String(arrLine(s,a.code)))}</div>
         <div class="dest">${d?`<span class="to">${t("to")}</span>${esc(d)}`:""}${flagLine(reportForArrival(a))}</div>
-        <div class="eta ${now?"now":""}">${now?`<span class="v">${t("now")}</span>`
-          :`<span class="v num">${m}</span><span class="u">${t("min")}</span>`}</div>`;
+        <div class="eta ${now?"now":""}${etaGuessed(a)?" guess":""}">${now?`<span class="v">${t("now")}</span>`
+          :`<span class="v num">${esc(p.v)}</span><span class="u">${t("min")}</span>`}</div>`;
       onLongPress(row,()=>{ closeStopCard(); openRoutePreview(s,String(a.code),m); });
       rows.appendChild(row);
     });
@@ -5532,7 +5648,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v99</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v100</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5575,7 +5691,32 @@ async function ensurePush(){
   const r=await fetch(base()+"/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({id,subscription:sub.toJSON()})});
   if(!r.ok) throw new Error("server:"+r.status);
-  const j=await r.json(); localStorage.setItem("subId",j.id); state.subId=j.id; return j.id;
+  const j=await r.json(); localStorage.setItem("subId",j.id); state.subId=j.id;
+  await shareSubId(j.id);
+  return j.id;
+}
+/* The service worker cannot read localStorage, and it is the only thing
+   awake when the browser rotates a push subscription out from under us.
+   Cache Storage is the one store both sides can reach, so the id lives
+   there too — see `pushsubscriptionchange` in sw.js, which needs it to
+   re-register the NEW endpoint under the SAME id, which is what every
+   alert rule is keyed by. Without it a rotated subscription is a rule
+   pointing at an endpoint nobody answers. */
+async function shareSubId(id){
+  try{ await (await caches.open("oasax-sub")).put("./sub-id",
+    new Response(String(id),{headers:{"Content-Type":"text/plain"}})); }catch(_){}
+}
+/* A subscription can die while the app is closed — the browser rotates it,
+   storage pressure clears it, the push service retires the endpoint — and
+   nothing on screen changes when it does. The alert stays in the list, the
+   bell still shows a number, and no notification ever arrives again.
+   Re-registering costs two small requests and settles it every launch. */
+async function repairPush(){
+  try{
+    if(!hasBackend()||!localStorage.getItem("subId")) return;
+    if(!("Notification" in window)||Notification.permission!=="granted") return;
+    await ensurePush();
+  }catch(_){ /* offline, or the browser refused — the alerts UI says why */ }
 }
 /* One mapping, used by both the save and the test button — they used to
    disagree about what the same failure meant. */
@@ -5605,6 +5746,16 @@ function closeAlerts(){ $("#alertbg").classList.remove("on"); }
 function renderAlerts(){
   const list=$("#rulelist"),form=$("#ruleform"); list.innerHTML=""; form.innerHTML="";
   $("#a-how").textContent=t("pushHow");
+  /* The one platform where "alerts do not arrive when it is closed" is
+     literally true and no amount of server work can fix it. Said here, at
+     the moment somebody is setting an alert, rather than only in the FAQ
+     they will read afterwards to find out why it never buzzed. */
+  const warn=$("#a-warn");
+  if(warn){
+    const bad=platformKey()==="instIOS" && !isStandalone();
+    warn.textContent=bad?t("pushIOSTab"):"";
+    warn.hidden=!bad;
+  }
   if(!hasBackend()){ list.innerHTML=`<div class="note">${t("pushOff")}</div>`; return; }
   if(!state.rules.length) list.innerHTML=`<div class="note">${t("noRules")}<br>${t("noRulesHow")}</div>`;
   state.rules.forEach(r=>{
@@ -5942,6 +6093,7 @@ $("#sm-alert").onclick=()=>{
   renderForm(null,s);
 };
 $("#live-r").onclick=loadLive;
+$("#fresh").onclick=manualRefresh;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;
 /* Retry re-checks the permission rather than calling getCurrentPosition
@@ -6042,7 +6194,7 @@ pulse();
 useGPS();
 initSwipes();
 state.subId=localStorage.getItem("subId");
-ensureMode().then(async()=>{ if(state.subId){ await loadRules(); bellBadge(); }
+ensureMode().then(async()=>{ if(state.subId){ await loadRules(); bellBadge(); repairPush(); }
   await refreshReports(); renderView(); });
 window.addEventListener("beforeunload",()=>{ try{ localStorage.setItem("radius",String(state.radius)); }catch(_){} });
 </script>

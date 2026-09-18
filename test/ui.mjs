@@ -898,6 +898,25 @@ console.log("\n— the minutes count down between sweeps —");
   ok("...and three minutes later they are three minutes smaller",
     JSON.stringify(after) !== JSON.stringify(before), `${before.join(",")} -> ${after.join(",")}`);
 
+  /* The countdown can only ever make a number smaller. The real service
+     can make it BIGGER — that is what a traffic jam is — and we cannot see
+     that from here. So a minute we computed is marked as one, and a bus we
+     counted down ourselves is never announced as arriving: "NOW" sends
+     somebody out to the kerb, and it has to be something OASA said. */
+  ok("a minute we worked out ourselves is drawn as an estimate",
+    after.every(x => /^~/.test(x)), after.join(","));
+  ok("...and extrapolation alone never announces a bus as arriving",
+    !after.some(x => /^(now|τώρα)$/i.test(x.trim())),
+    "we cannot see the traffic that would have delayed it");
+  const floor = await v.page.evaluate(() => ({
+    fresh: etaOf({ min: 4 }), guessed: etaGuessed({ min: 4 }), isNow: etaNow({ min: 4 }),
+    oasaNow: etaNow({ min: 1 }),
+  }));
+  ok("...it stops at one minute and waits for a real answer",
+    floor.fresh === 1 && floor.guessed === true && floor.isNow === false,
+    JSON.stringify(floor));
+  ok("...while a bus OASA itself calls due is still drawn as due", floor.oasaNow === true);
+
   /* A bus more than a minute past due has gone. Keeping its row is worse
      than showing nothing: it is the one people step out to the kerb for. */
   const gone = await v.page.evaluate(async () => {
@@ -911,6 +930,86 @@ console.log("\n— the minutes count down between sweeps —");
     gone.rows === 0 && gone.empty > 0, JSON.stringify(gone));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
+}
+
+/* One flat refresh rate is wrong in both directions at once: too often for
+   a board whose nearest bus is twenty minutes out, not often enough for
+   one with a bus due in four — and four is exactly when a rider is
+   deciding whether to run. */
+console.log("\n— how often it asks follows what is on screen —");
+{
+  const v = await open();
+  const tiers = await v.page.evaluate(() => {
+    const fake = mins => { state.stops = [{ code: "1", arrivals: mins.map(m => ({ min: m, code: "x", veh: "v" })) }]; };
+    lastTouch = Date.now(); boardAt = Date.now();
+    const out = {};
+    fake([3, 20]); out.hot = currentInterval();
+    fake([9]);     out.normal = currentInterval();
+    fake([22]);    out.calm = currentInterval();
+    lastTouch = Date.now() - (CONFIG.idleAfter + 1000);
+    fake([3]);     out.idle = currentInterval();
+    out.idleMs = CONFIG.idleMs;
+    return out;
+  });
+  ok("a bus due soon is asked about more often", tiers.hot === 25000, String(tiers.hot));
+  ok("...a board with nothing near is asked about less", tiers.calm === 90000, String(tiers.calm));
+  ok("...and in between is where it always was", tiers.normal === 45000, String(tiers.normal));
+  ok("...while a screen nobody has touched still wins over all of it",
+    tiers.idle === tiers.idleMs, `${tiers.idle} with a bus 3 minutes out`);
+
+  /* The chip that says how old the numbers are is the chip that makes them
+     new. Nobody should have to hunt for a refresh, least of all when the
+     board is showing them a ~. */
+  const chip = await v.page.evaluate(async () => {
+    const el = document.querySelector("#fresh");
+    const before = { tag: el.tagName, label: el.getAttribute("aria-label") || "" };
+    let asked = 0;
+    const real = window.loadStops; window.loadStops = () => { asked++; };
+    manualAt = 0; lastTouch = Date.now(); sleeping = false;
+    el.click();
+    el.click();                              // immediately again: must not double-ask
+    const after = asked;
+    window.loadStops = real;
+    return { ...before, after };
+  });
+  ok("the freshness chip is something you can press", chip.tag === "BUTTON");
+  ok("...and says so to a screen reader", chip.label.length > 0, chip.label);
+  ok("...and a second tap in the same moment is not a second request",
+    chip.after === 1, `${chip.after} request(s) for two taps`);
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+
+/* "Alerts do not arrive when the tab is closed." Web Push is designed to
+   work with nothing open — but a subscription is not permanent, and when
+   the browser rotates one there is no page running to notice. The server
+   keeps pushing to an endpoint that answers 404, the row is pruned, and
+   every rule the rider set goes quiet with the bell still showing a
+   number. */
+console.log("\n— the subscription that died while the app was closed —");
+{
+  const sw = readFileSync(path.join(PUB, "sw.js"), "utf8");
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("the worker handles the browser swapping the subscription out",
+    /addEventListener\("pushsubscriptionchange"/.test(sw));
+  ok("...re-registering under the SAME id, which is what rules are keyed by",
+    /body: JSON\.stringify\(\{ id, subscription: sub\.toJSON\(\) \}\)/.test(sw),
+    "a new id would leave every existing alert pointing at nothing");
+  ok("...asking for a replacement when the event does not supply one",
+    /e\.newSubscription \|\| null/.test(sw) && /pushManager\.subscribe\(/.test(sw));
+  /* The id has to survive in a store the worker can read, and the activate
+     handler deletes every cache it does not recognise. */
+  ok("the id is kept where a worker with no page can reach it",
+    /caches\.open\("oasax-sub"\)/.test(html) && /IDCACHE = "oasax-sub"/.test(sw));
+  ok("...and the cache sweep does not throw it away",
+    /k !== SHELL && k !== IDCACHE/.test(sw),
+    "one stale-cache cleanup would silence every alert on the device");
+  ok("and the page repairs it on every launch as well",
+    /async function repairPush/.test(html) && /bellBadge\(\); repairPush\(\);/.test(html),
+    "the worker event is best-effort; opening the app must settle it");
+  ok("...only when there is something to repair",
+    /Notification\.permission!=="granted"\) return;/.test(html),
+    "it must never be the thing that asks for permission");
 }
 {
   const html = readFileSync(path.join(PUB, "index.html"), "utf8");

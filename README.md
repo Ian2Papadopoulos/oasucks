@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v99.**
+version: v100.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 940 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 959 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app **and Cloudflare** how things are, and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/browser.mjs` | Finds a browser to drive without downloading one. `playwright-core` ships no browsers on purpose, so a fresh machine used to be told to `npx playwright install` — fetching a second Chromium next to the one already in Program Files. This checks `CHROME_PATH`, then where Chrome, Chromium and Edge actually live on this platform, and only then gives up, with both ways out. Used by every test and tool that drives a browser. |
@@ -338,9 +338,15 @@ JSON to host at `/.well-known/assetlinks.json`.
    out to `getClosestStops`, `webRoutesForStop` and `getStopArrivals` at the edge and
    returns stops + line names + live arrivals in a single response, so a row reads
    **608 · to Voula · 4 min** instead of a raw route code.
-2. Auto-refreshes every 30s, pulling fresh arrivals *and* the current report flags
-   together. There is no countdown bar; the location line carries a quiet **"just now"
-   / "40s ago"** stamp instead, which turns red once the data is over 150s old.
+2. Auto-refreshes on a cadence that follows the tightest bus on screen — **25s** when
+   something is due within six minutes, **45s** normally, **90s** when nothing is nearer
+   than fifteen — pulling fresh arrivals *and* the current report flags together. One
+   flat rate was wrong in both directions at once: too often for a board whose nearest
+   bus is twenty minutes out, not often enough for one with a bus due in four, which is
+   exactly when a rider is deciding whether to run. There is no countdown bar; the
+   location line carries a quiet **"just now" / "40s ago"** stamp instead, which turns
+   red once the data is over 150s old — and which is itself the refresh button, because
+   the thing telling you how old the numbers are should be the thing that makes them new.
 
    The 30s is a **deadline, not an interval**. A 250ms tick asks whether it has passed.
    That sounds like more work and is less: comparing two numbers costs nothing, while a
@@ -349,6 +355,27 @@ JSON to host at `/.well-known/assetlinks.json`.
    3x timer throttle the interval version refreshed every **90s instead of 30**, which is
    how arrivals ended up a minute or two behind the sign at the stop and how rows for
    buses that had already gone stayed on screen. The tick version holds its cadence.
+
+   **What the countdown is allowed to claim.** Between sweeps the minutes are counted
+   down locally, which costs no request and stops the board being a photograph of a
+   minute ago. It has one blind spot, and it is the important one: our arithmetic can
+   only ever make a number *smaller*, while the real service can make it **bigger** —
+   that is what a traffic jam is, and it is invisible from here. So the extrapolation is
+   allowed to take a bus from six minutes to four and is not allowed to take it to the
+   kerb. Two rules, neither costing a call:
+
+   - **"NOW" is something OASA said, never something we worked out.** A locally
+     counted-down bus stops at one minute and stays there until a real answer moves it.
+     Announcing an arrival we invented is how an app sends somebody out to the kerb for
+     a bus that is stuck two streets away.
+   - **A minute we computed is drawn with a `~`.** "The service says four" and "the
+     service said six, ninety seconds ago" are different claims, and a rider deciding
+     whether to run is entitled to know which one they are reading. Tapping the
+     freshness chip turns a `~` back into a real number on demand.
+
+   This is also why the alert notification and the board can disagree without either
+   being broken: the alert fires on a number OASA gave the Worker seconds earlier, while
+   the board may be showing one we extrapolated. The `~` is the app saying so.
 
 **Favourites ride along with the sweep.** A pinned stop outside the nearby set —
 your home stop while you are at work — used to be its own request, every 30s. Three
@@ -801,6 +828,39 @@ actually said — which `/alerts/why` returns along with the cron heartbeat. Tha
 matters most: a rule that *would* fire and a scheduler that has stopped calling look
 identical from the outside and need opposite fixes, so the diagnostic answers both in one
 response.
+
+#### "They stop arriving when the tab is closed"
+
+Web Push is *designed* to work with nothing open — that is what makes an alert a
+set-and-forget thing rather than a timer you have to babysit. The delivery path is the
+push service and the service worker; the app does not have to be running, and on Android
+and desktop it is not. So the symptom deserves taking literally, because it has three
+real causes and only one of them is a platform limit.
+
+1. **iPhone, in a Safari tab.** iOS delivers Web Push only to a site installed on the
+   Home Screen (iOS 16.4+). In a tab it never arrives, and nothing server-side can change
+   that. Said at the moment somebody sets an alert now, in a red-ruled note in the alerts
+   sheet, instead of only in the FAQ they go looking for afterwards.
+2. **The subscription was rotated while the app was closed.** A push subscription is not
+   permanent: browsers replace the endpoint on their own schedule, and it also dies to
+   storage pressure or the push service retiring it. When it happens there is no page
+   running to notice. The Worker keeps pushing to an endpoint that answers 404, the row
+   is pruned, and every rule goes quiet — with the rule still in the list and the bell
+   still showing a number. Nothing on screen changes, which is exactly why it reads as
+   "it stopped when I closed it". The service worker now handles
+   `pushsubscriptionchange` and re-registers the new endpoint under **the same
+   subscription id**, which is what rules are keyed by — so the alerts survive the
+   rotation instead of having to be set again. The id lives in Cache Storage because that
+   is the one store a worker with no page can read, and the stale-cache sweep in
+   `activate` is explicitly told not to delete it: one careless cleanup there would
+   silence every alert on the device.
+3. **Belt as well as braces.** The event above is best-effort and a device can miss it.
+   So opening the app re-registers too — `repairPush()` on launch, only when a
+   subscription id already exists and permission is already granted, so it can never be
+   the thing that asks for permission.
+
+`/alerts/why` reports what the push service actually said; a 404 or 410 there is this
+failure, and after v100 it should repair itself by the next launch.
 
 #### The gap between "the cron ran" and "a push was attempted"
 

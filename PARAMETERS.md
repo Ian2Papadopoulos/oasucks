@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v99 defaults** — if you edit the
+breaks if you change it. Values here are the **v100 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -124,13 +124,17 @@ in v44) both read as *OASA staff*.
 | Parameter | Default | What it means | If you change it |
 |---|---|---|---|
 | `listStops` | **10** | Hard cap on **rows shown**. Every visible row is guaranteed to have its arrivals loaded. | Display only — cost follows `listPool`. |
-| `listPool` | **14** | Stops the server loads arrivals for. Wider than the cap on purpose: the extra four are the candidates promoted when a nearer stop has nothing coming. | **The main cost dial** — one OASA arrivals call per pooled stop per refresh. |
+| `listPool` | **11** | Stops the server loads arrivals for. Wider than the cap on purpose: the extra one is the candidate promoted when a nearer stop has nothing coming. | **The main cost dial** — one OASA arrivals call per pooled stop per refresh. |
 | `imminentMin` | **15 min** | An arrival within this many minutes makes a stop "live" and floats it above dead ones. | Raise it and almost everything counts as live, so the sort stops doing anything. |
 | `maxMarkers` | **120** | Stops drawn on the map. Markers are nearly free — no per-stop request. | Raise freely; the map is not what costs money. |
 | `maxRows` | **6** | Arrival rows shown per stop. | Display only. |
-| `refreshMs` | **30 000 ms** | Foreground refresh interval. **A deadline, not a timer** — see `TICK_MS`. | Doubling it halves your request rate. |
+| `refreshMs` | **45 000 ms** | Foreground refresh interval for the middle tier. **A deadline, not a timer** — see `TICK_MS`. | Doubling it halves your request rate. |
+| `hotMin` / `hotMs` | **6 min** / **25 000 ms** | When the nearest bus on screen is within `hotMin`, ask this often instead. | This is the tier that decides whether the app is right when it matters. Below ~20 s you are paying for precision nobody can act on. |
+| `calmMin` / `calmMs` | **15 min** / **90 000 ms** | When nothing on screen is within `calmMin`, ask this often instead. | The saving that pays for the tier above. Nothing on such a board can change in a way a rider cares about inside 90 s. |
+| `trustS` | **150 s** | How old the board may get before the freshness chip turns red. Matches `ALERT_STALE_S` in the Worker: past this, subtracting the clock from a fetched minute has stopped being a fair guess. | |
+| `manualGapMs` | **5 000 ms** | Minimum gap between two taps on the freshness chip. | A tap-to-refresh with no floor is a request storm with a finger on it. |
 | `TICK_MS` | **250 ms** | How often the app asks whether the refresh deadline has passed. Not a refresh rate and not a cost: it compares two numbers. It exists because a bare `setInterval(load, 30000)` gets throttled on a phone and has no memory of being late, so a deferred tick costs a whole extra period. Under a 3x timer throttle the old shape refreshed every 90 s instead of 30; this one stays within a tick of the deadline. | Raising it makes the refresh that much less punctual. Do not replace it with a long interval. |
-| `idleMs` | **45 000 ms** | Refresh interval once idle. |  |
+| `idleMs` | **75 000 ms** | Refresh interval once idle. Wins over all three tiers above: a screen nobody has touched for four minutes is not a screen anybody is timing a bus on. |  |
 | `idleAfter` | **240 000 ms** (4 min) | No interaction → switch to the idle interval. |  |
 | `sleepAfter` | **900 000 ms** (15 min) | No interaction → stop refreshing entirely. |  |
 | `walkSpeed` | **80 m/min** | Used for the "🚶 ~4′" walking estimate. |  |
