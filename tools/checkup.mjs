@@ -215,6 +215,21 @@ if ((health.bindings || {}).push && typeof al.lastSweepAgoSec === "number") {
     "Nothing has called /alerts/run since this was deployed. If a pinger is "
     + "configured, it is not reaching the app.");
 }
+/* "I asked for 10 and 5 and only the 5 came." Collapsing two leads into
+   one buzz is right when the bus is already inside both; the question is
+   why it was never seen at the wider range. */
+if (why && why.lastCronWithWork && Array.isArray(why.lastCronWithWork.skippedLeads)
+    && why.lastCronWithWork.skippedLeads.length) {
+  const gap = why.lastCronWithWork.sinceLastSweepSec;
+  say("LOOK", "A warning you asked for was folded into a later one.",
+    why.lastCronWithWork.skippedLeads.join(" | ")
+    + (typeof gap === "number" && gap > 150
+      ? `\n      The previous check was ${gap}s earlier, so the bus passed the wider `
+        + "mark unseen. Fix the cadence and both warnings will come."
+      : "\n      The checks were running on time, so this is OASA's estimate jumping "
+        + "— it went from outside the wider mark to inside the tighter one between "
+        + "two looks. Nothing to fix; a wider lead would catch it sooner."));
+}
 if (why && why.lastCronWithWork && Array.isArray(why.lastCronWithWork.late)
     && why.lastCronWithWork.late.length) {
   say("LOOK", "The last alerts went out later than they were asked for.",

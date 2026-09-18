@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v96";
+const APP_VERSION = "v97";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -59,7 +59,7 @@ const VIEWBOX = "23.40,38.40,24.10,37.70";
 const ACT_TTL = {
   /* Above the app's refresh interval on purpose: two people waiting at the
      same stop should cost OASA one call, not two.
-     Raised from 50 in v96, and only safe because of v79: the age of a
+     Raised from 50 in v97, and only safe because of v79: the age of a
      cached answer is now subtracted from the minutes before anyone sees
      them, so a 90-second cache shows the same countdown a 50-second one
      did. It is the single biggest lever on upstream load — arrivals are
@@ -1175,7 +1175,7 @@ function athensUtcOffsetHours() {
 /* The alert cron gets a longer rope than a rider does. A rider is looking
    at the screen and an 8-second wait is worse than an error; the cron has
    a whole minute and nobody watching, and its failure costs the bus. */
-/* Trimmed in v96 from 12s x3. Thirty-six seconds on one stop is longer
+/* Trimmed in v97 from 12s x3. Thirty-six seconds on one stop is longer
    than the whole sweep is allowed, and the retries were doing the work the
    stale fallback already does better — a second attempt into the same bad
    second rarely differs, while a two-minute-old answer with the clock
@@ -1462,6 +1462,24 @@ async function runAlerts(env, T = {}) {
         // With one tag per rule+vehicle only the first of a 15/10/5 set
         // ever rang; per-lead tags make each one its own notification.
         const firingLead = Math.min(...unsent.map(([, L]) => L));
+        /* Leads the rider asked for that never got their own notification.
+         *
+         * Collapsing IS right: a bus five minutes out with 10 and 5 unsent
+         * wants one buzz, not two in the same second. But the rider
+         * configured two warnings and heard one, and until now nothing
+         * anywhere recorded which one went missing or why — so "the 10
+         * minute alert never came" had no answer.
+         *
+         * It happens when the bus was not visible at the wider range: an
+         * ETA that jumps 12′ → 5′ between sweeps, or a sweep that did not
+         * run. Those need opposite fixes, and sinceLastSweepSec beside
+         * this says which. */
+        const swallowed = unsent.map(([, L]) => L).filter(L => L !== firingLead);
+        if (swallowed.length) {
+          T.skippedLeads = (T.skippedLeads || []).concat(
+            `${rule.lineId || rc}: ${swallowed.join("′,")}′ warning(s) never sent — `
+            + `the bus was already ${min}′ away the first time it was seen`);
+        }
         /* Every outcome of this attempt is written down, because the
            thing that made alerts unfixable was that a failed send left no
            trace anywhere: /alerts/why could prove a rule SHOULD fire and

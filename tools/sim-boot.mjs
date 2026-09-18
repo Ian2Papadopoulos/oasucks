@@ -13,7 +13,15 @@
  * GPS_DELAY_MS    how long the radio takes to answer (default 3000)
  * LASTPOS_AGE_MIN age of the remembered fix, in minutes (default: none)
  */
-import { chromium } from "playwright-core";
+/* playwright-core is a devDependency. Without `npm install` this throws a
+   twenty-line stack that names a package, not a fix. */
+let chromium;
+try { ({ chromium } = await import("playwright-core")); }
+catch (_) {
+  console.error("\nThis needs the dev dependencies. Run:  npm install\n"
+    + "Then, if Chromium is not on PATH:  $env:CHROME_PATH = \"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"\n");
+  process.exit(2);
+}
 import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";

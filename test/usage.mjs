@@ -758,6 +758,29 @@ console.log("\n— a ceiling on what we ask of OASA —");
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
 }
 
+/* "I asked for 10 and 5 and only the 5 came." Collapsing is right — a bus
+   five minutes out with both leads unsent wants one buzz, not two in the
+   same second — but the rider configured two warnings and heard one, and
+   nothing recorded which went missing. */
+console.log("\n— the warning that was folded into a later one —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("the tightest unsent lead is the one that fires",
+    /const firingLead = Math\.min\(\.\.\.unsent\.map\(\(\[, L\]\) => L\)\)/.test(w),
+    "two buzzes in the same second is not two warnings");
+  ok("...and the ones it swallowed are written down",
+    /const swallowed = unsent\.map\(\(\[, L\]\) => L\)\.filter\(L => L !== firingLead\)/.test(w)
+    && /T\.skippedLeads/.test(w));
+  ok("...with the bus's actual distance, so the cause is readable",
+    /the bus was already \$\{min\}′ away the first time it was seen/.test(w));
+  /* A sweep that did not run and an ETA that jumped need opposite fixes,
+     and sinceLastSweepSec beside this is what tells them apart. */
+  const c = readFileSync(path.join(REPO, "tools/checkup.mjs"), "utf8");
+  ok("the checkup separates a missed check from a jumping estimate",
+    /sinceLastSweepSec/.test(c) && /OASA's estimate jumping/.test(c)
+    && /Fix the cadence and both warnings will come/.test(c));
+}
+
 /* A notification arriving the instant the app is opened, saying the bus is
    a minute away, is not a delayed push. It is a lead that came due while
    nothing ran the sweep, delivered by the first thing that did — and the
