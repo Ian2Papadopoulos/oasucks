@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v102";
+const APP_VERSION = "v103";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -2124,7 +2124,12 @@ async function handleNearby(url, env, ctx) {
   const lat = parseFloat(url.searchParams.get("lat"));
   const lng = parseFloat(url.searchParams.get("lng"));
   if (!isFinite(lat) || !isFinite(lng)) return json({ error: "lat/lng required" }, 400);
-  const radius = Math.min(2000, Math.max(200, +(url.searchParams.get("radius") || 600)));
+  /* 300, not 600. The client always sends its own, so this is the default
+     for a bare call — but it matches the slider's default for a reason:
+     samplePts queries ONE point at 400 m or below and five above it, so
+     the wider default was costing five stop-discovery calls per sweep to
+     put stops on the board nobody was going to walk to. */
+  const radius = Math.min(2000, Math.max(200, +(url.searchParams.get("radius") || 300)));
   const limit = Math.min(16, Math.max(1, +(url.searchParams.get("limit") || 14)));
   const markers = Math.min(150, Math.max(limit, +(url.searchParams.get("markers") || 60)));
   // Map pins show the stop name now, so line metadata is only needed for the

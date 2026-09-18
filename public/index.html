@@ -994,7 +994,7 @@
   </div>
   <div class="radwrap" id="radwrap" style="display:none">
     <div class="radhd"><span id="t-rad">Ακτίνα</span> <b id="rval">600 m</b><span class="cnt" id="rcount"></span></div>
-    <input type="range" id="radius" min="200" max="1000" step="50" value="600" />
+    <input type="range" id="radius" min="200" max="1000" step="50" value="300" />
   </div>
 
   <div id="mapwrap" style="display:none">
@@ -1004,7 +1004,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v102</span></div>
+  <div class="foot"><span class="ver">v103</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1972,7 +1972,7 @@ function beginBoard(){
 }
 // the first fix resolved one way or the other: stop holding the board
 function geoDone(){ beginBoard(); }
-const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:600,
+const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:300,
   dark:false,mapFitted:false,_mapCodes:null,rules:[],subId:null};
 let timer=null,nextAt=0,loading=false;
 
@@ -5681,7 +5681,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v102</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v103</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

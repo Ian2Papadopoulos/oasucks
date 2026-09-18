@@ -1008,6 +1008,21 @@ console.log("\n— how often it asks follows what is on screen —");
   ok("...and the automatic one does not, so riders still share a board",
     auto.length > 0 && auto.every(u => !/[?&]fresh=1\b/.test(u)),
     auto.join(" ") || "no /nearby request at all");
+
+  /* The default radius is not a taste question, it is a cost tier.
+     samplePts queries one point at 400 m or below and five above it, so
+     600 m was paying five stop-discovery calls a sweep to put stops on the
+     board nobody was going to walk to. The slider still goes to 1000. */
+  const rad = await v.page.evaluate(() => ({
+    state: state.radius,
+    slider: +document.querySelector("#radius").value,
+    max: +document.querySelector("#radius").max,
+  }));
+  ok("the default radius stays inside the one-sample tier",
+    rad.state <= 400 && rad.slider === rad.state,
+    `${rad.state} m, slider ${rad.slider}`);
+  ok("...and the slider still reaches the wide end for anyone who wants it",
+    rad.max === 1000, String(rad.max));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
   await v.ctx.close();
 }

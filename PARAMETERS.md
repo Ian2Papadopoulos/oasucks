@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v102 defaults** — if you edit the
+breaks if you change it. Values here are the **v103 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -237,8 +237,16 @@ half an hour yields to one 300 m further with a bus in four minutes; if the cap
 is full it drops off the list entirely (it stays on the map).
 
 The **search radius** is not a constant — it's the slider in the map view
-(200–1000 m, `<input id="radius">`). Widening it adds map markers, not list rows,
-so it does not change the number of arrival calls.
+(200–1000 m, `<input id="radius">`), **defaulting to 300 m since v103**. Widening
+it adds map markers, not list rows, so it does not change the number of arrival
+calls — `listPool` caps those at 11 whatever the slider says.
+
+What it *does* change is stop discovery. `samplePts` queries one point at 400 m
+or below, five up to 650 m, and nine above — so the old 600 m default cost
+**five** `getClosestStops` calls per sweep where 300 m costs **one**. Those are
+cached for hours, so this was never the expensive half; it is simply five times
+less of it, and a shorter board is the better one to read. A rider who wants the
+wider net still has the slider, and a saved choice always wins over the default.
 
 ---
 
