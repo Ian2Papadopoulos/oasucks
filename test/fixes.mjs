@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { TOUR_FLAG } from "./_tour.mjs";
+import { mustFindBrowser } from "../tools/browser.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUB = path.join(REPO, "public");
@@ -92,7 +93,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, r));
 const PORT = server.address().port;
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+const browser = await chromium.launch({ executablePath: mustFindBrowser() });
 
 async function open({ geo = true } = {}) {
   const c = await browser.newContext({ viewport: { width: 390, height: 800 },

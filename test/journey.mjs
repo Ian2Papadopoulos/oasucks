@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOUR_FLAG } from "./_tour.mjs";
+import { mustFindBrowser } from "../tools/browser.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 const NOW = Math.floor(Date.now() / 1000);
@@ -83,7 +84,7 @@ const PORT = server.address().port;
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { (c ? pass++ : fail++); console.log(`${c ? "  ok  " : "FAIL  "}${n}${x ? "  — " + x : ""}`); };
 
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+const browser = await chromium.launch({ executablePath: mustFindBrowser() });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true,
   isMobile: true, permissions: ["geolocation"],
   geolocation: { latitude: 37.970, longitude: 23.725, accuracy: 20 } });

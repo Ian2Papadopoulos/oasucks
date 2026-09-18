@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v97.**
+version: v98.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -22,7 +22,7 @@ becomes one marker carrying the head count.
 See [Live reports](#live-reports) for the exact rules.
 
 > The service-stats **screen** (line reliability, bunching, missing trips) was retired in
-> v18 to make room for reports, and its client code was deleted in v97 — it had been
+> v18 to make room for reports, and its client code was deleted in v98 — it had been
 > shipping in every page load for sixty versions with nothing able to open it. The
 > tracking **backend** is untouched and still collects the data, so the screen can come
 > back from `/track/*` whenever it earns its place. See [TRACKING-SETUP.md](TRACKING-SETUP.md).
@@ -40,6 +40,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `test/` | `npm test` — 922 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app **and Cloudflare** how things are, and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
+| `tools/browser.mjs` | Finds a browser to drive without downloading one. `playwright-core` ships no browsers on purpose, so a fresh machine used to be told to `npx playwright install` — fetching a second Chromium next to the one already in Program Files. This checks `CHROME_PATH`, then where Chrome, Chromium and Edge actually live on this platform, and only then gives up, with both ways out. Used by every test and tool that drives a browser. |
 | `tools/sim-boot.mjs` | `npm run sim:boot` — replays the first ten seconds of a cold start in a real browser with a real geolocation delay, printing every request with its coordinates and what the board said at each half second. `GPS_DELAY_MS` and `LASTPOS_AGE_MIN` set the conditions. "It opens on Syntagma and takes a couple of refreshes" is a claim about a three-second window; this is how you settle it. |
 | `tools/metrics.mjs` | `npm run metrics` — one row per day of requests, cache hits, Cloudflare's unique-visitor estimate and blocked threats. Needs a read-only Analytics token; see `DEPLOY.md`. Reads nothing and changes nothing. |
 | `tools/icons.mjs` | `npm run icons` — rebuilds the PWA icons from the mark. Run it whenever `.mark` changes; `test/brand.mjs` fails if you don't. |
@@ -130,7 +131,7 @@ The app auto-detects its backend at startup:
   used to be a third mode here that routed every call through free open CORS relays, so
   one 404 from the Worker could silently start sending riders' coordinates to a
   stranger's server for the rest of the session, with nothing on screen to say so.
-  Removed in v97 — a missing backend is now a missing backend.
+  Removed in v98 — a missing backend is now a missing backend.
 
 ## Deploy in ~5 minutes
 
@@ -925,7 +926,7 @@ Asking for line 022 used to return four rows reading `Ν. ΚΥΨΕΛΗ`, `Ν. Κ
 `ΑΚΑΔΗΜΙΑ`, `ΑΚΑΔΗΜΙΑ` — two pairs of identical words with no way to choose between them
 except at random. It now returns as many rows as there are journeys, each nameable.
 
-v92 disambiguated those with a letter — `Ν. ΚΥΨΕΛΗ ᴬ` / `ᴮ` — and v97 took it back out. A
+v92 disambiguated those with a letter — `Ν. ΚΥΨΕΛΗ ᴬ` / `ᴮ` — and v98 took it back out. A
 letter is a code the rider has to decode and cannot act on; the origin is the actual
 difference between the two journeys, in words they already know. `ΑΚΑΔΗΜΙΑ - Ν. ΚΥΨΕΛΗ`
 against `ΠΛ. ΒΑΘΗΣ - Ν. ΚΥΨΕΛΗ` needs no legend.
@@ -1127,7 +1128,7 @@ instead of only a tally, and `circuitState().lastFail` carries it into every dia
 Worker was there before trusting it. First by calling `/api`, which the Worker answers by
 calling OASA — so a slow upstream convinced it there was no backend at all, and it spent
 the rest of the session on third-party CORS proxies: no stops, no markers, no error.
-(Those proxies are gone as of v97; see above.)
+(Those proxies are gone as of v98; see above.)
 Then, briefly, by calling `/health`, which asked the right question but still hung the
 entire boot on one request winning. Both failed in production. Both looked to the rider
 like an app that simply does not work.

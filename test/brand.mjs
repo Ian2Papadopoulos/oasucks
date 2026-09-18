@@ -8,6 +8,7 @@ import { chromium } from "playwright-core";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mustFindBrowser } from "../tools/browser.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let pass = 0, fail = 0;
@@ -170,7 +171,7 @@ console.log("\n— the icons were regenerated, not left behind —");
      yellow in it, and one rendered from a stale lockup has the wrong
      proportions. Forgetting `npm run icons` after changing `.mark` fails
      here rather than shipping last year's logo to everyone who installs. */
-  const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+  const browser = await chromium.launch({ executablePath: mustFindBrowser() });
   const page = await (await browser.newContext()).newPage();
   for (const f of ["icon-192.png", "icon-512.png", "icon-maskable-512.png"]) {
     const b64 = readFileSync(path.join(REPO, "public", f)).toString("base64");

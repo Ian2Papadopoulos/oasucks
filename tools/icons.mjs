@@ -15,6 +15,7 @@ import { writeFileSync } from "node:fs";
 import { Buffer } from "node:buffer";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mustFindBrowser } from "./browser.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(REPO, "public");
@@ -115,7 +116,7 @@ function share(w, h) {
   </div>`;
 }
 
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+const browser = await chromium.launch({ executablePath: mustFindBrowser() });
 for (const [file, size, scale] of [
   /* The struck lockup is wider and shallower than the one it replaced, so
      the same width fraction left it floating in space. These are chosen so

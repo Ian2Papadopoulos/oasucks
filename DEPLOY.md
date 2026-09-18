@@ -9,6 +9,20 @@ the steps below are the two that need your login, plus checks.
 
 ---
 
+
+### Running the tests and the simulator
+
+```powershell
+npm install          # once — playwright-core and wrangler are dev dependencies
+npm test             # 922 assertions
+npm run sim:boot     # the first ten seconds of a cold start, replayed
+```
+
+`playwright-core` ships **no browsers**, which is why the repo installs small. The tools
+find Chrome, Chromium or Edge where it already lives on your machine; set `CHROME_PATH` if
+yours is somewhere unusual. `npx playwright install chromium` also works, but downloads a
+second browser you probably do not need.
+
 ## What you need
 
 - **Node.js 18+** — get the LTS installer from https://nodejs.org and install it.
@@ -278,7 +292,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v97",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v98",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 

@@ -13,6 +13,7 @@ import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { mustFindBrowser } from "../tools/browser.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUB = path.join(REPO, "public");
@@ -38,7 +39,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, r));
 const PORT = server.address().port;
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+const browser = await chromium.launch({ executablePath: mustFindBrowser() });
 
 /* Open legal.html with `lang` already in localStorage, exactly as the app
    would have left it, and read back what is actually visible. */

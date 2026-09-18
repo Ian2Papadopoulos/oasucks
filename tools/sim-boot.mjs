@@ -25,8 +25,13 @@ catch (_) {
 import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const PUB = new URL("../public", import.meta.url).pathname;
+/* fileURLToPath, not .pathname: on Windows the latter yields
+   "/C:/Users/..." and every path.join below quietly misses, so the server
+   served nothing and the simulation reported an empty board as if that
+   were a finding. */
+const PUB = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 const REAL = { lat: 38.0121, lng: 23.7550 };          // Ν. Ψυχικό, far from Syntagma
 const SYNTAGMA = { lat: 37.9755, lng: 23.7348 };
 const GPS_DELAY_MS = Number(process.env.GPS_DELAY_MS || 3000);
@@ -68,7 +73,16 @@ const srv = http.createServer((q, r) => {
 await new Promise(r => srv.listen(0, r));
 const PORT = srv.address().port;
 
-const b = await chromium.launch({ executablePath: process.env.CHROME_PATH });
+const { findBrowser, noBrowserHelp } = await import("./browser.mjs");
+const exe = findBrowser();
+if (!exe) { console.error(noBrowserHelp()); process.exit(2); }
+let b;
+try { b = await chromium.launch({ executablePath: exe }); }
+catch (e) {
+  console.error(`\nCould not start ${exe}\n${String(e.message || e).split("\n")[0]}`);
+  console.error(noBrowserHelp());
+  process.exit(2);
+}
 /* No position at all until the delay — a cold radio, which is what the
    first launch of the morning actually is. Playwright answers
    getCurrentPosition with POSITION_UNAVAILABLE while none is set. */
@@ -85,6 +99,21 @@ await ctx.addInitScript(([age]) => {
 const page = await ctx.newPage();
 page.on("pageerror", e => mark("PAGE ERROR: " + e.message));
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded" });
+/* A simulation that reports an empty board as if that were a finding is
+   worse than one that fails: it is confidently wrong. Prove the app is
+   actually on screen before believing anything that follows. */
+try {
+  /* A function declaration becomes a window property; `let here` does
+     not, which is what made the first version of this check lie. */
+  await page.waitForFunction(() => typeof window.renderView === "function",
+    null, { timeout: 8000 });
+} catch (_) {
+  console.error(`\nThe app never loaded. Serving from: ${PUB}`);
+  console.error(existsSync(path.join(PUB, "index.html"))
+    ? "index.html is there, so the page itself failed — check the console output above."
+    : "index.html is NOT there. Run this from the repository root.");
+  await b.close(); srv.close(); process.exit(2);
+}
 
 // GPS arrives after a delay, as a cold radio does
 setTimeout(() => ctx.setGeolocation({ latitude: REAL.lat, longitude: REAL.lng, accuracy: 12 })

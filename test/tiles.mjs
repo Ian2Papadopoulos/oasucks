@@ -9,6 +9,7 @@ import path from "node:path";
 
 import { fileURLToPath } from "node:url";
 import { TOUR_FLAG } from "./_tour.mjs";
+import { mustFindBrowser } from "../tools/browser.mjs";
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "public");
 const NOW = Math.floor(Date.now() / 1000);
 const LAT = 37.9760, LNG = 23.7300;
@@ -54,7 +55,7 @@ const PORT = server.address().port;
 let pass = 0, fail = 0;
 const ok = (n, c, x = "") => { (c ? pass++ : fail++); console.log(`${c ? "  ok  " : "FAIL  "}${n}${x ? "  — " + x : ""}`); };
 
-const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined });
+const browser = await chromium.launch({ executablePath: mustFindBrowser() });
 
 async function run(key) {
   ROOT = withKey(key === null ? "" : key);
