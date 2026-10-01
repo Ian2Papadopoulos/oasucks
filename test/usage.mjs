@@ -783,6 +783,36 @@ console.log("\n— a ceiling on what we ask of OASA —");
     budget.hits = 0; budget.misses = 0; budget.aged = 0;`, ctx);
 }
 
+/* A 5xx is the one failure nobody is watching: the rider sees a dead app
+   and closes it, and the only trace is a number on a dashboard read days
+   later. */
+console.log("\n— the server telling its operator it broke —");
+{
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("a throw no longer becomes Cloudflare's error page in silence",
+    /async function route\(req, env, ctx\)/.test(w)
+    && /res = await route\(req, env, ctx\)/.test(w)
+    && /catch \(e\) \{\s*noteServerError/.test(w));
+  ok("...and a 5xx we RETURN counts too, not only one we throw",
+    /if \(res && res\.status >= 500\) noteServerError/.test(w),
+    "most 5xx are returned deliberately, not thrown");
+  ok("the operator is told at most once per cooldown, carrying the count",
+    /ADMIN_ALERT_COOLDOWN_MS = 15 \* 60 \* 1000/.test(w)
+    && /\$\{n\} server errors in \$\{mins\}′/.test(w),
+    "sixty-six errors must not be sixty-six notifications");
+  ok("...and a dead admin subscription is forgotten rather than retried forever",
+    /if \(r && r\.gone\) await env\.ALERTS\.delete\("admin:sub"\)/.test(w));
+  /* The limit is worth stating in the code, because it changes what
+     silence means: a 522 is Cloudflare answering when the Worker never
+     ran, so nothing here can see it. */
+  ok("the blind spot is written down, not glossed over",
+    /522 or 524 is\s+\* Cloudflare answering on our behalf when the Worker never ran/.test(w));
+
+  const noTok = await call("/admin/notify?sub=x", { method: "GET", env: { DB } });
+  ok("registering the operator's device needs the admin token",
+    noTok.status === 403, String(noTok.status));
+}
+
 /* The figure above is the one the whole upstream-load story rests on, and
    until now it was unreadable in practice. It lived in one isolate's
    memory, and a checkup is a rare outside request that nearly always

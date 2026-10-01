@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v103";
+const APP_VERSION = "v104";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -3517,8 +3517,18 @@ async function refineBoardings(plan, g, budget) {
       if (deps && i >= 0) {
         const offset = runToStop(seq, i, at);
         const wantAt = at.min + 0;                     // clock time we reach the stop
-        const next = deps.map(d => d + offset).find(t => t >= wantAt - 0.5);
-        if (next != null && next - wantAt <= 180) { wait = next - wantAt; basis = "timetable"; }
+        const shifted = deps.map(d => d + offset);
+        const idx = shifted.findIndex(t => t >= wantAt - 0.5);
+        const next = idx >= 0 ? shifted[idx] : null;
+        if (next != null && next - wantAt <= 180) {
+          wait = next - wantAt; basis = "timetable";
+          /* The departure AFTER the one we are planning on. Free — the
+             timetable is already in hand — and it answers the question a
+             rider actually asks at the kerb, which is not "when is the
+             bus" but "what does it cost me if I miss it". */
+          const after = shifted[idx + 1];
+          if (after != null && after - next <= 120) leg.thenMin = Math.round(after - wantAt);
+        }
       }
     }
 
@@ -3922,8 +3932,87 @@ async function handleScan(url) {
 
 /* ============================ routing ============================= */
 
+/* ---- telling the operator their own server broke -------------------
+ *
+ * A 5xx is the one failure nobody is watching: the rider sees a dead app
+ * and closes it, and the only trace is a number on a dashboard read days
+ * later. So the server tells its operator directly, through the same push
+ * channel the alerts use.
+ *
+ * Throttled hard and deliberately. Sixty-six errors in a week must not be
+ * sixty-six notifications — a channel that cries that often gets muted,
+ * and then it is worth nothing on the day it matters. One push per
+ * cooldown, carrying the COUNT since the last one, so a storm reads as a
+ * storm in a single line.
+ *
+ * Honest limitation, because it changes what you should conclude from
+ * silence: this only sees what the Worker itself returns. A 522 or 524 is
+ * Cloudflare answering on our behalf when the Worker never ran, so no code
+ * here can observe it. Those need Cloudflare's own Notifications. */
+const ADMIN_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
+const errState = { count: 0, since: 0, lastSent: 0 };
+async function notifyAdmin(env, note) {
+  if (!pushReady(env)) return false;
+  const id = await env.ALERTS.get("admin:sub");
+  if (!id) return false;
+  const sub = await env.ALERTS.get(`sub:${id}`, "json");
+  if (!sub) return false;
+  const r = await sendPush(sub, { url: "./", ...note }, env);
+  // a subscription the push service has retired is worth forgetting
+  if (r && r.gone) await env.ALERTS.delete("admin:sub").catch(() => {});
+  return !!(r && r.status < 300);
+}
+function noteServerError(env, ctx, status, path, detail) {
+  errState.count++;
+  if (!errState.since) errState.since = Date.now();
+  if (!ctx) return;
+  const now = Date.now();
+  if (now - errState.lastSent < ADMIN_ALERT_COOLDOWN_MS) return;
+  errState.lastSent = now;
+  const n = errState.count, mins = Math.max(1, Math.round((now - errState.since) / 60000));
+  errState.count = 0; errState.since = now;
+  ctx.waitUntil(notifyAdmin(env, {
+    title: `OASAx — ${status}`,
+    body: n > 1 ? `${n} server errors in ${mins}′. Latest ${status} on ${path}.`
+                : `${status} on ${path}${detail ? ` — ${String(detail).slice(0, 90)}` : ""}`,
+    tag: "admin-5xx",
+  }).catch(() => { }));
+}
+
 export default {
+  /* A thin wrapper, and the only reason it exists: without it a throw
+     anywhere below became Cloudflare's own error page, and nobody found
+     out. Now every 5xx — ours by return or ours by exception — is counted
+     and, past the cooldown, sent to the operator's phone. */
   async fetch(req, env, ctx) {
+    let res;
+    try {
+      res = await route(req, env, ctx);
+    } catch (e) {
+      noteServerError(env, ctx, 500, safePath(req), String((e && e.message) || e));
+      return json({ error: "server error" }, 500);
+    }
+    if (res && res.status >= 500) noteServerError(env, ctx, res.status, safePath(req));
+    return res;
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      const T = { cron: event.cron || null };
+      try { await cronRun(event, env, T); }
+      catch (e) { T.threw = String((e && e.stack) || e).slice(0, 400); }
+      if (T.due || T.threw) {
+        await setMeta(env, "cron_trace",
+          JSON.stringify({ at: Math.floor(Date.now() / 1000), ...T })).catch(() => {});
+      }
+    })());
+  },
+};
+function safePath(req) {
+  try { return new URL(req.url).pathname.slice(0, 120); } catch (_) { return "?"; }
+}
+
+async function route(req, env, ctx) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     noteSelfOrigin(url, env, ctx);
@@ -4594,6 +4683,28 @@ export default {
       return handleScan(url);
     }
 
+    /* Which device gets told when the server breaks. The id is the one the
+       app already holds in localStorage as `subId`, so there is no new
+       credential and no second subscription — the operator's phone is just
+       a rider's phone that also gets the bad news. */
+    if (p.endsWith("/admin/notify")) {
+      if (!adminOK(req, env)) return json({ error: "admin token required" }, 403);
+      if (!pushReady(env)) return json({ error: "push not configured" }, 501);
+      if (url.searchParams.get("off") === "1") {
+        await env.ALERTS.delete("admin:sub");
+        return json({ ok: true, admin: null });
+      }
+      const sub = url.searchParams.get("sub");
+      if (!sub) return json({ error: "sub required — the subId the app stores" }, 400);
+      if (!(await env.ALERTS.get(`sub:${sub}`))) return json({ error: "unknown subscription" }, 404);
+      await env.ALERTS.put("admin:sub", sub);
+      /* Sent immediately, because "it is configured" and "it can actually
+         reach you" are different claims and only one of them is useful. */
+      const ok = await notifyAdmin(env, { title: "OASAx admin",
+        body: "Server-error alerts are on for this device.", tag: "admin-test" });
+      return json({ ok: true, admin: sub, delivered: ok });
+    }
+
     if (p.endsWith("/push/key")) {
       if (!pushReady(env)) return json({ error: "push not configured" }, 501);
       return json({ key: env.VAPID_PUBLIC_KEY });
@@ -4735,29 +4846,7 @@ export default {
     }
 
     return json({ error: "not found" }, 404);
-  },
-
-  async scheduled(event, env, ctx) {
-    /* Everything in here runs inside ctx.waitUntil, and a promise handed to
-       waitUntil that REJECTS is discarded without a word — no log, no
-       retry, nothing on the phone. That is not a place to let an exception
-       find its own way out: one throw anywhere below used to cost every
-       alert after it, invisibly and forever. So the whole body is caught,
-       and what happened is written down. */
-    ctx.waitUntil((async () => {
-      const T = { cron: event.cron || null };
-      try { await cronRun(event, env, T); }
-      catch (e) { T.threw = String((e && e.stack) || e).slice(0, 400); }
-      /* Only runs that had something to do are kept. A quiet minute
-         overwriting the last interesting one is how a trace becomes
-         useless — and most minutes are quiet by design. */
-      if (T.due || T.threw) {
-        await setMeta(env, "cron_trace",
-          JSON.stringify({ at: Math.floor(Date.now() / 1000), ...T })).catch(() => {});
-      }
-    })());
-  },
-};
+}
 
 /* Poke our own public URL so the alert run happens inside a request, and
    only do the work here if that is impossible. The in-process path stays

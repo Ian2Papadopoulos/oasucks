@@ -759,6 +759,15 @@
   .jp-h{font-size:12px;font-weight:700;line-height:1.35}
   .jp-d{font-size:10.5px;color:var(--ink3);margin-top:2px;line-height:1.45}
   .jp-t{font-size:11px;font-weight:700;white-space:nowrap;margin-left:auto}
+  /* The clock times are the spine of the step list — the one thing a
+     rider scans down — so they are set apart from the prose around them
+     rather than buried in it. */
+  .jp-clock{font-variant-numeric:tabular-nums;letter-spacing:.02em;
+    background:var(--rule2);padding:1px 4px;border-radius:2px;margin-right:4px}
+  .jp-basis{font-size:9px;font-weight:400;color:var(--ink3);margin-left:5px;
+    letter-spacing:.06em;text-transform:lowercase}
+  .jp-next{font-size:10px;color:var(--ink3);margin-top:3px;
+    border-left:2px solid var(--rule);padding-left:6px}
   #jpmap{flex:1;min-height:190px;position:relative;z-index:0;background:#EDEDEA}
   .jp-note{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--marker2);
     padding:8px 10px;font-size:10.5px;color:var(--ink2);line-height:1.5;margin-bottom:10px;
@@ -1004,7 +1013,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v103</span></div>
+  <div class="foot"><span class="ver">v104</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1422,6 +1431,7 @@ const T={
   jpWalkAll:"Με τα πόδια", jpWalk:"Περπάτημα", jpTo2:"προς",
   jpMin:"λεπτά", jpChanges:n=>n===0?"χωρίς αλλαγή":(n===1?"1 αλλαγή":`${n} αλλαγές`),
   jpStops:n=>n===1?"1 στάση":`${n} στάσεις`,
+  jpArriveAt:h=>`Άφιξη ${h}`, jpThen:h=>`Επόμενο ${h}`,
   jpWait:"αναμονή", jpRide:"διαδρομή", jpBoard:"Επιβίβαση", jpAlight:"Αποβίβαση", jpDest:"Προορισμός", jpLive:"Ζωντανές αφίξεις", jpSched:"Βάσει δρομολογίων", jpEst:"Εκτίμηση",
   jpNoteSched:"Μια ανταπόκριση είναι πολύ μακριά για ζωντανά δεδομένα: κανένα όχημα δεν έχει ακόμη δρομολογηθεί. Ο χρόνος βγήκε από τα δημοσιευμένα δρομολόγια της γραμμής.",
   jpNoteEst:"Οι χρόνοι του μετρό είναι εκτίμηση. Το τηλεματικό σύστημα του ΟΑΣΑ δεν δίνει θέσεις συρμών, οπότε χρησιμοποιούνται οι δημοσιευμένες συχνότητες ανά ημέρα και ώρα. Το ίδιο ισχύει όπου δεν βρέθηκε πίνακας δρομολογίων.",
@@ -1721,6 +1731,7 @@ const T={
   jpWalkAll:"Walk", jpWalk:"Walk", jpTo2:"to",
   jpMin:"min", jpChanges:n=>n===0?"no changes":(n===1?"1 change":`${n} changes`),
   jpStops:n=>n===1?"1 stop":`${n} stops`,
+  jpArriveAt:h=>`Arrive ${h}`, jpThen:h=>`next ${h}`,
   jpWait:"wait", jpRide:"ride", jpBoard:"Board", jpAlight:"Get off", jpDest:"Destination", jpLive:"Live arrivals", jpSched:"From the timetable", jpEst:"Estimated",
   jpNoteSched:"One connection is too far ahead for live data: no vehicle has been dispatched for it yet. That time comes from the line's published timetable instead.",
   jpNoteEst:"Metro times are estimates. OASA's telematics feed carries no trains, so this uses the published frequencies for the day and hour. The same applies anywhere no timetable could be read.",
@@ -5534,10 +5545,31 @@ function legBasis(l) {
 }
 
 /* The detail view: the legs written out, and the whole thing drawn. */
+/* ---- the clock a rider actually reads ------------------------------
+ * A plan written only in durations — "18′ · wait 6′ · ride 12′" — makes
+ * the reader do the arithmetic that decides whether they can make it, at
+ * the kerb, in a hurry. Every leg already carries `startMin`, its offset
+ * from the plan's departure, and the response carries `departAt`. So the
+ * clock times were always derivable and simply were not shown. No extra
+ * request, no extra data: just stop making the rider add up. */
+function planBase(){ return (jp.res && jp.res.departAt) || Date.now(); }
+function clockAt(min){ return new Date(planBase() + Math.round(min * 60000)); }
+function hhmm(d){
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+/* A leg with no offset gets NO clock, not the plan's start time. Falling
+   back to zero printed a confident, wrong departure on every leg that
+   happened to be missing one — which is worse than printing nothing, and
+   is the same mistake as counting a bus down to NOW because we could. */
+function stepClock(min){
+  return isFinite(min) ? `<span class="jp-clock">${hhmm(clockAt(min))}</span> ` : "";
+}
 function openItinerary(it) {
   jp.current = it;
+  const arrive = hhmm(clockAt(it.totalMin));
   $("#jpr-title").textContent = `${it.totalMin} ${t("jpMin")}`;
-  $("#jpr-sub").textContent = `${t("jpChanges")(it.changes)} · ${basisLine(it)}`;
+  $("#jpr-sub").textContent =
+    `${t("jpArriveAt")(arrive)} · ${t("jpChanges")(it.changes)} · ${basisLine(it)}`;
   $("#jpr").classList.add("on");
   const notes = [];
   // first, because on a walk-only itinerary it is the whole story
@@ -5547,21 +5579,38 @@ function openItinerary(it) {
   if (it.legs.some(l => l.mode !== "walk" && l.basis === "estimated")) notes.push(t("jpNoteEst"));
   if (it.legs.some(l => l.mode === "walk" && l.basis !== "routed")) notes.push(t("jpNoteWalk"));
   const nm = o => o ? (LANG === "en" ? (o.en || o.el) : (o.el || o.en)) : "";
+  /* Three lines per step, never four, and each one answers a different
+     question: WHEN, WHAT, and what it costs to miss it. The old rows put
+     wait, ride and provenance on one line, which is three numbers a rider
+     has to sum before learning anything. */
   const rows = it.legs.map(l => {
+    const at = isFinite(l.startMin) ? l.startMin : null;
     if (l.mode === "walk") {
       const dest = nm(l.to) || t("jpDest");
-      return `<div class="jp-step"><div class="jp-ic">⏱</div><div class="jp-body">
-        <div class="jp-h">${esc(t("jpWalk"))} ${esc(fmtDist(l.metres))}</div>
+      return `<div class="jp-step"><div class="jp-ic">🚶</div><div class="jp-body">
+        <div class="jp-h">${stepClock(at)}${esc(t("jpWalk"))} ${esc(fmtDist(l.metres))}</div>
         <div class="jp-d">${esc(t("jpTo2"))} ${esc(dest)}</div></div>
         <div class="jp-t">${Math.round(l.min)}′</div></div>`;
     }
     const head = l.headsign ? nm(l.headsign) : "";
-    const basis = legBasis(l);
+    /* The DEPARTURE, not the wait. `startMin` is when the rider reaches
+       the stop; the bus leaves `wait` minutes after that, and it is the
+       departure a rider sets their pace by. */
+    const dep = at == null ? null : at + (l.wait || 0);
+    const off = dep == null ? null : dep + (l.rideMin || 0);
+    const then = (at != null && l.thenMin != null)
+      ? `<div class="jp-next">${esc(t("jpThen")(hhmm(clockAt(at + l.thenMin))))}</div>` : "";
+    /* Kept when there is no clock to show it as: without a departure time
+       the wait is the only thing that answers "how long am I standing
+       here", and dropping both would be a downgrade. */
+    const waitLine = dep == null
+      ? `<div class="jp-d">${esc(t("jpWait"))} ${Math.round(l.wait || 0)}′ · ${esc(t("jpRide"))} ${Math.round(l.rideMin || 0)}′</div>` : "";
     return `<div class="jp-step"><div class="jp-ic line">${esc(String(l.line))}</div><div class="jp-body">
-      <div class="jp-h">${esc(t("jpBoard"))} ${esc(nm(l.from))}</div>
-      <div class="jp-d">${esc(modeName(l.mode))}${head ? " · " + esc(head) : ""} · ${esc(t("jpStops")(l.stops))} · ${esc(t("jpAlight"))} ${esc(nm(l.to))}</div>
-      <div class="jp-d">${esc(t("jpWait"))} ${Math.round(l.wait)}′ · ${esc(t("jpRide"))} ${Math.round(l.rideMin)}′ · ${esc(basis)}</div>
-      </div><div class="jp-t">${Math.round(l.min)}′</div></div>`;
+      <div class="jp-h">${stepClock(dep)}${esc(nm(l.from))}
+        <span class="jp-basis">${esc(legBasis(l))}</span></div>
+      <div class="jp-d">${esc(modeName(l.mode))}${head ? " · " + esc(head) : ""} · ${esc(t("jpStops")(l.stops))}</div>
+      <div class="jp-d">${stepClock(off)}${esc(t("jpAlight"))} ${esc(nm(l.to))}</div>
+      ${waitLine}${then}</div><div class="jp-t">${Math.round(l.min)}′</div></div>`;
   }).join("");
   $("#jpr-strip").innerHTML = notes.map(n => `<div class="jp-note">${esc(n)}</div>`).join("") + rows;
   drawItinerary(it);
@@ -5681,7 +5730,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v103</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v104</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

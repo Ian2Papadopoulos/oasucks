@@ -27,32 +27,32 @@ let planBody = {
   walkRouting: false,
   itineraries: [
     { kind: "best", totalMin: 52, changes: 2, vehicles: 3, basis: "mixed", legs: [
-      { mode: "walk", min: 5, metres: 380, basis: "estimated",
+      { mode: "walk", min: 5, metres: 380, basis: "estimated", startMin: 0,
         to: { el: "ΠΛΑΤΕΙΑ", en: "SQUARE" }, path: [P(37.9700, 23.7250), P(37.9760, 23.7300)] },
       { mode: "bus", line: "608", routeCode: "r1", headsign: { el: "ΚΕΝΤΡΟ", en: "CENTRE" },
-        wait: 4, rideMin: 11, min: 15, stops: 6, basis: "live",
+        wait: 4, rideMin: 11, min: 15, stops: 6, basis: "live", startMin: 5,
         from: { el: "ΠΛΑΤΕΙΑ", en: "SQUARE" }, to: { el: "ΟΜΟΝΟΙΑ", en: "OMONIA" },
         path: [P(37.9760, 23.7300), P(37.9843, 23.7281)] },
-      { mode: "walk", min: 2, metres: 140, basis: "estimated",
+      { mode: "walk", min: 2, metres: 140, basis: "estimated", startMin: 20,
         to: { el: "Ομόνοια", en: "Omonia" }, path: [P(37.9843, 23.7281), P(37.9845, 23.7285)] },
-      { mode: "metro", line: "2", wait: 4, rideMin: 6, min: 10, stops: 3, basis: "estimated",
+      { mode: "metro", line: "2", wait: 4, rideMin: 6, min: 10, stops: 3, basis: "estimated", startMin: 22,
         from: { el: "Ομόνοια", en: "Omonia" }, to: { el: "Σύνταγμα", en: "Syntagma" },
         path: [P(37.9845, 23.7285), P(37.9755, 23.7353)] },
       { mode: "tram", line: "6", headsign: { el: "ΒΟΥΛΑ", en: "VOULA" },
-        wait: 18, rideMin: 0, min: 18, stops: 4, basis: "timetable",
+        wait: 18, rideMin: 0, min: 18, stops: 4, basis: "timetable", thenMin: 38, startMin: 32,
         from: { el: "Σύνταγμα", en: "Syntagma" }, to: { el: "ΦΙΞ", en: "FIX" },
         path: [P(37.9755, 23.7353), P(37.9642, 23.7265)] },
-      { mode: "walk", min: 2, metres: 150, basis: "estimated", to: null,
+      { mode: "walk", min: 2, metres: 150, basis: "estimated", to: null, startMin: 50,
         path: [P(37.9642, 23.7265), P(37.9630, 23.7250)] },
     ] },
     { kind: "fewer", totalMin: 61, changes: 0, vehicles: 1, basis: "live", legs: [
-      { mode: "walk", min: 7, metres: 520, basis: "routed",
+      { mode: "walk", min: 7, metres: 520, basis: "routed", startMin: 0,
         to: { el: "ΠΛΑΤΕΙΑ", en: "SQUARE" }, path: [P(37.9700, 23.7250), P(37.9760, 23.7300)] },
       { mode: "trolley", line: "11", routeCode: "r2", headsign: { el: "ΠΑΓΚΡΑΤΙ", en: "PAGRATI" },
-        wait: 6, rideMin: 42, min: 48, stops: 19, basis: "live",
+        wait: 6, rideMin: 42, min: 48, stops: 19, basis: "live", startMin: 7,
         from: { el: "ΠΛΑΤΕΙΑ", en: "SQUARE" }, to: { el: "ΤΕΡΜΑ", en: "TERMA" },
         path: [P(37.9760, 23.7300), P(37.9630, 23.7250)] },
-      { mode: "walk", min: 6, metres: 430, basis: "routed", to: null,
+      { mode: "walk", min: 6, metres: 430, basis: "routed", to: null, startMin: 55,
         path: [P(37.9630, 23.7250), P(37.9620, 23.7240)] },
     ] },
   ],
@@ -170,6 +170,35 @@ ok("a timetabled one says it came from the timetable", /From the timetable/i.tes
 ok("...and the metro says estimated", /Estimated/i.test(steps));
 ok("rides name their mode, not just a number",
    /Bus/.test(steps) && /Tram/.test(steps) && /Metro/.test(steps), steps.slice(0, 300));
+/* A plan written only in durations makes the reader do the arithmetic
+   that decides whether they can make it, at the kerb, in a hurry. Every
+   leg already carried `startMin` and the response carried `departAt`, so
+   the clock times were always derivable and simply were not shown. */
+{
+  const clocks = await page.locator("#jpr-strip .jp-clock").allInnerTexts();
+  ok("every step says when, not just how long",
+    clocks.length >= 6 && clocks.every(c => /^\d{2}:\d{2}$/.test(c.trim())),
+    `${clocks.length}: ${clocks.slice(0, 4).join(" ")}`);
+  const sub = await page.locator("#jpr-sub").innerText();
+  ok("...and the header says when you get there",
+    /\b\d{2}:\d{2}\b/.test(sub), sub);
+  /* Strictly non-decreasing. A step list whose clock goes backwards is
+     worse than one with no clock at all, and the first version of this
+     check had a midnight escape hatch wide enough to pass on a leg whose
+     offset was missing entirely — which is exactly what it was hiding. */
+  const mins = clocks.map(c => { const [h, m] = c.trim().split(":").map(Number); return h * 60 + m; });
+  ok("...and the times only ever move forwards",
+    mins.every((v, i) => i === 0 || v >= mins[i - 1]), mins.join(","));
+  /* A leg with no offset must print NO time rather than the plan's start
+     time: a confident wrong departure is worse than an absent one. */
+  const noneWhenUnknown = await page.evaluate(() => stepClock(undefined) === "" && stepClock(7) !== "");
+  ok("a leg with no offset gets no clock at all, not a wrong one", noneWhenUnknown);
+  /* The departure after the one being planned on. Free — the planner
+     already had the timetable — and it answers what missing it costs. */
+  ok("a timetabled boarding offers the one after it",
+    (await page.locator("#jpr-strip .jp-next").count()) >= 1,
+    String(await page.locator("#jpr-strip .jp-next").count()));
+}
 {
   const notes = await page.locator("#jpr-strip .jp-note").allInnerTexts();
   ok("three caveats, one per thing actually guessed at", notes.length === 3, `${notes.length}`);
