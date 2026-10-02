@@ -258,8 +258,12 @@ console.log("\n— one gesture, and it shows you the choices —");
   }));
   ok("a long press on a list stop opens the menu", m.open);
   ok("...naming the stop it is about", /\w/.test(m.name), m.name);
-  ok("...offering exactly two things", m.acts.length === 2, m.acts.join(" | "));
-  ok("...pinning and an alert", /Pin/i.test(m.acts[0]) && /alert/i.test(m.acts[1]),
+  /* Three, and no more without a reason: a long-press menu is a list
+     somebody reads standing up. Pin, alert, and route-to-here — the three
+     things a stop is ever the subject of. */
+  ok("...offering exactly three things", m.acts.length === 3, m.acts.join(" | "));
+  ok("...pinning, an alert, and a route to it",
+    /Pin/i.test(m.acts[0]) && /alert/i.test(m.acts[1]) && /route/i.test(m.acts[2]),
     m.acts.join(" | "));
   /* The question "which stop is this about" is answered by the name on the
      card, not by reading the list through it. */
@@ -1129,6 +1133,84 @@ console.log("\n— the app is one thing, not the sediment of seventy versions �
   ok("...with framing, objects and form posts denied outright",
     /frame-ancestors 'none'/.test(hdr) && /object-src 'none'/.test(hdr)
     && /form-action 'none'/.test(hdr));
+}
+
+/* Every panel in this app is an overlay, not a page, so the system back
+   button used to do the only thing left to it: leave the site. A rider
+   who opened a stop card, pressed back and lost the session does not make
+   that mistake twice — they stop opening things. */
+console.log("\n— back closes a panel, not the app —");
+{
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("opening a panel leaves a history entry to spend",
+    /history\.pushState\(\{oasax:navDepth\},""\)/.test(html));
+  ok("...and back closes the innermost open one",
+    /window\.addEventListener\("popstate"/.test(html)
+    && /const top=LAYERS\.find\(\(\[id\]\)=>layerOpen\(id\)\)/.test(html));
+  ok("...with nothing open, back still leaves — nobody is trapped",
+    /if\(!top\)\{ navDepth=0; return; \}/.test(html),
+    "a back button that never exits is its own kind of rude");
+  ok("...and closing by hand spends the entry too",
+    /history\.go\(-extra\)/.test(html),
+    "otherwise the next back press lands on a panel already gone");
+  /* Detected rather than announced: a panel added later is one line in
+     the list, not a forgotten pushState in whoever opens it. */
+  ok("panels are watched, not instrumented one by one",
+    /new MutationObserver\(syncHistory\)/.test(html));
+
+  const v = await open();
+  const depth0 = await v.page.evaluate(() => history.length);
+  await v.page.evaluate(() => { openStopCard(state.stops[0]); });
+  await v.page.waitForTimeout(250);
+  const mid = await v.page.evaluate(() => ({
+    open: document.getElementById("stopcard").classList.contains("on"),
+    grew: history.length, depth: navDepth,
+  }));
+  ok("opening the stop card pushes exactly one entry",
+    mid.open && mid.depth === 1, JSON.stringify(mid));
+  await v.page.goBack();
+  await v.page.waitForTimeout(350);
+  const after = await v.page.evaluate(() => ({
+    open: document.getElementById("stopcard").classList.contains("on"),
+    here: location.pathname, depth: navDepth,
+  }));
+  ok("...and back closes it instead of leaving the app",
+    after.open === false && after.depth === 0, JSON.stringify(after));
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+
+/* A full-screen takeover put the ✕ in the far corner where nobody looks,
+   so the only way out of a line preview was a hunt. */
+console.log("\n— the route preview is a card you can tap out of —");
+{
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("the preview sits on a dimmed backdrop rather than owning the screen",
+    /\.rp\.card\{background:rgba\(23,23,26,\.45\)/.test(html)
+    && /\.rp\.card>\.rp-card\{/.test(html));
+  ok("...and tapping the backdrop closes it",
+    /\$\("#rp"\)\.onclick=e=>\{ if\(e\.target\.id==="rp"\) closeRP\(\); \}/.test(html),
+    "the gesture everyone tries first");
+  ok("a line opens on a tap now, with the hold still working",
+    /row\.onclick=seeRoute;\n\s*onLongPress\(row,seeRoute\)/.test(html),
+    "seeing where a line goes was behind the least discoverable gesture");
+  /* Previewing a line from search drew the whole route and left the rider
+     to find themselves on it. */
+  ok("a whole-route preview says which stop is yours",
+    /rp-near/.test(html) && /haversine\(here\.lat,here\.lng,x\.lat,x\.lng\)/.test(html));
+  ok("...and what the next vehicle on it is doing",
+    /oasa\("getStopArrivals",best\.code\)/.test(html),
+    "a map without an ETA is not a decision");
+
+  ok("a short result list no longer drags the board behind it",
+    /overscroll-behavior:contain/.test(html));
+  ok("search opens in the middle, not welded to the keyboard",
+    /\.sheet-bg\.mid\{align-items:center/.test(html)
+    && /<div class="sheet-bg mid" id="linebg">/.test(html));
+  /* "Press and hold the name for options" is a sentence nobody reads
+     twice, printed next to every stop forever. */
+  ok("the long-press sentence is gone, replaced by a mark on the thing",
+    !/favHint/.test(html) && /\.aff\.tap\{/.test(html) && /\.aff\.hold\{/.test(html));
 }
 
 await browser.close();

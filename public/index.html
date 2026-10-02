@@ -379,6 +379,17 @@
   .stop-hd{display:flex;align-items:baseline;gap:9px;padding:11px 13px 9px;
     border-bottom:1px solid var(--toner)}
   .stop-hd .name{font-weight:700;font-size:13px;line-height:1.3;flex:1;letter-spacing:.02em}
+  /* Two marks, one meaning each. A dot responds to a tap; a bar has more
+     behind a hold. Punctuation-sized and in the faded ink, so a row reads
+     as a name with a mark after it rather than as a name with a control
+     bolted on. */
+  .aff{display:inline-block;vertical-align:middle;background:var(--ink3);
+    opacity:.55;margin-left:6px;flex:none}
+  .aff.tap{width:4px;height:4px;border-radius:50%}
+  .aff.hold{width:11px;height:3px;border-radius:2px}
+  .row .aff{margin-left:5px}
+  .afflab{font-size:9.5px;color:var(--ink3);margin-left:4px;margin-right:9px;
+    letter-spacing:.06em;text-transform:lowercase}
   .stop-hd .meta{font-size:10px;color:var(--ink3);white-space:nowrap;display:flex;gap:7px;align-items:baseline}
   .walk{color:var(--toner);font-weight:700}
   .row{display:flex;align-items:center;gap:10px;padding:9px 13px;
@@ -423,9 +434,20 @@
   /* ---------------------------- sheets --------------------------------- */
   .sheet-bg{position:fixed;inset:0;background:rgba(23,23,26,.4);z-index:3000;display:none;align-items:flex-end}
   .sheet-bg.on{display:flex}
+  /* Search is not a drawer. Pinned to the bottom edge it ends up welded
+     to the top of the on-screen keyboard, so the field you are typing in
+     sits at your thumb and the results you are reading are shoved off the
+     top. Centred, the list stays where the eye already is. */
+  .sheet-bg.mid{align-items:center;padding:14px}
+  .sheet-bg.mid>.sheet{border:2px solid var(--toner);border-radius:3px;
+    max-height:min(72vh,560px);padding-bottom:16px}
   .sheet{width:100%;max-width:520px;margin:0 auto;background:var(--paper);
     border-top:2px solid var(--toner);padding:16px 16px calc(18px + env(safe-area-inset-bottom));
-    max-height:88vh;overflow:auto}
+    max-height:88vh;overflow:auto;
+    /* A short, unscrollable result list used to hand the drag straight to
+       the board behind it, which then scrolled under the dimmed backdrop.
+       Nothing below a modal should move while the modal is up. */
+    overscroll-behavior:contain}
   /* The buttons that finish a job stay on screen while the fields above
      them scroll. Without this the alert form was taller than a laptop
      window and Save sat below the fold with nothing pointing at it — the
@@ -491,6 +513,24 @@
   /* ------------------------- route preview ----------------------------- */
   .rp{position:fixed;inset:0;z-index:3800;display:none;background:var(--paper);flex-direction:column}
   .rp.on{display:flex}
+  /* A card, not a takeover. Full-screen put the ✕ in the far corner where
+     nobody looks, so the only way out of a line preview was a hunt. As a
+     card there is a dimmed, blurred backdrop to tap — the gesture people
+     already try first — and the ✕ stays for anyone who prefers it. */
+  .rp.card{background:rgba(23,23,26,.45);align-items:center;justify-content:center;
+    padding:max(10px,env(safe-area-inset-top)) 10px max(10px,env(safe-area-inset-bottom));
+    backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+  .rp.card>.rp-card{width:100%;max-width:520px;max-height:100%;
+    background:var(--paper);border:2px solid var(--toner);border-radius:3px;
+    display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:0 10px 40px rgba(23,23,26,.35)}
+  .rp.card .rp-hd{padding:11px 13px}
+  .rp-near{flex:none;margin:0;border:0;border-top:1px solid var(--rule);
+    background:var(--marker);color:var(--toner);font:inherit;font-size:11.5px;
+    font-weight:700;padding:10px 13px;text-align:left;cursor:pointer;
+    display:flex;align-items:center;gap:8px}
+  .rp-near:active{background:var(--marker2)}
+  .rp-near .eta{margin-left:auto;font-variant-numeric:tabular-nums}
   .rp-hd{display:flex;align-items:center;gap:9px;
     padding:calc(11px + env(safe-area-inset-top)) 13px 11px;border-bottom:2px solid var(--toner);flex:none}
   .rp-tile{min-width:46px;height:30px;padding:0 7px;background:var(--toner);color:var(--paper);
@@ -1013,7 +1053,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v104</span></div>
+  <div class="foot"><span class="ver">v105</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1055,15 +1095,16 @@
   </div>
 </div>
 
-<div class="rp" id="rp">
+<div class="rp card" id="rp"><div class="rp-card">
   <div class="rp-hd">
     <div class="rp-tile" id="rp-tile">—</div>
     <div class="rp-txt"><div class="rp-title" id="rp-title">…</div><div class="rp-sub" id="rp-sub"></div></div>
     <button class="rp-x" id="rp-x">✕</button>
   </div>
   <div id="rpmap"></div>
+  <button class="rp-near" id="rp-near" hidden></button>
   <div class="rp-strip" id="rp-strip"></div>
-</div>
+</div></div>
 
 <div class="rp" id="rep">
   <div class="rp-hd">
@@ -1094,7 +1135,7 @@
   <div class="jp-out" id="jp-out"></div>
 </div>
 
-<div class="rp" id="jpr">
+<div class="rp card" id="jpr"><div class="rp-card">
   <div class="rp-hd">
     <div class="rp-tile" id="jpr-tile">⇢</div>
     <div class="rp-txt"><div class="rp-title" id="jpr-title"></div>
@@ -1103,15 +1144,15 @@
   </div>
   <div id="jpmap"></div>
   <div class="rp-strip" id="jpr-strip"></div>
-</div>
+</div></div>
 
-<div class="sheet-bg" id="jppick"><div class="sheet">
+<div class="sheet-bg mid" id="jppick"><div class="sheet">
   <h3 id="jpp-h"></h3>
   <div class="search"><input id="jpp-q" autocomplete="off" inputmode="search" /><button id="jpp-go">→</button></div>
   <div class="results" id="jpp-res"></div>
 </div></div>
 
-<div class="sheet-bg" id="linebg"><div class="sheet">
+<div class="sheet-bg mid" id="linebg"><div class="sheet">
   <h3 id="ln-h">Γραμμή</h3><p id="ln-p"></p>
   <div class="search"><input id="lnq" autocomplete="off" inputmode="search" /><button id="lngo">→</button></div>
   <div class="results" id="lnres"></div>
@@ -1137,6 +1178,7 @@
     <div class="sm-name" id="sm-name"></div>
     <button class="sm-act" id="sm-fav"></button>
     <button class="sm-act" id="sm-alert"></button>
+    <button class="sm-act" id="sm-route"></button>
     <button class="sm-cancel" id="sm-cancel"></button>
   </div>
 </div>
@@ -1480,7 +1522,7 @@ const T={
   favAlready:"Είναι ήδη αγαπημένο",
   favAdded:"★ Προστέθηκε στα αγαπημένα", favRemoved:"Αφαιρέθηκε από τα αγαπημένα",
   favFull:"Έφτασες το όριο αγαπημένων",
-  favHint:"Κράτα πατημένο το όνομα για επιλογές",
+  affTap:"πάτημα", affHold:"παρατεταμένο", rpNearest:"Κοντινότερη στάση",
   secLines:"Γραμμές", secStops:"Στάσεις",
   lineH:"Αναζήτηση",
   lineP:"Γράψε γραμμή (π.χ. 022) για τη διαδρομή της, ή όνομα στάσης/περιοχής για τις αφίξεις της.",
@@ -1625,6 +1667,7 @@ const T={
   editAlert:"Επεξεργασία",delAlert:"Διαγραφή",
   noticeH:"Εργασίες συντήρησης",noticeOk:"Εντάξει",
   smFav:"★ Αγαπημένη στάση",smUnfav:"☆ Αφαίρεση από αγαπημένα",smAlert:"🔔 Ειδοποίηση",
+  smRoute:"🧭 Διαδρομή ως εδώ",
   noRulesHow:"Κράτα πατημένη μια στάση για να βάλεις ειδοποίηση.",
   pushHow:"Δεν χρειάζεται να μένει ανοιχτή η εφαρμογή — η ειδοποίηση έρχεται και κλειστή. "+
     "Στο iPhone πρέπει πρώτα να την προσθέσεις στην αρχική οθόνη· σε καρτέλα Safari οι "+
@@ -1779,7 +1822,7 @@ const T={
   favAlready:"Already pinned",
   favAdded:"★ Pinned to favourites", favRemoved:"Removed from favourites",
   favFull:"Favourites are full",
-  favHint:"Press and hold the name for options",
+  affTap:"tap", affHold:"hold", rpNearest:"Nearest stop to you",
   secLines:"Lines", secStops:"Stops",
   lineH:"Search",
   lineP:"Type a line (e.g. 022) for its route, or a stop/place name for its arrivals.",
@@ -1924,6 +1967,7 @@ const T={
   editAlert:"Edit",delAlert:"Delete",
   noticeH:"Maintenance",noticeOk:"Got it",
   smFav:"★ Pin this stop",smUnfav:"☆ Unpin this stop",smAlert:"🔔 Set an alert",
+  smRoute:"🧭 Route to here",
   noRulesHow:"Press and hold a stop to set one.",
   pushHow:"The app does not need to stay open — alerts arrive with it closed. On iPhone you "+
     "must add it to the Home screen first; notifications never work in a Safari tab.",
@@ -2068,6 +2112,25 @@ function stopName(s){
   return n||clean(s.street)||`${t("stopFallback")} ${s.code||""}`.trim();
 }
 function arrLine(s,c){ const i=s.routeMap[c]||{}; return i.line||c||"•"; }
+/* ---- saying what a thing does without a sentence -------------------
+ * "Press and hold the name for options" is a sentence nobody reads
+ * twice, printed next to every stop forever. The gesture it describes is
+ * invisible, which is the actual problem — so mark the thing itself
+ * rather than captioning it.
+ *
+ * Two marks, one meaning each, used everywhere and nowhere else:
+ *   ●  a dot — this responds to a tap
+ *   ▬  a bar — this has more behind a hold
+ * Set in the ink colour at a size that reads as punctuation. The legend
+ * appears once, on the stop card, where somebody meeting the marks for
+ * the first time has a reason to look. */
+function aff(kind){
+  return `<span class="aff ${kind}" aria-hidden="true"></span>`;
+}
+function affLegendHtml(){
+  return `${aff("tap")}<span class="afflab">${esc(t("affTap"))}</span>`
+    + `${aff("hold")}<span class="afflab">${esc(t("affHold"))}</span>`;
+}
 function arrDest(s,c){ const i=s.routeMap[c]||{}; return destOf(LANG==="en"?(i.en||i.el):(i.el||i.en)); }
 
 /* --------------------------- long press ---------------------------- */
@@ -2419,7 +2482,10 @@ function paintRow(row,s,a){
   if(row._line!==line){ tile.textContent=line; row._line=line; }
 
   const d=arrDest(s,a.code);
-  const dHtml=(d?`<span class="to">${t("to")}</span>${esc(d)}`:"")+flagLine(reportForArrival(a));
+  /* The dot: this row opens its route on a tap. Folded into the string
+     the repaint already guards on, so it costs no extra DOM work. */
+  const dHtml=(d?`<span class="to">${t("to")}</span>${esc(d)}`:"")
+    +flagLine(reportForArrival(a))+aff("tap");
   if(row._dest!==dHtml){ dest.innerHTML=dHtml; row._dest=dHtml; }
 
   // the countdown changes on every single sweep, so it is written as text
@@ -2438,7 +2504,10 @@ function paintRow(row,s,a){
 }
 function headHtml(s){
   const w=walkMin(s.dist), fav=isFav(s.code);
-  return `<div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}</div>`+
+  /* The bar, because a stop name's extra lives behind a hold. One mark
+     on the name itself replaces a sentence under every row. */
+  return `<div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}`
+    +aff("hold")+`</div>`+
     `<div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}`+
     `<span class="num">${isFinite(s.dist)?fmtDist(s.dist):""}</span></div>`;
 }
@@ -2522,10 +2591,16 @@ function renderList(){
             if(row) row.remove();
             row=document.createElement("div"); row.className="row";
             c.rows.appendChild(row);
-            onLongPress(row,()=>{
+            /* One tap, not a hold. Seeing where a line goes is the most
+               common thing anyone wants from a row, and it was behind the
+               least discoverable gesture on the phone. Holding a row still
+               works for anyone who learned it. */
+            const seeRoute=()=>{
               const cur=byCode(key), code=row.dataset.code;
               if(cur&&code) openRoutePreview(cur,code,+row.dataset.min||0);
-            });
+            };
+            row.onclick=seeRoute;
+            onLongPress(row,seeRoute);
           }
           row.dataset.code=String(a.code); row.dataset.min=String(etaOf(a));
           paintRow(row,s,a);
@@ -3827,6 +3902,42 @@ async function openRoutePreview(stop,routeCode,minutes,meta){
     html:'<div class="board"></div>',iconSize:[20,20],iconAnchor:[10,10]}),zIndexOffset:600})
     .addTo(rlayer).bindTooltip(esc(stopName(stop)),{direction:"top",permanent:false});
   L.marker([here.lat,here.lng],{icon:meIcon(),zIndexOffset:700}).addTo(rlayer);
+
+  /* "Which of these stops is MINE, and is the bus any use to me?"
+     Previewing a line from search answers neither — it draws the whole
+     route and leaves the rider to find themselves on it. The nearest stop
+     on THIS route, with the next arrival on it, is the one fact that
+     turns a map into a decision. Costs one arrivals call, made only when
+     there is no boarding stop already, which is exactly the case this
+     view was missing. */
+  const near=$("#rp-near");
+  if(near){
+    near.hidden=true; near.onclick=null;
+    if(!stop&&list.length&&isFinite(here.lat)){
+      let best=null,bd=Infinity;
+      for(const x of list){
+        const d=haversine(here.lat,here.lng,x.lat,x.lng);
+        if(d<bd){ bd=d; best=x; }
+      }
+      if(best){
+        const paint=eta=>{ near.innerHTML=
+          `<span>${esc(t("rpNearest"))} · ${esc(best.name)}</span>`
+          +`<span class="eta">${esc(eta||fmtDist(bd))}</span>`; };
+        paint(null);
+        near.hidden=false;
+        near.onclick=()=>{ rmap.setView([best.lat,best.lng],16);
+          L.popup().setLatLng([best.lat,best.lng]).setContent(esc(best.name)).openOn(rmap); };
+        oasa("getStopArrivals",best.code).then(arr=>{
+          if(!Array.isArray(arr)) return;
+          const mine=arr.map(a=>({code:String(pick(a,"route_code","RouteCode")||""),
+              min:Number(pick(a,"btime2","btime"))}))
+            .filter(a=>a.code===String(routeCode)&&isFinite(a.min))
+            .sort((a,b)=>a.min-b.min)[0];
+          if(mine) paint(`${fmtDist(bd)} · ${mine.min<=1?t("now"):mine.min+"′"}`);
+        }).catch(()=>{});
+      }
+    }
+  }
   (Array.isArray(buses)?buses:[]).forEach(b=>{
     const la=Number(pick(b,"CS_LAT","cs_lat")),ln=Number(pick(b,"CS_LNG","cs_lng"));
     if(isFinite(la)&&isFinite(ln)) L.marker([la,ln],{icon:L.divIcon({className:"",
@@ -4732,6 +4843,7 @@ function openStopMenu(s,after){
   $("#sm-name").textContent=stopName(s);
   $("#sm-fav").textContent=isFav(s.code)?t("smUnfav"):t("smFav");
   $("#sm-alert").textContent=t("smAlert");
+  $("#sm-route").textContent=t("smRoute");
   $("#sm-cancel").textContent=t("cancel");
   $("#stopmenu").hidden=false;
 }
@@ -4769,11 +4881,13 @@ function renderStopCard(){
         <div class="dest">${d?`<span class="to">${t("to")}</span>${esc(d)}`:""}${flagLine(reportForArrival(a))}</div>
         <div class="eta ${now?"now":""}${etaGuessed(a)?" guess":""}">${now?`<span class="v">${t("now")}</span>`
           :`<span class="v num">${esc(p.v)}</span><span class="u">${t("min")}</span>`}</div>`;
-      onLongPress(row,()=>{ closeStopCard(); openRoutePreview(s,String(a.code),m); });
+      const seeRoute=()=>{ closeStopCard(); openRoutePreview(s,String(a.code),m); };
+      row.onclick=seeRoute;
+      onLongPress(row,seeRoute);
       rows.appendChild(row);
     });
   }
-  $("#sc-hint").textContent=t("favHint");
+  $("#sc-hint").innerHTML=affLegendHtml();
 }
 
 /* ------------------------ line lookup ------------------------------ */
@@ -5730,7 +5844,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v104</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v105</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -6174,7 +6288,77 @@ $("#sm-alert").onclick=()=>{
   openAlerts();
   renderForm(null,s);
 };
+/* The other half of search: a place you found is usually a place you
+   want to GET to. Searching, then closing the search, then opening the
+   planner, then typing the same name again is four steps for one
+   intention. Picking it as the destination hands straight to the start
+   picker — which already offers your current location, Home and Work, so
+   the common case is now two taps. */
+$("#sm-route").onclick=()=>{
+  const s=menuStop; closeStopMenu();
+  if(!s||!isFinite(s.lat)) return;
+  closeStopCard(); closeLineSearch();
+  jp.to={ kind:"stop", lat:s.lat, lng:s.lng, label:stopName(s) };
+  jp.from=null; jp.res=null;
+  openJourney();
+  paintJourneyForm();
+  openJourneyPick("from");
+};
 $("#live-r").onclick=loadLive;
+/* ---- the Android back button --------------------------------------
+ * Every panel in this app is an overlay, not a page, so the system back
+ * button used to do the only thing left to it: leave the site. A rider
+ * who opened a stop card, pressed back and lost the whole session does
+ * not make that mistake twice — they stop opening things.
+ *
+ * So each open overlay gets one history entry, and back closes the
+ * topmost one instead. The order below is nesting order, innermost
+ * first: an itinerary sits on the planner, the stop menu on the stop
+ * card, so back has to take them off in that order.
+ *
+ * Nothing is trapped. With no overlay open, back leaves — which is what
+ * a rider means by it at that point, and pretending otherwise is its own
+ * kind of rude.
+ *
+ * Opens are detected rather than announced: a MutationObserver on each
+ * panel's class means a panel added later is one line here, not a
+ * forgotten pushState in whichever function happened to open it. */
+const LAYERS=[
+  ["stopmenu",closeStopMenu],["jpr",closeItinerary],["jppick",closeJourneyPick],
+  ["rl",()=>$("#rl").classList.remove("on")],["rp",closeRP],
+  ["stopcard",closeStopCard],["picker",closePicker],["linebg",closeLineSearch],
+  ["live",closeLiveMap],["rep",closeReports],["jp",closeJourney],
+  ["alertbg",closeAlerts],["aboutbg",closeAbout],["setbg",closeSettings],
+  ["sheetbg",closeSheet],
+];
+const layerOpen=id=>{ const el=$("#"+id); if(!el) return false;
+  return id==="stopmenu" ? !el.hidden : el.classList.contains("on"); };
+let navDepth=0,navBusy=false;
+function syncHistory(){
+  if(navBusy) return;
+  const n=LAYERS.filter(([id])=>layerOpen(id)).length;
+  while(navDepth<n){ navDepth++; try{ history.pushState({oasax:navDepth},""); }catch(_){ navDepth--; break; } }
+  if(navDepth>n){
+    /* Closed from the UI — an X, a backdrop tap. Our own entries have to
+       come off with it, or the next back press spends itself on a panel
+       that is no longer there and the button feels broken. */
+    const extra=navDepth-n; navDepth=n; navBusy=true;
+    try{ history.go(-extra); }catch(_){}
+    setTimeout(()=>{ navBusy=false; },60);
+  }
+}
+window.addEventListener("popstate",()=>{
+  if(navBusy) return;
+  const top=LAYERS.find(([id])=>layerOpen(id));
+  if(!top){ navDepth=0; return; }          // nothing open: let it leave
+  navBusy=true;
+  navDepth=Math.max(0,navDepth-1);
+  try{ top[1](); }catch(_){}
+  setTimeout(()=>{ navBusy=false; },60);
+});
+LAYERS.forEach(([id])=>{ const el=$("#"+id); if(!el) return;
+  new MutationObserver(syncHistory).observe(el,
+    { attributes:true, attributeFilter:["class","hidden"] }); });
 $("#fresh").onclick=manualRefresh;
 $("#change").onclick=openSheet;
 $("#gps").onclick=useGPS;
@@ -6212,6 +6396,9 @@ $("#reportbtn").onclick=openReports;
 $("#rep-x").onclick=closeReports;
 $("#wake").onclick=wake;
 $("#rp-x").onclick=closeRP;
+/* The gesture everyone tries first on a card with a dimmed backdrop. */
+$("#rp").onclick=e=>{ if(e.target.id==="rp") closeRP(); };
+$("#jpr").onclick=e=>{ if(e.target.id==="jpr") closeItinerary(); };
 $("#rl-x").onclick=()=>clearRoute(true);
 $("#jp-x").onclick=closeJourney;
 $("#jp-from").onclick=()=>openJourneyPick("from");

@@ -42,10 +42,17 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v104";
+const APP_VERSION = "v105";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
+/* Paths no version of this app has ever served, walked by credential
+   scanners. Anchored on a path segment so it can never catch a real
+   route: every alternative is either a dotfile or an exact filename. */
+const PROBE_RE = new RegExp("(^|/)(\\.(env|git|aws|docker|vscode|ssh)\\b"
+  + "|\\.env\\.[a-z]+|appsettings(\\.[A-Za-z]+)?\\.json|awsconfiguration\\.json"
+  + "|wp-admin|wp-login\\.php|xmlrpc\\.php|phpinfo\\.php|config\\.json"
+  + "|credentials|id_rsa|\\.DS_Store)($|/)", "i");
 const TIMEOUT_MS = 8000;
 const OASA_CACHE = 12;
 // How long a sweep stays worth showing after the upstream stops answering
@@ -4014,6 +4021,27 @@ function safePath(req) {
 
 async function route(req, env, ctx) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+    /* ---- the scanners, answered before anything is done for them ----
+     * Roughly a seventh of this zone's requests are credential probes:
+     * /.env, /.env.production, /appsettings.Development.json,
+     * /awsconfiguration.json and their friends, walked path by path by
+     * bots on rented cloud addresses. Nothing leaks — none of these ever
+     * existed — but every one of them used to fall through the whole
+     * router, and they are paid for out of the same 100,000 requests a
+     * day the riders use.
+     *
+     * This is the cheap half of the fix and not the real one: a request
+     * that reaches the Worker has already been counted. The real fix is a
+     * WAF rule that turns them away at the edge, which is a dashboard
+     * setting rather than code — see DEPLOY.md. Until then, at least they
+     * cost one regex instead of a routing table.
+     *
+     * Deliberately narrow. It matches dotfiles and a short list of config
+     * filenames, not anything that could ever be a stop code or a line. */
+    if (PROBE_RE.test(new URL(req.url).pathname)) {
+      return new Response("Not found", { status: 404,
+        headers: { "Content-Type": "text/plain", "Cache-Control": "public, max-age=86400" } });
+    }
     const url = new URL(req.url);
     noteSelfOrigin(url, env, ctx);
     /* The isolate serving riders is the one whose cache figures matter, and
