@@ -808,6 +808,20 @@ console.log("\n— the server telling its operator it broke —");
   ok("the blind spot is written down, not glossed over",
     /522 or 524 is\s+\* Cloudflare answering on our behalf when the Worker never ran/.test(w));
 
+  /* A 410 is the one push failure that has a specific, device-only cure,
+     and the tool used to answer it with "tell Claude the status number" —
+     which is a dead end at 8am. It took fourteen silent days to find. */
+  const c = readFileSync(path.join(REPO, "tools/checkup.mjs"), "utf8");
+  ok("an expired subscription is named, not just numbered",
+    /st === 404 \|\| st === 410/.test(c)
+    && /Your phone's subscription has expired/.test(c));
+  ok("...and answered with the repair only the phone can do",
+    /Open OASAx — on an iPhone from the Home Screen, never a Safari tab/.test(c)
+    && /Alerts → Test/.test(c));
+  ok("...including the case where the rule is orphaned too",
+    /old rule is orphaned — delete it and set it once more/.test(c),
+    "clearing site data takes the subId with it");
+
   const noTok = await call("/admin/notify?sub=x", { method: "GET", env: { DB } });
   ok("registering the operator's device needs the admin token",
     noTok.status === 403, String(noTok.status));

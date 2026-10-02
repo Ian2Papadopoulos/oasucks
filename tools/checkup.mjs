@@ -174,8 +174,31 @@ if (why && why.lastCronWithWork && typeof why.lastCronWithWork === "object") {
   }
 }
 if (why && why.lastPush && typeof why.lastPush === "object" && why.lastPush.ok === false) {
-  say("FIX", `The last notification was refused (${why.lastPush.status || why.lastPush.why}).`,
-    "That is the browser's push service, not us. Tell Claude the status number.");
+  const st = Number(why.lastPush.status);
+  /* 404 and 410 are not errors in the usual sense and they do not mean
+     anything is broken here — they are the push service saying the
+     address it was handed no longer exists. Browsers retire a
+     subscription on their own schedule, and clearing site data retires it
+     too. Nothing is running on a closed phone to notice, so the rule
+     stays in the list, the bell keeps its count, and the alerts simply
+     stop. It reads exactly like "alerts do not work any more", and the
+     repair is one that only the rider's own device can perform. */
+  if (st === 404 || st === 410) {
+    say("FIX", `Your phone's subscription has expired (${st}) — alerts cannot be delivered.`,
+      "Not a fault in the app or the server. The push service retired the address, which "
+      + "browsers do on their own schedule and whenever site data is cleared.\n"
+      + "      Fix it from the phone, in order:\n"
+      + "        1. Open OASAx — on an iPhone from the Home Screen, never a Safari tab.\n"
+      + "           Launching it re-registers under the same id, so your rules survive.\n"
+      + "        2. Settings (☰) → Alerts → Test. That proves delivery end to end.\n"
+      + "        3. Run this again; this line should be gone.\n"
+      + "      If the app asks you to turn alerts on again, site data was cleared and the "
+      + "old rule is orphaned — delete it and set it once more.");
+  } else {
+    say("FIX", `The last notification was refused (${why.lastPush.status || why.lastPush.why}).`,
+      "That is the browser's push service, not us. 401 or 403 is the VAPID keys; "
+      + "400 is the encryption. Tell Claude the status number.");
+  }
 }
 
 /* ---- the free plan ---- */
