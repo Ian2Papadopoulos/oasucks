@@ -822,6 +822,18 @@ console.log("\n— the server telling its operator it broke —");
     /old rule is orphaned — delete it and set it once more/.test(c),
     "clearing site data takes the subId with it");
 
+  /* "Refused" is a record of one moment, not a running state. If the
+     phone registered again AFTER the failure, the repair has already
+     happened and the line is only waiting for someone to send another
+     push — which, outside an alert window, nothing will. */
+  ok("a repair that has already happened is not reported as a breakage",
+    /\.filter\(x => x && x\.alive && Number\(x\.at\) > failedAt\)/.test(c)
+    && /has registered again since/.test(c));
+  const w2 = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("...which needs the server to write down when a device said hello",
+    /await env\.ALERTS\.put\(`subat:\$\{id\}`/.test(w2)
+    && /subsRegistered: await subsForRules\(env\)/.test(w2));
+
   const noTok = await call("/admin/notify?sub=x", { method: "GET", env: { DB } });
   ok("registering the operator's device needs the admin token",
     noTok.status === 403, String(noTok.status));

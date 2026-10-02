@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v106";
+const APP_VERSION = "v107";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -2136,7 +2136,7 @@ async function handleNearby(url, env, ctx) {
      samplePts queries ONE point at 400 m or below and five above it, so
      the wider default was costing five stop-discovery calls per sweep to
      put stops on the board nobody was going to walk to. */
-  const radius = Math.min(2000, Math.max(200, +(url.searchParams.get("radius") || 300)));
+  const radius = Math.min(2000, Math.max(200, +(url.searchParams.get("radius") || 250)));
   const limit = Math.min(16, Math.max(1, +(url.searchParams.get("limit") || 14)));
   const markers = Math.min(150, Math.max(limit, +(url.searchParams.get("markers") || 60)));
   // Map pins show the stop name now, so line metadata is only needed for the
@@ -3958,6 +3958,19 @@ async function handleScan(url) {
  * here can observe it. Those need Cloudflare's own Notifications. */
 const ADMIN_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
 const errState = { count: 0, since: 0, lastSent: 0 };
+async function subsForRules(env) {
+  try {
+    const subs = [...new Set((await readRules(env))
+      .filter(r => r && r.enabled !== false && r.sub).map(r => r.sub))];
+    const out = [];
+    for (const id of subs.slice(0, 8)) {
+      out.push({ sub: id, at: Number(await env.ALERTS.get(`subat:${id}`)) || null,
+        alive: !!(await env.ALERTS.get(`sub:${id}`)) });
+    }
+    return out;
+  } catch (_) { return []; }
+}
+
 async function notifyAdmin(env, note) {
   if (!pushReady(env)) return false;
   const id = await env.ALERTS.get("admin:sub");
@@ -4284,6 +4297,12 @@ async function route(req, env, ctx) {
         lastPush: lastTry
           ? { ...lastTry, agoSec: nowS - (lastTry.at || nowS) }
           : "no alert push has ever been attempted",
+        /* Per rule, because a refusal belongs to one device and a repair
+           does too. Without this, "the last push was refused" and "the
+           rider has since repaired it and simply not triggered another
+           push" look identical from outside — and the second one spent
+           fourteen days looking like the first. */
+        subsRegistered: await subsForRules(env),
         lastDelivered: alertLast ? { agoSec: nowS - alertLast } : "never",
         /* Compare `thisRequestRanFrom` with `from` inside lastCronWithWork.
            Different colo or address is the whole explanation; the same one
@@ -4745,6 +4764,11 @@ async function route(req, env, ctx) {
       if (!b || !b.subscription || !b.subscription.endpoint) return json({ error: "bad subscription" }, 400);
       const id = b.id || crypto.randomUUID();
       await env.ALERTS.put(`sub:${id}`, JSON.stringify(b.subscription));
+      /* When this address was last vouched for. Without it, "the last push
+         was refused" and "the rider has since repaired it and simply not
+         triggered another push" look identical from outside, and the
+         second one spent fourteen days looking like the first. */
+      await env.ALERTS.put(`subat:${id}`, String(Math.floor(Date.now() / 1000)));
       return json({ id });
     }
 

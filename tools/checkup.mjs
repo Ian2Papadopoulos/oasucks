@@ -184,16 +184,34 @@ if (why && why.lastPush && typeof why.lastPush === "object" && why.lastPush.ok =
      stop. It reads exactly like "alerts do not work any more", and the
      repair is one that only the rider's own device can perform. */
   if (st === 404 || st === 410) {
-    say("FIX", `Your phone's subscription has expired (${st}) — alerts cannot be delivered.`,
-      "Not a fault in the app or the server. The push service retired the address, which "
-      + "browsers do on their own schedule and whenever site data is cleared.\n"
-      + "      Fix it from the phone, in order:\n"
-      + "        1. Open OASAx — on an iPhone from the Home Screen, never a Safari tab.\n"
-      + "           Launching it re-registers under the same id, so your rules survive.\n"
-      + "        2. Settings (☰) → Alerts → Test. That proves delivery end to end.\n"
-      + "        3. Run this again; this line should be gone.\n"
-      + "      If the app asks you to turn alerts on again, site data was cleared and the "
-      + "old rule is orphaned — delete it and set it once more.");
+    /* A refusal is a record of one moment, not a running state. If the
+       phone has registered again SINCE that moment, the repair has very
+       likely already happened and this line is only waiting for someone
+       to send another push — which, outside an alert window, nothing
+       will. Saying "still broken" then is simply wrong, and it is the
+       reading that would keep somebody poking at a fixed system. */
+    const failedAt = Number(why.lastPush.at) || 0;
+    const fresh = (why.subsRegistered || [])
+      .filter(x => x && x.alive && Number(x.at) > failedAt)
+      .sort((a, b) => b.at - a.at)[0];
+    if (fresh) {
+      say("LOOK", `A subscription expired (${st}), but the phone has registered again since.`,
+        `Re-registered ${ago(Math.round(Date.now() / 1000) - fresh.at)}, after the failure — `
+        + "so this is almost certainly already fixed and just has not been proved yet.\n"
+        + "      Settings (☰) → Alerts → Test, then run this again. The line clears once a "
+        + "push actually succeeds; nothing else will send one outside an alert window.");
+    } else {
+      say("FIX", `Your phone's subscription has expired (${st}) — alerts cannot be delivered.`,
+        "Not a fault in the app or the server. The push service retired the address, which "
+        + "browsers do on their own schedule and whenever site data is cleared.\n"
+        + "      Fix it from the phone, in order:\n"
+        + "        1. Open OASAx — on an iPhone from the Home Screen, never a Safari tab.\n"
+        + "           Launching it re-registers under the same id, so your rules survive.\n"
+        + "        2. Settings (☰) → Alerts → Test. That proves delivery end to end.\n"
+        + "        3. Run this again; this line should be gone.\n"
+        + "      If the app asks you to turn alerts on again, site data was cleared and the "
+        + "old rule is orphaned — delete it and set it once more.");
+    }
   } else {
     say("FIX", `The last notification was refused (${why.lastPush.status || why.lastPush.why}).`,
       "That is the browser's push service, not us. 401 or 403 is the VAPID keys; "

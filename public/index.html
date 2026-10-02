@@ -1043,7 +1043,7 @@
   </div>
   <div class="radwrap" id="radwrap" style="display:none">
     <div class="radhd"><span id="t-rad">Ακτίνα</span> <b id="rval">600 m</b><span class="cnt" id="rcount"></span></div>
-    <input type="range" id="radius" min="200" max="1000" step="50" value="300" />
+    <input type="range" id="radius" min="200" max="1000" step="50" value="250" />
   </div>
 
   <div id="mapwrap" style="display:none">
@@ -1053,7 +1053,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v106</span></div>
+  <div class="foot"><span class="ver">v107</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1262,7 +1262,7 @@ const CONFIG={proxyBase:"",refreshMs:45000,idleMs:75000,idleAfter:240000,sleepAf
      stops being worth printing plainly. The same 150 seconds the alert path
      uses (ALERT_STALE_S), for the same reason: subtracting the clock assumes
      the bus kept moving as predicted, and that assumption decays. */
-  trustS:150,manualGapMs:5000,
+  trustS:150,manualGapMs:5000,radiusDefault:250,
   walkSpeed:80,detour:1.35,onward:9};
 
 /* No probe on the boot path, at all.
@@ -2027,7 +2027,7 @@ function beginBoard(){
 }
 // the first fix resolved one way or the other: stop holding the board
 function geoDone(){ beginBoard(); }
-const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:300,
+const state={view:"list",stops:[],reports:[],metro:[],lines:[],busPos:{},favLive:{},radius:CONFIG.radiusDefault,
   dark:false,mapFitted:false,_mapCodes:null,rules:[],subId:null};
 let timer=null,nextAt=0,loading=false;
 
@@ -5844,7 +5844,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v106</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v107</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -6435,7 +6435,15 @@ if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch
 try{ state.dark=localStorage.getItem("dark")==="1"; }catch(_){}
 $("#basemap").textContent=state.dark?"☀️":"🌙";
 document.body.classList.toggle("tiles-dark",state.dark&&!hasTileKey());
-try{ const r=+localStorage.getItem("radius"); if(r>=200&&r<=1000){ state.radius=r; $("#radius").value=r; } }catch(_){}
+/* The radius is a this-trip setting, not a preference. Remembering it
+   meant one afternoon spent looking for a stop across the neighbourhood
+   left the app at 950 m for every morning afterwards — a board full of
+   stops nobody is going to walk to, and five stop-discovery calls a sweep
+   to build it. It starts at CONFIG.radiusDefault every launch now and the
+   slider still goes to 1000 for the trip that needs it.
+   The stored value is cleared rather than ignored, so an old one cannot
+   come back if this ever reads it again. */
+try{ localStorage.removeItem("radius"); }catch(_){}
 applyStatics();
 here.label=LANG==="el"?PRESETS[0].el:PRESETS[0].en;
 // boot from the last known fix (if recent) — the board fills instantly
@@ -6465,7 +6473,6 @@ initSwipes();
 state.subId=localStorage.getItem("subId");
 ensureMode().then(async()=>{ if(state.subId){ await loadRules(); bellBadge(); repairPush(); }
   await refreshReports(); renderView(); });
-window.addEventListener("beforeunload",()=>{ try{ localStorage.setItem("radius",String(state.radius)); }catch(_){} });
 </script>
 </body>
 </html>

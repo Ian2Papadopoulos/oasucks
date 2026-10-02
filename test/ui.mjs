@@ -1025,6 +1025,12 @@ console.log("\n— how often it asks follows what is on screen —");
   ok("the default radius stays inside the one-sample tier",
     rad.state <= 400 && rad.slider === rad.state,
     `${rad.state} m, slider ${rad.slider}`);
+  /* A this-trip setting, not a preference. One afternoon spent hunting a
+     stop across the neighbourhood used to leave the app at 950 m every
+     morning after. */
+  ok("...and a wide radius cannot survive a launch",
+    !/localStorage\.setItem\("radius"/.test(readFileSync(path.join(PUB, "index.html"), "utf8")),
+    "nothing writes it any more, so nothing can restore it");
   ok("...and the slider still reaches the wide end for anyone who wants it",
     rad.max === 1000, String(rad.max));
   ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
