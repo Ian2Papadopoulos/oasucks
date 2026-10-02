@@ -1215,6 +1215,35 @@ console.log("\n— the route preview is a card you can tap out of —");
     && /<div class="sheet-bg mid" id="linebg">/.test(html));
   /* "Press and hold the name for options" is a sentence nobody reads
      twice, printed next to every stop forever. */
+  /* "022" is a line, not a place — and /stops/search works by GEOCODING
+     the query, so it was answering a different question and returning
+     ΤΕΡΜΑ ΕΡΥΘΡΕΣ with no way for the rider to see why. */
+  ok("a line number is not sent to the geocoder",
+    /function looksLikeLine/.test(html)
+    && /looksLikeLine\(q\)/.test(readFileSync(path.join(REPO, "worker.js"), "utf8")));
+  ok("...and does not widen into a street search on the client either",
+    /const asLine=looksLikeLine\(q\);/.test(html),
+    "the line results above already answer that query");
+  /* The strip of saved addresses and card numbers over the keyboard is
+     the browser guessing at a bare text input beside a magnifier. */
+  ok("the search fields tell the browser what they are",
+    (html.match(/type="search" name="oasax-/g) || []).length === 2
+    && /autocomplete="off" autocorrect="off"/.test(html));
+  /* Opening one line then another raced: whichever fan-out finished LAST
+     painted, so a second route could be shown carrying the first one's
+     nearest stop — which read exactly as "it picks the stop nearest me,
+     not the one on this line". */
+  ok("a stale route cannot paint over the one on screen",
+    /const mySeq=\+\+rpSeq;/.test(html) && /if\(!Array\.isArray\(arr\)\|\|!current\(\)\) return;/.test(html));
+  ok("the nearest stop opens its board rather than panning the map",
+    /closeRP\(\);\n\s*openStopCard\(s2\);/.test(html),
+    "the rider is asking what is coming, not where it is");
+  /* Soft above, crisp below: the page is a photocopy and the thing over
+     it should not read as another sheet laid flat. */
+  ok("the floating panels are rounded and lifted, the board is not",
+    /--float-r:10px;/.test(html)
+    && /\.sc-box,\.sm-box,\.sheet-bg\.mid>\.sheet,\.rp\.card>\.rp-card\{/.test(html));
+
   ok("the long-press sentence is gone, replaced by a mark on the thing",
     !/favHint/.test(html) && /\.aff\.tap\{/.test(html) && /\.aff\.hold\{/.test(html));
 }

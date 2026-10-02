@@ -973,6 +973,69 @@
   @media (prefers-reduced-motion:reduce){
     .splash{transition:none} .splash .mark{animation:none}
   }
+  /* ---- the floating surfaces ---------------------------------------
+   * The board is a photocopy: hard edges, 2px toner borders, offset
+   * shadows that look printed. That is right for the page, because the
+   * page is the thing you read.
+   *
+   * It is wrong for what floats ABOVE the page. A panel with the same
+   * square black edge as the list behind it reads as another sheet of
+   * paper laid flat, not as something lifted; and at the corners a 90°
+   * join against a dimmed backdrop is the harshest shape on screen.
+   *
+   * So the four panels that float — the stop card, the long-press menu,
+   * the centred sheets, the route preview — get their own treatment,
+   * defined once here rather than four times above: a generous radius,
+   * an edge that is a hairline of ink rather than a rule, and a shadow
+   * in three layers instead of one hard offset. Layered shadow is what
+   * makes a surface read as lifted rather than drawn, and it is the
+   * whole difference between "pasted on" and "hovering".
+   *
+   * Nothing on the page itself changes. The contrast between the crisp
+   * board and the soft thing over it is the point. */
+  :root{
+    --float-r:10px;
+    --float-edge:rgba(23,23,26,.11);
+    /* contact, lift, and the wide ambient pool that sells the height */
+    --float-shadow:
+      0 1px 2px rgba(23,23,26,.05),
+      0 10px 24px -8px rgba(23,23,26,.20),
+      0 30px 60px -22px rgba(23,23,26,.28);
+  }
+  .sc-box,.sm-box,.sheet-bg.mid>.sheet,.rp.card>.rp-card{
+    border:1px solid var(--float-edge);
+    border-radius:var(--float-r);
+    box-shadow:var(--float-shadow);
+    overflow:hidden}
+  .sc-box,.sheet-bg.mid>.sheet{overflow:auto}
+  /* The scrims, softened to match. Blur behind a panel is what stops the
+     board competing with it for attention — the page is still there,
+     just no longer legible enough to read past the thing on top. */
+  .stopcard,.sheet-bg,.rp.card{
+    background:rgba(23,23,26,.34);
+    backdrop-filter:blur(3px) saturate(.9);
+    -webkit-backdrop-filter:blur(3px) saturate(.9)}
+  .stopmenu{background:rgba(23,23,26,.34)}
+  /* The rules INSIDE a floating panel soften with it: a 2px toner line
+     under a header is a photocopy gesture, and it fights a 16px corner. */
+  .rp.card .rp-hd,.sc-hd{border-bottom:1px solid var(--rule)}
+  /* A touch gentler on arrival, because a panel that eases in reads as
+     lifted for the same reason the shadow does. */
+  @keyframes pop{from{opacity:0;transform:scale(.985) translateY(4px)}
+                 to{opacity:1;transform:none}}
+  .sc-box,.sm-box{animation:pop .2s cubic-bezier(.22,.61,.36,1)}
+  .sheet-bg.mid>.sheet,.rp.card>.rp-card{animation:pop .2s cubic-bezier(.22,.61,.36,1)}
+  @media (prefers-reduced-motion:reduce){
+    .sc-box,.sm-box,.sheet-bg.mid>.sheet,.rp.card>.rp-card{animation:none} }
+  /* type="search" is what stops Android and iOS offering saved addresses
+     and card numbers over the keyboard: a bare text input next to a
+     magnifier is guessed at, and the guess is an autofill strip nobody
+     asked for. The browser's own clear button and decoration come with
+     it, and neither belongs in this type case. */
+  .search input::-webkit-search-decoration,
+  .search input::-webkit-search-cancel-button,
+  .search input::-webkit-search-results-button{-webkit-appearance:none;appearance:none}
+  .search input{-webkit-appearance:none;appearance:none}
 </style>
 </head>
 <body>
@@ -1053,7 +1116,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v107</span></div>
+  <div class="foot"><span class="ver">v108</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1148,13 +1211,17 @@
 
 <div class="sheet-bg mid" id="jppick"><div class="sheet">
   <h3 id="jpp-h"></h3>
-  <div class="search"><input id="jpp-q" autocomplete="off" inputmode="search" /><button id="jpp-go">→</button></div>
+  <div class="search"><input id="jpp-q" type="search" name="oasax-place" autocomplete="off" autocorrect="off"
+    autocapitalize="none" spellcheck="false" inputmode="search" enterkeyhint="search"
+    data-form-type="other" /><button id="jpp-go">→</button></div>
   <div class="results" id="jpp-res"></div>
 </div></div>
 
 <div class="sheet-bg mid" id="linebg"><div class="sheet">
   <h3 id="ln-h">Γραμμή</h3><p id="ln-p"></p>
-  <div class="search"><input id="lnq" autocomplete="off" inputmode="search" /><button id="lngo">→</button></div>
+  <div class="search"><input id="lnq" type="search" name="oasax-find" autocomplete="off" autocorrect="off"
+    autocapitalize="none" spellcheck="false" inputmode="search" enterkeyhint="search"
+    data-form-type="other" /><button id="lngo">→</button></div>
   <div class="results" id="lnres"></div>
 </div></div>
 
@@ -3816,7 +3883,16 @@ function nearestIdx(pl,pt){ let bi=0,bd=Infinity;
    of the journey ahead of you), from the line search we don't (show the
    whole route end to end). `meta` carries the line labels in that second
    case, since there is no stop.routeMap to read them from. */
+/* Every opening gets a number, and every async result checks it is still
+   the current one before touching the panel. Without this, opening one
+   line and then another raced: whichever fan-out finished LAST painted,
+   so a second route could be shown with the first route's nearest stop —
+   which looked exactly like "it picks the stop closest to me rather than
+   the one on this line", and was impossible to reproduce on demand. */
+let rpSeq=0;
 async function openRoutePreview(stop,routeCode,minutes,meta){
+  const mySeq=++rpSeq;
+  const current=()=>mySeq===rpSeq;
   const info=stop?(stop.routeMap[routeCode]||{}):(meta||{});
   $("#rp").classList.add("on");
   $("#rp-tile").textContent=info.line||routeCode;
@@ -3911,24 +3987,37 @@ async function openRoutePreview(stop,routeCode,minutes,meta){
      there is no boarding stop already, which is exactly the case this
      view was missing. */
   const near=$("#rp-near");
-  if(near){
+  if(near&&current()){
     near.hidden=true; near.onclick=null;
+    /* Only on a whole-route view. Opened from a row in the list the
+       boarding stop is already the subject of the screen, and the stops
+       on that board are the nearest ones anyway — the question only
+       exists when a line was found by searching for it. */
     if(!stop&&list.length&&isFinite(here.lat)){
+      /* Nearest among THIS ROUTE's stops, which is the whole point: the
+         nearest stop in general is one the line may not even serve. */
       let best=null,bd=Infinity;
       for(const x of list){
         const d=haversine(here.lat,here.lng,x.lat,x.lng);
         if(d<bd){ bd=d; best=x; }
       }
       if(best){
-        const paint=eta=>{ near.innerHTML=
+        const paint=eta=>{ if(!current()) return; near.innerHTML=
           `<span>${esc(t("rpNearest"))} · ${esc(best.name)}</span>`
           +`<span class="eta">${esc(eta||fmtDist(bd))}</span>`; };
         paint(null);
         near.hidden=false;
-        near.onclick=()=>{ rmap.setView([best.lat,best.lng],16);
-          L.popup().setLatLng([best.lat,best.lng]).setContent(esc(best.name)).openOn(rmap); };
+        /* Opens the stop itself, with its live board. Panning the map to
+           it answered "where", which the rider could already see; what
+           they are actually asking is "what is coming, and when". */
+        near.onclick=()=>{
+          const s2=adoptStop({code:best.code,name_el:best.name,name_en:best.name,
+            lat:best.lat,lng:best.lng});
+          closeRP();
+          openStopCard(s2);
+        };
         oasa("getStopArrivals",best.code).then(arr=>{
-          if(!Array.isArray(arr)) return;
+          if(!Array.isArray(arr)||!current()) return;
           const mine=arr.map(a=>({code:String(pick(a,"route_code","RouteCode")||""),
               min:Number(pick(a,"btime2","btime"))}))
             .filter(a=>a.code===String(routeCode)&&isFinite(a.min))
@@ -4940,18 +5029,33 @@ function matchLines(lines,q){
    the Worker's /stops/search, which geocodes the query and returns the
    stops around that place — plus anything matching among the stops
    already loaded around you, which needs no request at all. */
+/* The same rule the Worker applies before it geocodes anything. Kept in
+   both places on purpose: the client uses it to stop widening a line
+   query into a street search, the server to stop answering a different
+   question entirely, and neither should depend on the other being
+   deployed. */
+function looksLikeLine(q){
+  return /^[A-Za-z\u0391-\u03C9\u0386-\u03CE]?\s?\d{1,3}\s?[A-Za-z\u0391-\u03C9\u0386-\u03CE]?$/
+    .test(String(q||"").trim());
+}
 function localStopMatches(q){
   const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
   const n=norm(q);
   if(!n) return [];
   const pool=(state.stops||[]).concat(Object.values(state.favLive||{}));
   const seen={},out=[];
+  /* A line number matched on the STREET field turned "022" into every
+     stop on a road with a 022 in its address. The line results directly
+     above already answer that query properly, so the only stop worth
+     offering for it is one whose code IS that number. */
+  const asLine=looksLikeLine(q);
   pool.forEach(s=>{
     const key=String(s.code);
     if(seen[key]) return;
-    if(norm(s.name_el).includes(n)||norm(s.name_en).includes(n)||norm(s.street).includes(n)){
-      seen[key]=1; out.push(s);
-    }
+    const hit=asLine
+      ? norm(key)===n || norm(key).replace(/^0+/,"")===n.replace(/^0+/,"")
+      : (norm(s.name_el).includes(n)||norm(s.name_en).includes(n)||norm(s.street).includes(n));
+    if(hit){ seen[key]=1; out.push(s); }
   });
   return out.sort((a,b)=>(a.dist||0)-(b.dist||0)).slice(0,6);
 }
@@ -5844,7 +5948,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v107</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v108</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

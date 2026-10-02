@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v107";
+const APP_VERSION = "v108";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -3958,6 +3958,14 @@ async function handleScan(url) {
  * here can observe it. Those need Cloudflare's own Notifications. */
 const ADMIN_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
 const errState = { count: 0, since: 0, lastSent: 0 };
+/* A line id: up to three digits, optionally wrapped in one letter either
+   side — 022, X95, Α1, 550. Deliberately strict: a real place name has
+   more than this in it, and the cost of a false positive is a stop search
+   that finds nothing while the line results above it are already right. */
+function looksLikeLine(q) {
+  return /^[A-Za-zΑ-Ωα-ωΆ-Ώά-ώ]?\s?\d{1,3}\s?[A-Za-zΑ-Ωα-ωΆ-Ώά-ώ]?$/.test(String(q).trim());
+}
+
 async function subsForRules(env) {
   try {
     const subs = [...new Set((await readRules(env))
@@ -4670,6 +4678,15 @@ async function route(req, env, ctx) {
     if (p.endsWith("/stops/search")) {
       const q = (url.searchParams.get("q") || "").trim();
       if (!q) return json({ stops: [] });
+      /* "022" is a line, not a place — and this endpoint works by
+         GEOCODING the query and returning whatever stops are nearest the
+         result. Hand it a line number and Nominatim finds some address
+         with those digits in it, so a search for route 022 came back with
+         ΤΕΡΜΑ ΕΡΥΘΡΕΣ and no way for the rider to tell why. The matching
+         was not loose; it was answering a different question.
+         Refusing early also saves the geocoder call, which was being spent
+         to produce the wrong answer. */
+      if (looksLikeLine(q)) return json({ stops: [], place: null, note: "looks like a line number" });
       if (!rateLimit(ip, "stopsearch", 30, 60)) return tooMany();
 
       const ck = `https://stopsearch/?q=${encodeURIComponent(q.toLowerCase())}`;
