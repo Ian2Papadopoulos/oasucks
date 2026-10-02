@@ -237,7 +237,7 @@ half an hour yields to one 300 m further with a bus in four minutes; if the cap
 is full it drops off the list entirely (it stays on the map).
 
 The **search radius** is not a constant — it's the slider in the map view
-(200–1000 m, `<input id="radius">`), **defaulting to 300 m since v103**. Widening
+(200–1000 m, `<input id="radius">`), **`CONFIG.radiusDefault`, 250 m since v107**, and it is **not remembered between launches**. Widening
 it adds map markers, not list rows, so it does not change the number of arrival
 calls — `listPool` caps those at 11 whatever the slider says.
 
@@ -245,8 +245,13 @@ What it *does* change is stop discovery. `samplePts` queries one point at 400 m
 or below, five up to 650 m, and nine above — so the old 600 m default cost
 **five** `getClosestStops` calls per sweep where 300 m costs **one**. Those are
 cached for hours, so this was never the expensive half; it is simply five times
-less of it, and a shorter board is the better one to read. A rider who wants the
-wider net still has the slider, and a saved choice always wins over the default.
+less of it, and a shorter board is the better one to read. A rider who wants the wider net still has the slider,
+for that trip. It used to be saved and restored, which is how one afternoon
+spent hunting a stop across the neighbourhood left the app at 950 m every
+morning afterwards — a board full of stops nobody was going to walk to, built
+with five discovery calls a sweep. It is a this-trip setting, not a
+preference, so nothing writes it any more and an old stored value is deleted
+on launch rather than ignored.
 
 ---
 
