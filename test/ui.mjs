@@ -1186,6 +1186,67 @@ console.log("\n— back closes a panel, not the app —");
   await v.ctx.close();
 }
 
+/* The hold has to SHOW itself while it happens — that is the whole hint. */
+console.log("\n— a hold that explains itself —");
+{
+  const v = await open();
+  const r = await v.page.evaluate(async () => {
+    const hd = document.querySelector("#list .stop-hd");
+    if (!hd) return { none: true };
+    const after = () => getComputedStyle(hd, "::after");
+    const rest = { content: after().content, holdable: hd.classList.contains("hold"),
+      ms: hd.style.getPropertyValue("--hold-ms") };
+    hd.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 5, clientY: 5 }));
+    await new Promise(res => setTimeout(res, 150));
+    const mid = { content: after().content, anim: after().animationName };
+    hd.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    return { rest, mid };
+  });
+  ok("a stop header is marked as holdable, with the real hold time on it",
+    r.rest && r.rest.holdable && r.rest.ms === "430ms", JSON.stringify(r.rest));
+  ok("...shows nothing at rest",
+    r.rest && (r.rest.content === "none" || r.rest.content === "normal"), r.rest && r.rest.content);
+  ok("...and draws its progress while a finger is down",
+    r.mid && r.mid.anim === "holdfill" && r.mid.content !== "none", JSON.stringify(r.mid));
+
+  /* The A→B planner was a full-screen takeover like the old route preview,
+     and the same reasoning applies: a card you can tap out of. */
+  const jp = await v.page.evaluate(async () => {
+    openJourney();
+    await new Promise(res => setTimeout(res, 120));
+    const el = document.getElementById("jp"), card = el.querySelector(".rp-card");
+    const cs = getComputedStyle(el), cc = card && getComputedStyle(card);
+    const out = { card: !!card, blur: cs.backdropFilter || cs.webkitBackdropFilter,
+      radius: cc && cc.borderTopLeftRadius };
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));   // the backdrop itself
+    await new Promise(res => setTimeout(res, 80));
+    out.closed = !el.classList.contains("on");
+    return out;
+  });
+  ok("A→B opens as a floating card over a blurred board",
+    jp.card && /blur/.test(jp.blur || "") && parseFloat(jp.radius) >= 8, JSON.stringify(jp));
+  ok("...and tapping the backdrop closes it", jp.closed === true);
+
+  /* An iPhone keyboard covers the layout viewport rather than shrinking it,
+     so a panel centred in it is centred on a point the keyboard hides. */
+  const kb = await v.page.evaluate(async () => {
+    document.documentElement.style.setProperty("--vvh", "300px");
+    document.documentElement.style.setProperty("--vvtop", "40px");
+    openLineSearch();
+    await new Promise(res => setTimeout(res, 120));
+    const bg = document.getElementById("linebg").getBoundingClientRect();
+    const sh = document.querySelector("#linebg>.sheet").getBoundingClientRect();
+    closeLineSearch();
+    document.documentElement.style.removeProperty("--vvh");
+    document.documentElement.style.removeProperty("--vvtop");
+    return { top: bg.top, h: bg.height, sheetBottom: sh.bottom };
+  });
+  ok("overlays live inside the visible area, not under the keyboard",
+    kb.top === 40 && kb.h === 300 && kb.sheetBottom <= 340, JSON.stringify(kb));
+  ok("no page errors", v.errs.length === 0, v.errs.join(" | "));
+  await v.ctx.close();
+}
+
 /* A full-screen takeover put the ✕ in the far corner where nobody looks,
    so the only way out of a line preview was a hunt. */
 console.log("\n— the route preview is a card you can tap out of —");
@@ -1244,8 +1305,22 @@ console.log("\n— the route preview is a card you can tap out of —");
     /--float-r:10px;/.test(html)
     && /\.sc-box,\.sm-box,\.sheet-bg\.mid>\.sheet,\.rp\.card>\.rp-card\{/.test(html));
 
-  ok("the long-press sentence is gone, replaced by a mark on the thing",
-    !/favHint/.test(html) && /\.aff\.tap\{/.test(html) && /\.aff\.hold\{/.test(html));
+  /* The dot-and-bar marks needed a legend, and a mark that needs a key
+     printed somewhere is a sentence in disguise. Replaced by two things
+     that explain themselves: a chevron, which everybody already reads as
+     "opens", and a hold that shows its own progress while it happens. */
+  ok("the long-press sentence stays gone, and so do the marks that needed a legend",
+    !/favHint/.test(html) && !/\.aff\.tap\{/.test(html) && !/affLegendHtml/.test(html));
+  ok("a tappable row ends in a chevron",
+    /const GO='<span class="go" aria-hidden="true">›<\/span>';/.test(html)
+    && /flagLine\(reportForArrival\(a\)\)\+GO;/.test(html));
+  ok("the hold fill is timed to the real threshold, not a guess at it",
+    /el\.style\.setProperty\("--hold-ms",ms\+"ms"\)/.test(html)
+    && /animation:holdfill var\(--hold-ms,430ms\) linear forwards/.test(html),
+    "a line that finishes before or after the menu opens teaches the wrong thing");
+  ok("the one-time coach mark really is one-time",
+    /if\(localStorage\.getItem\("coachHold"\)\) return;/.test(html)
+    && /localStorage\.setItem\("coachHold","1"\)/.test(html));
 }
 
 await browser.close();

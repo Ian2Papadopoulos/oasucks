@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v108.**
+version: v109.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 1,002 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 1,022 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app **and Cloudflare** how things are, and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/browser.mjs` | Finds a browser to drive without downloading one. `playwright-core` ships no browsers on purpose, so a fresh machine used to be told to `npx playwright install` — fetching a second Chromium next to the one already in Program Files. This checks `CHROME_PATH`, then where Chrome, Chromium and Edge actually live on this platform, and only then gives up, with both ways out. Used by every test and tool that drives a browser. |
@@ -860,7 +860,28 @@ real causes and only one of them is a platform limit.
    the thing that asks for permission.
 
 `/alerts/why` reports what the push service actually said; a 404 or 410 there is this
-failure, and after v100 it should repair itself by the next launch.
+failure.
+
+**…and v100's repair could not actually repair it.** It took a second 410, three weeks
+later, to find out why. Chrome keeps returning the *same* subscription object from
+`getSubscription()` after its push service has retired the endpoint, and it does not
+reliably fire `pushsubscriptionchange` at all. So the "repair" on launch re-registered the
+very address that had just been declared dead; the next push got 410; the server deleted
+it; the next launch re-registered it again. Every step reported success and the loop never
+ended. Since v109 the server remembers a 410'd endpoint by hash and `/push/subscribe`
+answers it with **409 stale** — the only way the phone can learn its copy is dead — and
+the app then unsubscribes locally and makes a genuinely new one under the same id, so the
+rules survive. The alerts sheet's **Test** button does this in a single tap: if the test
+push comes back gone, it replaces the subscription and tests again.
+
+**Two delivery faults rode along with it.** Every push went out without an `Urgency`
+header, so at normal priority — which an Android phone in Doze is allowed to *hold until
+it next wakes*. That is very likely the real explanation for the September report of
+"bus in 1′" arriving the instant the app was opened, which was blamed at the time on
+sweep gaps; the gaps were real, but this fits the symptom better. Pushes now ask for
+`Urgency: high`. And the TTL was a flat 15 minutes, so a held "bus in 5′" could arrive
+after the bus had left. An alert's TTL is now how long it stays true — the bus's own
+minutes plus one — and past that the push service drops it, which is the honest failure.
 
 #### The gap between "the cron ran" and "a push was attempted"
 

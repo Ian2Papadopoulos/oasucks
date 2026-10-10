@@ -5,7 +5,7 @@
 <html lang="el" translate="no">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
 <meta name="theme-color" content="#F7F7F5" />
 <!-- The app has its own language switch (☰ → Settings), and it swaps real
      translations rather than machine ones. Chrome's offer to translate the
@@ -379,17 +379,40 @@
   .stop-hd{display:flex;align-items:baseline;gap:9px;padding:11px 13px 9px;
     border-bottom:1px solid var(--toner)}
   .stop-hd .name{font-weight:700;font-size:13px;line-height:1.3;flex:1;letter-spacing:.02em}
-  /* Two marks, one meaning each. A dot responds to a tap; a bar has more
-     behind a hold. Punctuation-sized and in the faded ink, so a row reads
-     as a name with a mark after it rather than as a name with a control
-     bolted on. */
-  .aff{display:inline-block;vertical-align:middle;background:var(--ink3);
-    opacity:.55;margin-left:6px;flex:none}
-  .aff.tap{width:4px;height:4px;border-radius:50%}
-  .aff.hold{width:11px;height:3px;border-radius:2px}
-  .row .aff{margin-left:5px}
-  .afflab{font-size:9.5px;color:var(--ink3);margin-left:4px;margin-right:9px;
-    letter-spacing:.06em;text-transform:lowercase}
+  /* ---- what a tap does, and what a hold does --------------------------
+   * TAP: a chevron. It is the oldest convention in list design — "this
+   * opens something" — and it needs no legend because everyone already
+   * reads it. Faded, so it is a signpost, not a button.
+   *
+   * HOLD: nothing at rest, and the press explains itself. While a finger
+   * is down on something with a hold action, a hairline fills underneath
+   * it over exactly the hold time; when it reaches the end, the menu
+   * opens. The first time anybody touches a stop name — even by accident
+   * — they watch the line start to grow and understand that holding does
+   * something. A mark that teaches by being used beats a mark that needs
+   * a key printed somewhere.
+   *
+   * And once, ever: a soft pulse on the first stop name with one word, so
+   * the gesture is discoverable before anybody stumbles onto it. */
+  .go{color:var(--ink3);opacity:.5;margin-left:6px;font-weight:400;
+    font-size:13px;line-height:1;flex:none}
+  .hold{position:relative}
+  .hold.press:not(.row)::after{content:"";position:absolute;left:0;bottom:0;height:2px;
+    background:var(--toner);opacity:.55;border-radius:2px;
+    animation:holdfill var(--hold-ms,430ms) linear forwards}
+  @keyframes holdfill{from{width:0}to{width:100%}}
+  .coach{position:relative}
+  .coach::before{content:"";position:absolute;left:-6px;top:50%;width:22px;height:22px;
+    margin-top:-11px;border-radius:50%;border:2px solid var(--toner);opacity:0;
+    animation:coachring 1.6s ease-out 3}
+  @keyframes coachring{0%{opacity:.5;transform:scale(.4)}70%{opacity:.18;transform:scale(1.25)}
+    100%{opacity:0;transform:scale(1.4)}}
+  .coachtip{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:999px;
+    background:var(--toner);color:var(--paper);font-size:9.5px;font-weight:700;
+    letter-spacing:.08em;vertical-align:middle;animation:fade .25s ease-out}
+  @media (prefers-reduced-motion:reduce){
+    .coach::before{animation:none}
+    .hold.press:not(.row)::after{animation:none;width:100%} }
   .stop-hd .meta{font-size:10px;color:var(--ink3);white-space:nowrap;display:flex;gap:7px;align-items:baseline}
   .walk{color:var(--toner);font-weight:700}
   .row{display:flex;align-items:center;gap:10px;padding:9px 13px;
@@ -1036,6 +1059,24 @@
   .search input::-webkit-search-cancel-button,
   .search input::-webkit-search-results-button{-webkit-appearance:none;appearance:none}
   .search input{-webkit-appearance:none;appearance:none}
+  /* ---- above the keyboard ------------------------------------------
+   * position:fixed with inset:0 means "the layout viewport", and on an
+   * iPhone the on-screen keyboard does not shrink the layout viewport — it
+   * slides over it. A panel centred in the layout viewport is therefore
+   * centred on a point the keyboard is covering, and the field you are
+   * typing in is hidden by the thing you are typing with.
+   *
+   * --vvh and --vvtop are the VISUAL viewport, kept current by a listener
+   * at the bottom of the script. Every overlay is sized to that instead,
+   * so it shrinks with the keyboard and re-centres in what is left.
+   * Android gets the same result natively from interactive-widget in the
+   * viewport tag; the variables simply agree with it there. */
+  .sheet-bg,.rp.card,.stopcard,.stopmenu{
+    top:var(--vvtop,0px);bottom:auto;height:var(--vvh,100%)}
+  .sheet-bg.mid>.sheet{max-height:min(calc(var(--vvh,100vh) - 28px),560px)}
+  .sheet{max-height:calc(var(--vvh,100vh) * .88)}
+  .rp.card>.rp-card{max-height:100%}
+  .rp.card .jp-out{min-height:0}
 </style>
 </head>
 <body>
@@ -1116,7 +1157,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v108</span></div>
+  <div class="foot"><span class="ver">v109</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1180,7 +1221,7 @@
   <div class="rp-strip" id="rep-strip"></div>
 </div>
 
-<div class="rp" id="jp">
+<div class="rp card" id="jp"><div class="rp-card">
   <div class="rp-hd">
     <div class="rp-tile" id="jp-tile">⇢</div>
     <div class="rp-txt"><div class="rp-title" id="jp-title">Διαδρομή</div>
@@ -1196,7 +1237,7 @@
     <button class="jp-go" id="jp-go"></button>
   </div>
   <div class="jp-out" id="jp-out"></div>
-</div>
+</div></div>
 
 <div class="rp card" id="jpr"><div class="rp-card">
   <div class="rp-hd">
@@ -1589,7 +1630,7 @@ const T={
   favAlready:"Είναι ήδη αγαπημένο",
   favAdded:"★ Προστέθηκε στα αγαπημένα", favRemoved:"Αφαιρέθηκε από τα αγαπημένα",
   favFull:"Έφτασες το όριο αγαπημένων",
-  affTap:"πάτημα", affHold:"παρατεταμένο", rpNearest:"Κοντινότερη στάση",
+  coachHold:"κράτα", rpNearest:"Κοντινότερη στάση",
   secLines:"Γραμμές", secStops:"Στάσεις",
   lineH:"Αναζήτηση",
   lineP:"Γράψε γραμμή (π.χ. 022) για τη διαδρομή της, ή όνομα στάσης/περιοχής για τις αφίξεις της.",
@@ -1889,7 +1930,7 @@ const T={
   favAlready:"Already pinned",
   favAdded:"★ Pinned to favourites", favRemoved:"Removed from favourites",
   favFull:"Favourites are full",
-  affTap:"tap", affHold:"hold", rpNearest:"Nearest stop to you",
+  coachHold:"hold", rpNearest:"Nearest stop to you",
   secLines:"Lines", secStops:"Stops",
   lineH:"Search",
   lineP:"Type a line (e.g. 022) for its route, or a stop/place name for its arrivals.",
@@ -2179,30 +2220,32 @@ function stopName(s){
   return n||clean(s.street)||`${t("stopFallback")} ${s.code||""}`.trim();
 }
 function arrLine(s,c){ const i=s.routeMap[c]||{}; return i.line||c||"•"; }
-/* ---- saying what a thing does without a sentence -------------------
- * "Press and hold the name for options" is a sentence nobody reads
- * twice, printed next to every stop forever. The gesture it describes is
- * invisible, which is the actual problem — so mark the thing itself
- * rather than captioning it.
- *
- * Two marks, one meaning each, used everywhere and nowhere else:
- *   ●  a dot — this responds to a tap
- *   ▬  a bar — this has more behind a hold
- * Set in the ink colour at a size that reads as punctuation. The legend
- * appears once, on the stop card, where somebody meeting the marks for
- * the first time has a reason to look. */
-function aff(kind){
-  return `<span class="aff ${kind}" aria-hidden="true"></span>`;
-}
-function affLegendHtml(){
-  return `${aff("tap")}<span class="afflab">${esc(t("affTap"))}</span>`
-    + `${aff("hold")}<span class="afflab">${esc(t("affHold"))}</span>`;
+/* The tap signpost. See ".go" in the stylesheet for the whole scheme. */
+const GO='<span class="go" aria-hidden="true">›</span>';
+/* Once, ever, and only when there is a stop to point at. Gone on the
+   first touch anywhere or after a few seconds, whichever is first — a
+   hint that waits to be dismissed has become a chore. */
+function coachHoldOnce(){
+  try{ if(localStorage.getItem("coachHold")) return; }catch(_){ return; }
+  const nm=document.querySelector("#list .stop-hd .name");
+  if(!nm) return;
+  try{ localStorage.setItem("coachHold","1"); }catch(_){}
+  const tip=document.createElement("span");
+  tip.className="coachtip"; tip.textContent=t("coachHold");
+  nm.classList.add("coach"); nm.appendChild(tip);
+  const done=()=>{ nm.classList.remove("coach"); tip.remove();
+    window.removeEventListener("pointerdown",done,true); };
+  window.addEventListener("pointerdown",done,true);
+  setTimeout(done,5200);
 }
 function arrDest(s,c){ const i=s.routeMap[c]||{}; return destOf(LANG==="en"?(i.en||i.el):(i.el||i.en)); }
 
 /* --------------------------- long press ---------------------------- */
 function onLongPress(el,fn,ms=430){
   let tm=null,sx=0,sy=0,fired=false;
+  /* Marked as holdable, with the fill timed to the real threshold — a line
+     that finishes before or after the menu opens teaches the wrong thing. */
+  el.classList.add("hold"); el.style.setProperty("--hold-ms",ms+"ms");
   const clear=()=>{ if(tm){clearTimeout(tm);tm=null;} el.classList.remove("press"); };
   const start=e=>{
     const p=e.touches?e.touches[0]:e; sx=p.clientX; sy=p.clientY; fired=false;
@@ -2549,10 +2592,10 @@ function paintRow(row,s,a){
   if(row._line!==line){ tile.textContent=line; row._line=line; }
 
   const d=arrDest(s,a.code);
-  /* The dot: this row opens its route on a tap. Folded into the string
-     the repaint already guards on, so it costs no extra DOM work. */
+  /* The chevron: this row opens its route on a tap. Folded into the
+     string the repaint already guards on, so it costs no extra DOM work. */
   const dHtml=(d?`<span class="to">${t("to")}</span>${esc(d)}`:"")
-    +flagLine(reportForArrival(a))+aff("tap");
+    +flagLine(reportForArrival(a))+GO;
   if(row._dest!==dHtml){ dest.innerHTML=dHtml; row._dest=dHtml; }
 
   // the countdown changes on every single sweep, so it is written as text
@@ -2571,10 +2614,9 @@ function paintRow(row,s,a){
 }
 function headHtml(s){
   const w=walkMin(s.dist), fav=isFav(s.code);
-  /* The bar, because a stop name's extra lives behind a hold. One mark
-     on the name itself replaces a sentence under every row. */
-  return `<div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}`
-    +aff("hold")+`</div>`+
+  /* No mark at rest: a stop name's hold explains itself the moment it is
+     pressed (see .hold in the stylesheet). */
+  return `<div class="name">${fav?'<span class="star">★</span>':""}${esc(stopName(s))}</div>`+
     `<div class="meta">${w?`<span class="walk">🚶 ~${w}′</span>`:""}`+
     `<span class="num">${isFinite(s.dist)?fmtDist(s.dist):""}</span></div>`;
 }
@@ -3302,6 +3344,7 @@ async function loadStops(attempt){
       if(!state.stops.length && MODE==null) throw new Error("empty sweep");
     }
     bootDone=true; bootFail=null;
+    setTimeout(coachHoldOnce,1400);      // a no-op on every launch but the first
   }catch(e){
     loading=false;
     /* "OASA is not answering" is a definite answer, not a blip: the Worker
@@ -4967,7 +5010,7 @@ function renderStopCard(){
       const m=etaOf(a),p=etaParts(a),now=p.now,d=arrDest(s,a.code);
       const row=document.createElement("div"); row.className="row";
       row.innerHTML=`<div class="tile num">${esc(String(arrLine(s,a.code)))}</div>
-        <div class="dest">${d?`<span class="to">${t("to")}</span>${esc(d)}`:""}${flagLine(reportForArrival(a))}</div>
+        <div class="dest">${d?`<span class="to">${t("to")}</span>${esc(d)}`:""}${flagLine(reportForArrival(a))}${GO}</div>
         <div class="eta ${now?"now":""}${etaGuessed(a)?" guess":""}">${now?`<span class="v">${t("now")}</span>`
           :`<span class="v num">${esc(p.v)}</span><span class="u">${t("min")}</span>`}</div>`;
       const seeRoute=()=>{ closeStopCard(); openRoutePreview(s,String(a.code),m); };
@@ -4976,7 +5019,7 @@ function renderStopCard(){
       rows.appendChild(row);
     });
   }
-  $("#sc-hint").innerHTML=affLegendHtml();
+  $("#sc-hint").textContent="";
 }
 
 /* ------------------------ line lookup ------------------------------ */
@@ -5948,7 +5991,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v108</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v109</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -5965,7 +6008,14 @@ function u8(b64){ const p="=".repeat((4-b64.length%4)%4);
    server" — which is only ever true of ONE of them — sent people looking
    at the wrong end of the problem, most often when the browser was the
    thing refusing. Each throw below names its own cause. */
-async function ensurePush(){
+/* `fresh` throws away whatever subscription the browser is holding and
+   makes a new one. That is the only cure for an endpoint the push service
+   has retired but the browser still believes in: Chrome keeps returning
+   it from getSubscription() and does not reliably tell us it changed, so
+   re-registering it — which is what every "repair" here used to do —
+   handed the server the same dead address again, every time. */
+async function ensurePush(opts){
+  const fresh=!!(opts&&opts.fresh);
   if(!hasBackend()) throw new Error("nobackend");
   if(!("serviceWorker" in navigator)||!("PushManager" in window)) throw new Error("unsupported");
   let kr;
@@ -5979,6 +6029,7 @@ async function ensurePush(){
   if(perm!=="granted") throw new Error("denied");
   const reg=await navigator.serviceWorker.ready;
   let sub=await reg.pushManager.getSubscription();
+  if(sub&&fresh){ try{ await sub.unsubscribe(); }catch(_){} sub=null; }
   if(!sub){
     /* Permission granted and the page still cannot register. This is the
        browser's own push service refusing, not ours — Brave ships with
@@ -5990,6 +6041,11 @@ async function ensurePush(){
   const id=localStorage.getItem("subId")||null;
   const r=await fetch(base()+"/push/subscribe",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({id,subscription:sub.toJSON()})});
+  /* 409 stale: the server has seen this exact endpoint declared dead. The
+     browser cannot know that on its own, so this is where it finds out —
+     once. A second 409 after a brand-new subscription would mean the push
+     service itself is refusing us, and looping would only hide that. */
+  if(r.status===409&&!fresh) return ensurePush({fresh:true});
   if(!r.ok) throw new Error("server:"+r.status);
   const j=await r.json(); localStorage.setItem("subId",j.id); state.subId=j.id;
   await shareSubId(j.id);
@@ -6104,10 +6160,19 @@ function renderAlerts(){
     tb.onclick=async()=>{
       tb.disabled=true; out.hidden=false; out.textContent=t("searching");
       try{
-        const id=await ensurePush();                 // re-asks if permission lapsed
-        const r=await fetch(base()+"/push/test",{method:"POST",
-          headers:{"Content-Type":"application/json"},body:JSON.stringify({sub:id})});
-        const j=await r.json().catch(()=>({}));
+        let id=await ensurePush();                   // re-asks if permission lapsed
+        const test=async sid=>{ const r=await fetch(base()+"/push/test",{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({sub:sid})});
+          return { r, j: await r.json().catch(()=>({})) }; };
+        let {r,j}=await test(id);
+        /* Gone means the address the browser handed us is dead, and the
+           browser does not know. Make a new one and try once more, so the
+           tap that diagnosed the fault is also the tap that fixes it —
+           rather than a red "410" and an instruction to tap again. */
+        if(j&&j.gone){
+          id=await ensurePush({fresh:true});
+          ({r,j}=await test(id));
+        }
         /* When the push service refuses, it says why, and that sentence is
            worth far more than "not sent" — 401/403 is the VAPID keys,
            404/410 a dead subscription, 400 the encryption. */
@@ -6408,6 +6473,26 @@ $("#sm-route").onclick=()=>{
   paintJourneyForm();
   openJourneyPick("from");
 };
+/* The visible area, as opposed to the page. See ".sheet-bg,.rp.card"
+   in the stylesheet for why every overlay is sized to this. A focused
+   field is also nudged into view once the keyboard has finished arriving,
+   because "the panel fits" and "the caret is on screen" are different
+   promises and only the second one is the one anybody notices. */
+(function keepAboveKeyboard(){
+  const vv=window.visualViewport, root=document.documentElement;
+  if(!vv) return;
+  let raf=0;
+  const apply=()=>{ raf=0;
+    root.style.setProperty("--vvh",Math.round(vv.height)+"px");
+    root.style.setProperty("--vvtop",Math.round(vv.offsetTop)+"px"); };
+  const soon=()=>{ if(!raf) raf=requestAnimationFrame(apply); };
+  vv.addEventListener("resize",soon); vv.addEventListener("scroll",soon); apply();
+  document.addEventListener("focusin",e=>{
+    const el=e.target;
+    if(!el||!/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    setTimeout(()=>{ try{ el.scrollIntoView({block:"nearest"}); }catch(_){} },320);
+  });
+})();
 $("#live-r").onclick=loadLive;
 /* ---- the Android back button --------------------------------------
  * Every panel in this app is an overlay, not a page, so the system back
@@ -6503,6 +6588,7 @@ $("#rp-x").onclick=closeRP;
 /* The gesture everyone tries first on a card with a dimmed backdrop. */
 $("#rp").onclick=e=>{ if(e.target.id==="rp") closeRP(); };
 $("#jpr").onclick=e=>{ if(e.target.id==="jpr") closeItinerary(); };
+$("#jp").onclick=e=>{ if(e.target.id==="jp") closeJourney(); };
 $("#rl-x").onclick=()=>clearRoute(true);
 $("#jp-x").onclick=closeJourney;
 $("#jp-from").onclick=()=>openJourneyPick("from");

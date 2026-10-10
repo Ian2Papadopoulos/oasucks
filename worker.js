@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v108";
+const APP_VERSION = "v109";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -1079,14 +1079,48 @@ async function vapidAuth(endpoint, env) {
    the answer is usually sitting in a response body we were discarding:
    401/403 means the VAPID keys are wrong, 404/410 means the subscription
    is dead, 400 means the encryption is. */
-async function sendPush(sub, payloadObj, env) {
+/* ---- delivering a push ----------------------------------------------
+ *
+ * URGENCY. Without the header every push goes out at "normal" priority,
+ * and on an Android phone in Doze — screen off, in a pocket, which is
+ * exactly where a phone is while its owner waits for a bus — the push
+ * service is allowed to HOLD normal-priority messages until the device
+ * next wakes. The rider then gets "bus in 5′" the moment they pick the
+ * phone up, which is the "delayed notification on opening the app" that
+ * was reported in September and blamed, wrongly or at best partly, on
+ * the sweep. High urgency is what the spec reserves for time-sensitive
+ * messages, and "your bus is coming" is the definition of one.
+ *
+ * TTL. How long the push service may keep trying. It used to be a flat
+ * fifteen minutes, which meant a 5′ warning could arrive twelve minutes
+ * late — announcing a bus that had already gone. A late bus alert is not
+ * a degraded alert, it is a false one. So a caller can say how long its
+ * message stays true, and the push service drops it after that.
+ *
+ * GONE. A 404 or 410 means this endpoint is dead for good. It is now
+ * remembered by hash, because the browser that owns it often does NOT
+ * know: Chrome keeps handing the same stale subscription back from
+ * getSubscription() and does not reliably fire pushsubscriptionchange.
+ * The app would then "repair" the subscription by re-registering the
+ * very endpoint that was just declared dead, the next push would 410,
+ * the server would delete it, and round it went — forever, with every
+ * individual step looking like it worked. /push/subscribe now refuses a
+ * remembered dead endpoint, which is what tells the phone to make a new
+ * one. */
+async function deadEndpointKey(endpoint) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(endpoint || "")));
+  return "deadep:" + [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+}
+async function sendPush(sub, payloadObj, env, opts) {
+  const ttl = Math.max(60, Math.min(3600, Math.round((opts && opts.ttl) || 900)));
   const body = await encryptPush(sub, JSON.stringify(payloadObj));
   const res = await fetch(sub.endpoint, {
     method: "POST",
     headers: {
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
-      "TTL": "900",
+      "TTL": String(ttl),
+      "Urgency": (opts && opts.urgency) || "high",
       "Authorization": await vapidAuth(sub.endpoint, env),
     },
     body,
@@ -1095,7 +1129,14 @@ async function sendPush(sub, payloadObj, env) {
   if (res.status >= 300) {
     try { detail = (await res.text()).slice(0, 200).replace(/\s+/g, " ").trim(); } catch (_) { }
   }
-  return { status: res.status, detail, gone: res.status === 404 || res.status === 410 };
+  const gone = res.status === 404 || res.status === 410;
+  if (gone && env && env.ALERTS) {
+    try {
+      await env.ALERTS.put(await deadEndpointKey(sub.endpoint), String(Math.floor(Date.now() / 1000)),
+        { expirationTtl: 90 * 86400 });
+    } catch (_) { /* best effort: the delete below still happens */ }
+  }
+  return { status: res.status, detail, gone };
 }
 
 function pushReady(env) {
@@ -1136,7 +1177,10 @@ async function writeRules(env, rules) {
 function athensNow() {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Athens", weekday: "short",
-    hour: "2-digit", minute: "2-digit", hour12: false,
+    /* hourCycle, not hour12:false. With hour12:false several ICU builds
+       call five past midnight "24:05", which made the minute-of-day 1445
+       and put every window in the first hour of the day out of reach. */
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(new Date());
   const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
   const days = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -1572,7 +1616,13 @@ async function runAlerts(env, T = {}) {
               tag: `${rule.id}:${veh}:${firingLead}`,
               lead: firingLead,
               url: "./",
-            }, env);
+            }, env, {
+              /* True for as long as the bus is still coming: "in 5′"
+                 delivered six minutes from now describes a bus that has
+                 left. Dropped by the push service past that, which is the
+                 honest failure. A minute's grace, never less than one. */
+              ttl: Math.max(60, (min + 1) * 60),
+            });
             /* The push service says this endpoint is retired. Keeping it
                means every future run pays for a call that cannot succeed. */
             if (sent.gone) {
@@ -2808,7 +2858,7 @@ function bandValue(table, minutes, fallback) {
 // Athens is the only timezone this app has ever cared about.
 function athensParts(ms) {
   const f = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Athens", hour12: false,
+    timeZone: "Europe/Athens", hourCycle: "h23",       // see athensNow
     weekday: "short", hour: "2-digit", minute: "2-digit",
   }).formatToParts(new Date(ms));
   const g = t => (f.find(x => x.type === t) || {}).value;
@@ -4779,6 +4829,13 @@ async function route(req, env, ctx) {
       if (!rateLimit(ip, "push-sub", 15, 60)) return tooMany();
       const b = await req.json().catch(() => null);
       if (!b || !b.subscription || !b.subscription.endpoint) return json({ error: "bad subscription" }, 400);
+      /* The loop-breaker. This endpoint was declared dead by its push
+         service; storing it again would only set up the next 410. Saying
+         so is what tells the phone to throw its copy away and make a new
+         one — it has no other way to find out. */
+      if (await env.ALERTS.get(await deadEndpointKey(b.subscription.endpoint))) {
+        return json({ error: "stale subscription", stale: true }, 409);
+      }
       const id = b.id || crypto.randomUUID();
       await env.ALERTS.put(`sub:${id}`, JSON.stringify(b.subscription));
       /* When this address was last vouched for. Without it, "the last push
@@ -5051,7 +5108,7 @@ async function cronRun(event, env, T) {
     const now = athensNow();
     const daily = (() => {
       const h = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hour12: false,
+        timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
       }).formatToParts(new Date()).reduce((o, p) => (o[p.type] = p.value, o), {});
       return h.hour === "04" && +h.minute < 2;
     })();

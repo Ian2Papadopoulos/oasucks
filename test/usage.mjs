@@ -839,6 +839,74 @@ console.log("\n— the server telling its operator it broke —");
     noTok.status === 403, String(noTok.status));
 }
 
+/* "Alarms still don't arrive." Three faults, found by reading the whole
+   path rather than the part that had already been suspected.
+
+   1. A dead endpoint could never be replaced. The push service declared
+      the phone's address gone (410); the server deleted it; the app
+      "repaired" it by re-registering — but Chrome keeps returning the same
+      stale subscription from getSubscription(), so the repair handed the
+      server the very address just declared dead. Next push, 410 again.
+      Every step looked like it worked and the loop never ended.
+   2. No Urgency header, so every push went out at normal priority — which
+      an Android phone in Doze is allowed to hold until it next wakes.
+   3. A flat 15-minute TTL, so a held "bus in 5′" could arrive after the
+      bus had gone. */
+console.log("\n— the alert that could never be repaired —");
+{
+  const KV = new Map();
+  const ALERTS = {
+    async get(k, t) { const v = KV.get(k); return v == null ? null : (t === "json" ? JSON.parse(v) : v); },
+    async put(k, v) { KV.set(k, String(v)); },
+    async delete(k) { KV.delete(k); },
+    async list() { return { keys: [] }; },
+  };
+  const realSubtle = ctx.crypto.subtle;
+  ctx.crypto.subtle = globalThis.crypto.subtle;
+  const subscribe = async (id, endpoint) => {
+    ctx.__req = new Request("https://x/push/subscribe", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, subscription: { endpoint, keys: { p256dh: "a", auth: "b" } } }) });
+    ctx.__env = { DB, ALERTS, VAPID_PUBLIC_KEY: "p", VAPID_PRIVATE_KEY: "q" };
+    return vm.runInContext(`__handler.fetch(__req, __env, { waitUntil(){}, passThroughOnException(){} })`, ctx);
+  };
+
+  const dead = "https://fcm.googleapis.com/fcm/send/the-one-that-410d";
+  KV.set(await vm.runInContext(`deadEndpointKey(${JSON.stringify(dead)})`, ctx), "1");
+  const r1 = await subscribe("phone-1", dead);
+  const j1 = await r1.json().catch(() => ({}));
+  ok("re-registering an endpoint already declared dead is refused",
+    r1.status === 409 && j1.stale === true, `${r1.status} ${JSON.stringify(j1)}`);
+  ok("...and is not stored, so it cannot set up the next 410",
+    !KV.has("sub:phone-1"), [...KV.keys()].join(", "));
+
+  const r2 = await subscribe("phone-1", "https://fcm.googleapis.com/fcm/send/a-brand-new-one");
+  ok("a fresh endpoint under the SAME id is accepted",
+    r2.status === 200 && KV.has("sub:phone-1"), String(r2.status));
+  ok("...so the rule keyed by that id comes back to life without being set again",
+    JSON.parse(KV.get("sub:phone-1")).endpoint.endsWith("a-brand-new-one"));
+  ctx.crypto.subtle = realSubtle;
+
+  const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
+  ok("a 410 is remembered by hash at the moment it happens",
+    /if \(gone && env && env\.ALERTS\)/.test(w) && /await deadEndpointKey\(sub\.endpoint\)/.test(w));
+  ok("every push asks to be delivered through Doze",
+    /"Urgency": \(opts && opts\.urgency\) \|\| "high"/.test(w),
+    "normal priority may be held until the phone next wakes");
+  ok("an alert expires when it stops being true",
+    /ttl: Math\.max\(60, \(min \+ 1\) \* 60\)/.test(w),
+    "a held 'bus in 5′' must not arrive after the bus has gone");
+
+  const html = readFileSync(path.join(PUB, "index.html"), "utf8");
+  ok("the phone throws away a subscription the server says is dead",
+    /if\(sub&&fresh\)\{ try\{ await sub\.unsubscribe\(\); \}catch\(_\)\{\} sub=null; \}/.test(html));
+  ok("...when told so by a 409, exactly once",
+    /if\(r\.status===409&&!fresh\) return ensurePush\(\{fresh:true\}\);/.test(html),
+    "a second 409 after a new subscription is the push service, and looping would hide it");
+  ok("and the Test tap that finds a dead address also replaces it",
+    /if\(j&&j\.gone\)\{\s*id=await ensurePush\(\{fresh:true\}\);/.test(html));
+}
+
 /* The figure above is the one the whole upstream-load story rests on, and
    until now it was unreadable in practice. It lived in one isolate's
    memory, and a checkup is a rare outside request that nearly always
@@ -1115,7 +1183,7 @@ console.log("\n— the push service's own verdict, kept —");
 {
   const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
   ok("sendPush returns why, not just a number",
-    /return \{ status: res\.status, detail, gone:/.test(w));
+    /return \{ status: res\.status, detail, gone\b/.test(w));
   ok("...reading the body only when it failed",
     /if \(res\.status >= 300\) \{[\s\S]{0,120}await res\.text\(\)/.test(w),
     "a success body is noise and costs a read");
