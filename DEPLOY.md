@@ -14,7 +14,7 @@ the steps below are the two that need your login, plus checks.
 
 ```powershell
 npm install          # once — playwright-core and wrangler are dev dependencies
-npm test             # 1,022 assertions
+npm test             # 1,188 assertions
 npm run sim:boot     # the first ten seconds of a cold start, replayed
 ```
 
@@ -292,7 +292,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v110",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v111",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -896,6 +896,31 @@ Change any file, then just:
 npx wrangler deploy
 ```
 The same URL updates. On the phone, pull to refresh (or reopen) to pick up changes.
+
+### Refreshing the stop index
+
+Searching by a stop's name happens on the phone, against `public/stops-index.json`: every
+OASA stop's code, name and position. It comes from OASA's own GTFS on data.gov.gr — the
+bus and trolley feed, [dataset fb049bb1…](https://data.gov.gr/dataset/fb049bb1-aea6-4443-95fa-8b941dd6a057),
+file `osy_gtfs.zip`. Stops change slowly, so a few times a year is plenty, and nothing
+breaks in between: a stop the file does not have is still found the old way, through the
+server.
+
+```powershell
+node tools/build-stop-index.mjs C:\path\to\osy_gtfs.zip
+npm test
+npx wrangler deploy
+```
+
+Only `stops.txt` is read. The feed's timetable is not used — it has been seen expired for
+weeks at a time — so an out-of-date feed is fine to build from.
+
+The tool also rewrites `STOP_INDEX_URL` in `public/index.html` to
+`./stops-index.json?v=<hash of the new file>`, and that is the part that matters:
+browsers keep the file for a week (`public/_headers`), so a new file under the old URL
+would reach nobody until then. `test/search.mjs` fails if the two disagree, and checks the
+file itself — the whole network, every stop inside Attica, every code a number the live
+arrivals API takes.
 
 ## Before you publish it publicly
 

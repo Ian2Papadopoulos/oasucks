@@ -1157,7 +1157,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v110</span></div>
+  <div class="foot"><span class="ver">v111</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -1453,6 +1453,54 @@ function fold(s){
     .normalize("NFD").replace(/[̀-ͯ]/g,"")   // ί → ι
     .replace(/ς/g,"σ")                                  // final sigma
     .replace(/[^\p{L}\p{N}]+/gu,"");
+}
+/* One spelling per sound — for matching what someone TYPED against a name.
+   "συνταγμα", "ΣΥΝΤΑΓΜΑ" and "syntagma" are one station to a person on a
+   phone keyboard, and a letter-by-letter comparison said they were three:
+   a station typed without its accent was simply not found. Accents and
+   case go, Greeklish is read as Greek, then every letter that sounds like
+   "i" (ι η υ οι ει) becomes one letter, ο/ω one, αι/ε one, doubles single.
+   Many-to-one on purpose: applied to both sides it only adds matches.
+   The Worker has the same tables, for the area typed in an address;
+   test/search.mjs keeps the two in step. */
+const GL2=[["th","θ"],["ch","χ"],["kh","χ"],["ps","ψ"],["ks","ξ"],["ou","ου"],["ai","αι"],["ei","ει"],
+  ["oi","οι"],["au","αυ"],["eu","ευ"],["mp","μπ"],["nt","ντ"],["gk","γκ"],["gg","γγ"],["ts","τσ"],["tz","τζ"]];
+const GL1={a:"α",b:"β",c:"κ",d:"δ",e:"ε",f:"φ",g:"γ",h:"η",i:"ι",j:"ζ",k:"κ",l:"λ",m:"μ",n:"ν",o:"ο",
+  p:"π",q:"κ",r:"ρ",s:"σ",t:"τ",u:"υ",v:"β",w:"ω",x:"ξ",y:"υ",z:"ζ"};
+const SND2=[["ου","u"],["αυ","av"],["ευ","ev"],["αφ","av"],["εφ","ev"],["οι","i"],["ει","i"],["υι","i"],
+  ["αι","e"],["γγ","ng"],["γκ","g"],["μπ","b"],["ντ","d"]];
+const SND1={α:"a",β:"v",γ:"g",δ:"d",ε:"e",ζ:"z",η:"i",θ:"th",ι:"i",κ:"k",λ:"l",μ:"m",ν:"n",ξ:"ks",
+  ο:"o",π:"p",ρ:"r",σ:"s",ς:"s",τ:"t",υ:"i",φ:"f",χ:"h",ψ:"ps",ω:"o"};
+/* Each table as one pass of a regular expression — pairs before single
+   letters, left to right, as the Worker's loop reads them — because this
+   one runs over every stop name in Athens when the index arrives, and the
+   letter-by-letter walk cost a phone a visible pause. Same tables, same
+   answers: test/search.mjs compares the two on every stop name. */
+const GL_RE=new RegExp(GL2.map(p=>p[0]).join("|")+"|[a-z]","g"), GL_TO=Object.assign(Object.fromEntries(GL2),GL1);
+const SND_RE=new RegExp(SND2.map(p=>p[0]).join("|")+"|[α-ω]","g"), SND_TO=Object.assign(Object.fromEntries(SND2),SND1);
+function soundKey(s){
+  let g=String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  if(/[a-z]/.test(g)) g=g.replace(GL_RE,m=>GL_TO[m]);
+  return g.replace(SND_RE,m=>SND_TO[m]).replace(/[^a-z0-9]+/g," ").replace(/([a-z])\1+/g,"$1").trim();
+}
+/* Greeklish spells χ two ways that collide: "x" (ξ, or χ in "Xalandri")
+   and a word-initial "h" (η, or χ in "Halandri"). Every reading is tried. */
+function soundKeys(s){
+  const l=String(s||"").toLowerCase();
+  if(!/[a-z]/.test(l)) return [soundKey(l)];
+  return [...new Set([l,l.replace(/x/g,"ch"),l.replace(/\bh/g,"ch"),
+    l.replace(/x/g,"ch").replace(/\bh/g,"ch")].map(soundKey))];
+}
+/* What is in the box while someone is still typing. Its last letter may be
+   the first half of a pair the name spells as one sound — "Συν" is on its
+   way to "Συντ", which is "d", and "Μαρο" to "Μαρου" — so a half-typed
+   name stopped matching until the pair was finished. The last letter is
+   also read as each pair it could be starting. */
+const TYPING={ο:"υι",α:"ι",ε:"ι",γ:"γ",μ:"π",ν:"τ",o:"ui",a:"i",e:"i",g:"g",m:"p",n:"t",c:"h",k:"h"};
+function typedKeys(q){
+  const s=String(q||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const more=[...(TYPING[s.slice(-1)]||"")].map(c=>s+c);
+  return [...new Set([s,...more].flatMap(soundKeys))].filter(Boolean);
 }
 function placeLabel(j){
   const a=(j&&j.address)||{};
@@ -5101,15 +5149,74 @@ function localStopMatches(q){
      above already answer that query properly, so the only stop worth
      offering for it is one whose code IS that number. */
   const asLine=looksLikeLine(q);
+  const ks=typedKeys(q);
+  const heard=v=>{ const k=soundKey(v); return !!k&&ks.some(x=>k.includes(x)); };
   pool.forEach(s=>{
     const key=String(s.code);
     if(seen[key]) return;
     const hit=asLine
       ? norm(key)===n || norm(key).replace(/^0+/,"")===n.replace(/^0+/,"")
-      : (norm(s.name_el).includes(n)||norm(s.name_en).includes(n)||norm(s.street).includes(n));
+      : (heard(s.name_el)||heard(s.name_en)||heard(s.street));
     if(hit){ seen[key]=1; out.push(s); }
   });
   return out.sort((a,b)=>(a.dist||0)-(b.dist||0)).slice(0,6);
+}
+
+/* ------------------- every stop in Athens, by name -------------------
+ * The board knows the stops around you and a geocoder knows PLACES, so a
+ * stop across town by its own name — "14η ΝΤΑΜΑΡΙΑ", "ΤΖΙΤΖΙΦΙΕΣ" — was in
+ * neither, and could not be found anywhere in the app. stops-index.json is
+ * every OASA stop (built from OASA's own GTFS by
+ * tools/build-stop-index.mjs): about 100 KB on the wire, fetched the first
+ * time anyone searches, then kept by the browser. Matched by sound, so
+ * accents, case and Greeklish make no difference, and it costs no request
+ * per keystroke. */
+/* The ?v= is the file's own hash, written here by the build tool: the
+   browser keeps the file a week (_headers), so without a new URL a rebuilt
+   index would not reach anyone until then. */
+const STOP_INDEX_URL="./stops-index.json?v=1f75d580";
+/* Same name, and each stop within this walk of the next: one place. */
+const JP_SAME_PLACE_M=400;
+let stopIndex=null, stopIndexLoading=null;
+function loadStopIndex(){
+  if(stopIndex) return Promise.resolve(stopIndex);
+  if(!stopIndexLoading) stopIndexLoading=fetch(STOP_INDEX_URL)
+    .then(r=>{ if(!r.ok) throw new Error("stop index "+r.status); return r.json(); })
+    .then(j=>{
+      if(!j||!Array.isArray(j.stops)) throw new Error("stop index unreadable");
+      // most names belong to two stops, one each side of the road: key each name once
+      const keyOf=new Map();
+      stopIndex=j.stops.map(([code,name,lat,lng])=>{
+        let key=keyOf.get(name);
+        if(key===undefined) keyOf.set(name,key=" "+soundKey(name));
+        return {code:String(code),name,lat,lng,key};
+      });
+      return stopIndex;
+    })
+    /* Any failure — offline, a 5xx, a half-deployed file — leaves no index
+       rather than an empty one, so the next search asks again. */
+    .catch(()=>{ stopIndexLoading=null; return []; });
+  return stopIndexLoading;
+}
+/* Whole name first, then the start of a word, then anywhere; nearer first
+   among equals. The rows have the same shape the server's stop search
+   returns, so every caller can treat them alike. */
+function indexStopMatches(q,limit){
+  if(!stopIndex||looksLikeLine(q)) return [];
+  const ks=typedKeys(q).filter(k=>k.length>=2);
+  if(!ks.length) return [];
+  const known=isFinite(here.lat), hits=[];
+  for(const s of stopIndex){
+    let score=0;
+    for(const k of ks){
+      if(s.key===" "+k) score=3;
+      else if(score<2&&s.key.includes(" "+k)) score=2;
+      else if(score<1&&s.key.includes(k)) score=1;
+    }
+    if(score) hits.push({score,s,d:known?haversine(here.lat,here.lng,s.lat,s.lng):0});
+  }
+  return hits.sort((a,b)=>b.score-a.score||a.d-b.d).slice(0,limit).map(({s,d})=>
+    ({code:s.code,name_el:s.name,name_en:s.name,street:"",lat:s.lat,lng:s.lng,dist:known?d:NaN}));
 }
 /* "No line by that name" is only true if we actually looked. Offline, or
    with the service unreachable, the honest answer is that we could not,
@@ -5126,9 +5233,12 @@ async function doLineSearch(){
   if(!q.trim()) return;
   box.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
 
-  const lines=await loadLines();
+  const [lines]=await Promise.all([loadLines(),loadStopIndex()]);
   const lineHits=matchLines(lines,q);
-  const localStops=localStopMatches(q);
+  // the board's own stops first (they carry live arrivals), then any stop in Athens by name
+  const onBoard=localStopMatches(q), mine={};
+  onBoard.forEach(s=>{ mine[String(s.code)]=1; });
+  const localStops=onBoard.concat(indexStopMatches(q,8).filter(s=>!mine[String(s.code)]));
 
   let remoteStops=[], netFail=false;
   if(hasBackend()){
@@ -5550,6 +5660,14 @@ function openJourneyPick(which) {
   jpPickResults("");
   $("#jppick").classList.add("on");
   setTimeout(() => $("#jpp-q").focus(), 80);
+  /* Asked for now, so it has normally landed before the second letter.
+     If it lands after someone has already typed, show its rows — but only
+     when that costs no address request: one already answered (memoised),
+     or a query still too short to have sent one. */
+  loadStopIndex().then(() => {
+    const q = $("#jpp-q").value, key = q.trim().toLowerCase();
+    if (jp.picking && key && (jpq.seen.has(key) || key.length < JPQ.minChars)) jpPickResults(q);
+  });
 }
 function closeJourneyPick() {
   $("#jppick").classList.remove("on"); jp.picking = null;
@@ -5637,12 +5755,44 @@ async function jpPickResults(q) {
   }
 
   // stations and loaded stops match instantly, with no request at all
-  const norm = x => String(x || "").toLowerCase();
-  (state.metro || []).filter(m => norm(m.name).includes(query) || norm(m.name_en).includes(query))
-    .slice(0, 5).forEach(m => add("Ⓜ " + (LANG === "en" ? (m.name_en || m.name) : m.name),
-      { kind: "metro", lat: m.lat, lng: m.lng, label: LANG === "en" ? (m.name_en || m.name) : m.name }));
-  localStopMatches(query).slice(0, 4).forEach(s2 => add("🚏 " + stopName(s2),
-    { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) }));
+  /* By sound, not by letters: "συνταγμα" typed without its accent, which
+     is how most phone keyboards leave it, used to find no station at all. */
+  const qk = typedKeys(query);
+  const heard = (...names) => names.some(n => { const k = soundKey(n); return !!k && qk.some(x => k.includes(x)); });
+  const listed = [];                            // by sound and position, for the index below
+  (state.metro || []).filter(m => heard(m.name, m.name_en)).slice(0, 5).forEach(m => {
+    listed.push({ k: soundKey(m.name), lat: m.lat, lng: m.lng });
+    add("Ⓜ " + (LANG === "en" ? (m.name_en || m.name) : m.name),
+      { kind: "metro", lat: m.lat, lng: m.lng, label: LANG === "en" ? (m.name_en || m.name) : m.name });
+  });
+  const shown = new Set();
+  localStopMatches(query).slice(0, 4).forEach(s2 => {
+    shown.add(String(s2.code));
+    listed.push({ k: soundKey(s2.name_el), lat: s2.lat, lng: s2.lng });
+    add("🚏 " + stopName(s2), { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) });
+  });
+  /* Then every other stop in Athens by name, once the index has arrived —
+     it is asked for when the picker opens, so it is normally here before
+     the second letter. A name belongs to a cluster of stops, not one:
+     ΣΥΝΤΑΓΜΑ is eight, around the square and down both avenues. As a place
+     to travel to they are one, so stops with the same name that are a
+     short walk apart, one to the next, are one row, shown at the nearest
+     of them — and none at all when the station or a stop on the board
+     above already has that name there. */
+  const near = (a, b) => haversine(a.lat, a.lng, b.lat, b.lng) < JP_SAME_PLACE_M;
+  const groups = [];
+  indexStopMatches(query, 60).forEach(s2 => {
+    const k = soundKey(s2.name_el);
+    const into = groups.filter(g => g.k === k && g.stops.some(o => near(o, s2)));
+    if (!into.length) { groups.push({ k, stops: [s2] }); return; }
+    into[0].stops.push(s2);                     // the first group is the best-placed one
+    into.slice(1).forEach(g => { into[0].stops.push(...g.stops); groups.splice(groups.indexOf(g), 1); });
+  });
+  groups.filter(g => !g.stops.some(o => shown.has(String(o.code))
+      || listed.some(p => p.k === g.k && near(p, o))))
+    .slice(0, 4).forEach(({ stops: [s2] }) => add("🚏 " + stopName(s2),
+      { kind: "stop", lat: s2.lat, lng: s2.lng, label: stopName(s2) },
+      isFinite(s2.dist) ? fmtDist(s2.dist) : ""));
 
   /* "nothing found" only when nothing at all is on screen — a local stop
      match still counts, even if the geocoder came back empty. */
@@ -6000,7 +6150,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v110</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v111</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }
@@ -6312,7 +6462,10 @@ function renderForm(edit,onStop){
     const q=qIn.value.trim();
     if(q.length<2){ qRes.innerHTML=""; return; }
     qRes.innerHTML=`<div class="res-msg">${t("searching")}</div>`;
+    await loadStopIndex();
     let hits=localStopMatches(q), netFail=false;
+    { const mine={}; hits.forEach(x=>{ mine[String(x.code)]=1; });
+      hits=hits.concat(indexStopMatches(q,8).filter(x=>!mine[String(x.code)])); }
     if(hasBackend()){
       try{
         const r=await fetch(`${base()}/stops/search?q=${encodeURIComponent(q)}`,{cache:"no-store"});

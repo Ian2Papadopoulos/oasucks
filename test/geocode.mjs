@@ -403,6 +403,109 @@ const overpassCalls = () => sent.filter(s => s.url.includes("overpass"));
     /around:350,37\.975,23\.735/.test(q), q.slice(0, 90));
 }
 
+/* ---- an address the way people type it ------------------------------ *
+   Twenty real Athens addresses through this code against live Nominatim:
+   11 placed at the number before, 15 after — every one in the area typed,
+   none empty. These pin the three reasons why. */
+console.log("\n— an address the way people type it —");
+{
+  const split = vm.runInContext("splitAddress", ctx);
+  const a = split("Κηφισίας 100 Μαρούσι");
+  ok("the words after the number are the area, not part of the street",
+    a.name === "Κηφισίας" && a.area === "Μαρούσι" && a.num === "100", JSON.stringify(a));
+  const b = split("Λεωφόρος Συγγρού 45");
+  ok("the street-kind word comes off the name, and is kept on the side",
+    b.name === "Συγγρού" && b.full === "Λεωφόρος Συγγρού" && b.area === "", JSON.stringify(b));
+  for (const q of ["Λεωφ. Συγγρού 45", "Λ. Συγγρού 45", "λεωφορος συγγρου 45", "Οδός Συγγρού 45"]) {
+    ok(`...however it is written: "${q}"`, /^συγγρου$/i.test(split(q).name.normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")), split(q).name);
+  }
+  const c = split("12 Φιλοτίμου");
+  ok("a number written first still finds its street", c.name === "Φιλοτίμου" && c.area === "");
+  ok("an area after a comma is an area too", split("Αγίας Παρασκευής 40, Χαλάνδρι").area === "Χαλάνδρι");
+  ok("a square keeps its name — Πλατεία is part of it", split("Πλατεία Κάνιγγος 10").name === "Πλατεία Κάνιγγος");
+}
+{
+  const inArea = vm.runInContext("inArea", ctx);
+  const row = (...parts) => ({ display_name: parts.join(", "), address: { suburb: parts[0] } });
+  ok("an area matches the way the map writes it", inArea(row("Ανάβρυτα", "Δήμος Αμαρουσίου"), "Μαρούσι"),
+    "Μαρούσι is Αμαρουσίου in the address hierarchy");
+  ok("...in any case and without accents", inArea(row("ΧΑΛΑΝΔΡΙ"), "χαλανδρι"));
+  ok("...and in greeklish, with either reading of h", inArea(row("Χαλάνδρι"), "Halandri")
+    && inArea(row("Χαλάνδρι"), "Xalandri") && inArea(row("Κηφισιά"), "Kifisia"));
+  ok("a different municipality does not", !inArea(row("Νέα Κολοκυνθού", "Δήμος Περιστερίου"), "Χαλάνδρι"));
+  ok("every word of the area has to be there", !inArea(row("Νέα Ιωνία"), "Νέα Σμύρνη")
+    && inArea(row("Νέα Σμύρνη"), "Νέα Σμύρνη"));
+}
+const nom = (num, road, area, lat = "37.98", lon = "23.73", extra = {}) => ({
+  lat, lon, class: num ? "place" : "highway", display_name: [num, road, area].filter(Boolean).join(", "),
+  address: { ...(num ? { house_number: String(num) } : {}), road, suburb: area }, ...extra });
+const byUrl = fn => { ctx.__osm = () => fn(new URL(sent[sent.length - 1].url).searchParams); };
+const structured = () => osmCalls().map(c => new URL(c.url).searchParams).filter(p => p.has("street"));
+{
+  // the number exists in Athens, not in Marousi; Marousi only has the street
+  byUrl(p => p.get("city") ? [nom(null, "Κηφισίας", "Μαρούσι")]
+    : p.has("street") ? [nom(100, "Κηφισίας", "Αμπελόκηποι")] : []);
+  const j = await body(await geocode("q=" + encodeURIComponent("Κηφισίας 100 Μαρούσι"), {}));
+  const s = structured();
+  ok("an area typed is asked for by name first", s[0] && s[0].get("city") === "Μαρούσι"
+    && s[0].get("street") === "100 Κηφισίας", s[0] && s[0].toString());
+  ok("the right number in the wrong municipality is not the answer",
+    !j.some(r => /Αμπελόκηποι/.test(r.display_name)), JSON.stringify(j.map(r => r.display_name)));
+  ok("...the street in the right one is", j[0] && /Μαρούσι/.test(j[0].display_name)
+    && j[0].precision === "street" && j[0].wantedNumber === true, j[0] && j[0].display_name);
+  ctx.__osm = () => osmReply;
+}
+{
+  // nothing in the typed area anywhere: an answer elsewhere beats none
+  byUrl(p => p.get("city") ? [] : [nom(100, "Κηφισίας", "Αμπελόκηποι")]);
+  const j = await body(await geocode("q=" + encodeURIComponent("Κηφισίας 100 Μαρουσι"), {}));
+  ok("an area the map does not know still gets an answer, labelled by where it is",
+    j.length === 1 && /Αμπελόκηποι/.test(j[0].display_name), JSON.stringify(j));
+  ctx.__osm = () => osmReply;
+}
+{
+  // numbered buildings carry "Συγγρού", not "Λεωφόρος Συγγρού"
+  byUrl(p => p.get("street") === "45 Συγγρού" ? [nom(45, "Ανδρέα Συγγρού", "Νέος Κόσμος")] : []);
+  const j = await body(await geocode("q=" + encodeURIComponent("Λεωφόρος Συγγρού 45"), {}));
+  const s = structured();
+  ok("the short street name is asked for first", s[0] && s[0].get("street") === "45 Συγγρού",
+    s[0] && s[0].get("street"));
+  ok("...which is what finds the building", j[0] && j[0].precision === "address", JSON.stringify(j[0]));
+  ctx.__osm = () => osmReply;
+}
+{
+  byUrl(p => p.get("street") === "45 Λεωφόρος Συγγρού" ? [nom(45, "Λεωφόρος Συγγρού", "Νέος Κόσμος")] : []);
+  const j = await body(await geocode("q=" + encodeURIComponent("Λεωφόρος Συγγρού 45"), {}));
+  ok("...and the full one second, for the roads tagged that way",
+    j[0] && j[0].precision === "address" && structured().length === 2);
+  ctx.__osm = () => osmReply;
+}
+{
+  byUrl(() => []);
+  await body(await geocode("q=" + encodeURIComponent("Leoforos Kifisias 100 Marousi"), {}));
+  ok("a latin address with an area cannot run up a bill of requests",
+    structured().length <= vm.runInContext("ADDR_TRIES", ctx), `${structured().length} structured`);
+  ctx.__osm = () => osmReply;
+}
+{
+  // two Αιόλου 8: Palaio Faliro listed first, central Athens nearer the rider
+  const far = nom(8, "Αιόλου", "Παλαιό Φάληρο", "37.9340", "23.6950");
+  const near = nom(8, "Αιόλου", "Πλάκα", "37.9765", "23.7270");
+  byUrl(p => p.has("street") ? [far, near] : []);
+  let j = await body(await geocode("q=" + encodeURIComponent("Αιόλου 8") + "&lat=37.9755&lng=23.7348", {}));
+  ok("with no area typed, the same address in two places goes nearest the rider first",
+    /Πλάκα/.test(j[0].display_name), j.map(r => r.display_name).join(" | "));
+  j = await body(await geocode("q=" + encodeURIComponent("Αιόλου 8"), {}));
+  ok("...and with no position, the geocoder's own order stands", /Φάληρο/.test(j[0].display_name));
+  byUrl(() => [nom(null, "Σύνταγμα", "Ναύπλιο", "37.56", "22.80", { class: "place" }),
+    nom(null, "Σύνταγμα", "Αθήνα", "37.9755", "23.7348", { class: "place" })]);
+  j = await body(await geocode("q=" + encodeURIComponent("Σύνταγμα") + "&lat=37.9755&lng=23.7348", {}));
+  ok("a named place keeps the geocoder's ranking — distance is for addresses",
+    /Ναύπλιο/.test(j[0].display_name), "importance is the better guide for a place name");
+  ctx.__osm = () => osmReply;
+}
+
 console.log("\n— caching —");
 {
   orsReply = fc(feature());

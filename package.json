@@ -8,7 +8,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "icons": "node tools/icons.mjs",
-    "test": "node test/plan.mjs && node test/brand.mjs && node test/tiles.mjs && node test/journey.mjs && node test/geocode.mjs && node test/reports.mjs && node test/legal.mjs && node test/install.mjs && node test/usage.mjs && node test/origin.mjs && node test/fixes.mjs && node test/ui.mjs && node test/resilience.mjs",
+    "test": "node test/plan.mjs && node test/brand.mjs && node test/tiles.mjs && node test/journey.mjs && node test/geocode.mjs && node test/reports.mjs && node test/legal.mjs && node test/install.mjs && node test/usage.mjs && node test/origin.mjs && node test/fixes.mjs && node test/ui.mjs && node test/resilience.mjs && node test/search.mjs",
     "metrics": "node tools/metrics.mjs",
     "checkup": "node tools/checkup.mjs",
     "sim:boot": "node tools/sim-boot.mjs"

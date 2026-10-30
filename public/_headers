@@ -34,3 +34,10 @@
   # canvas-drawn markers.
   Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.basemaps.cartocdn.com https://tile.openstreetmap.org; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; manifest-src 'self'; worker-src 'self'
 
+
+# Every OASA stop by name, for the searches (tools/build-stop-index.mjs).
+# Fetched as ./stops-index.json?v=<hash of the file>, stamped into the app
+# by the same tool, so a week in the browser's cache never serves an old
+# index under a new app, and saves 100 KB a visit.
+/stops-index.json
+  Cache-Control: public, max-age=604800

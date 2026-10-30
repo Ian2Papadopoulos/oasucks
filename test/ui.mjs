@@ -135,7 +135,10 @@ console.log("\n— one row per place —");
   await v.page.fill("#jpp-q", "syntagma");
   await v.page.waitForTimeout(1500);
   const r = await rows(v.page);
-  const syn = r.filter(x => /συνταγμα|syntagma/i.test(x));
+  /* Rows NAMED Syntagma. The stop index also knows "ΠΛ. ΣΥΝΤΑΓΜΑΤΟΣ",
+     a stop with a name of its own 490 m from this test's corner, and
+     test/search.mjs has the rules for when a stop is the same place. */
+  const syn = r.filter(x => /^\S+ (συνταγμα|syntagma)( ·|,|$)/i.test(x));
   ok("a corner known to the stop list, the metro list AND the geocoder is listed once",
     syn.length === 1, `${syn.length}: ${syn.join(" | ")}`);
   ok("...and the geocoder's own duplicate rows collapse too",

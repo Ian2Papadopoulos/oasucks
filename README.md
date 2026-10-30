@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v110.**
+version: v111.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -37,7 +37,9 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 1,104 assertions across thirteen suites. The routing engine, the geocoder and the upstream layer (`resilience.mjs`: breaker, budget, subrequest ceiling, last-good fallbacks) run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 1,188 assertions across fourteen suites. The routing engine, the geocoder and the upstream layer (`resilience.mjs`: breaker, budget, subrequest ceiling, last-good fallbacks) run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. `search.mjs` does both: it holds the app's and the Worker's sound keys to the same tables, checks the stop index and the tool that builds it, then finds stops by name in a real browser. |
+| `public/stops-index.json` | Every OASA stop — code, name, position — for searching by name on the phone. Built from OASA's GTFS by `tools/build-stop-index.mjs`; see [Typing a destination](#typing-a-destination). |
+| `tools/build-stop-index.mjs` | Rebuilds `stops-index.json` from OASA's `osy_gtfs.zip` and stamps the new file's hash into the app's URL for it. See `DEPLOY.md` → *Refreshing the stop index*. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app **and Cloudflare** how things are, and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/browser.mjs` | Finds a browser to drive without downloading one. `playwright-core` ships no browsers on purpose, so a fresh machine used to be told to `npx playwright install` — fetching a second Chromium next to the one already in Program Files. This checks `CHROME_PATH`, then where Chrome, Chromium and Edge actually live on this platform, and only then gives up, with both ways out. Used by every test and tool that drives a browser. |
@@ -622,9 +624,10 @@ estimated rather than routed.
 
 ### Typing a destination
 
-The picker at each end of a journey searches four things at once. Your location, your
-favourites, the stops already loaded and every metro station match **locally**, from the
-first character, with no request at all. Past three characters it also asks the geocoder.
+The picker at each end of a journey searches five things at once. Your location, your
+favourites, the stops already loaded, every metro station and **every OASA stop in
+Athens** match **locally**, from the first character, with no request at all. Past three
+characters it also asks the geocoder.
 
 Which geocoder depends on the same `ORS_KEY`:
 
@@ -639,6 +642,60 @@ Which geocoder depends on the same `ORS_KEY`:
 Either way the answers are flattened to the same rows server-side, so the app never
 learns which one replied. ORS misses, errors and a rejected key all fall through to
 Nominatim rather than surfacing an error.
+
+**Every stop, by its own name** (v111). The board knows the stops around you and a
+geocoder knows *places*, so a stop across town by its own name — "ΤΖΙΤΖΙΦΙΕΣ", "14η
+ΝΤΑΜΑΡΙΑ" — was in neither, and could not be found anywhere in the app.
+`public/stops-index.json` is all 8,039 of them, code, name and position, built from
+OASA's own GTFS by `tools/build-stop-index.mjs`. It is about 100 KB on the wire, asked for
+when the picker or the search opens, then kept by the browser for a week; searching it
+costs no request per letter. Only the stops are read from the GTFS, never its timetable:
+the codes are the same codes the live arrivals API takes, which is what makes the file
+useful, and the timetable is the thing this app exists not to trust.
+
+**By sound, not by letters.** A station typed without its accent — how most phone
+keyboards leave it — found nothing, because "συνταγμα" is not "Σύνταγμα" letter by
+letter. Names and queries are now both reduced to how they *sound*: accents and case go,
+Greeklish is read as Greek, every letter that sounds like "i" (ι η υ οι ει) is one letter,
+ο and ω are one, αι and ε are one, doubles are single. So "syntagma", "ΣΥΝΤΑΓΜΑ" and
+"συνταγμα" are one station, and "Xalandri", "Halandri" and "Chalandri" one suburb. The
+last letter typed is also read as the start of each pair it could be beginning — "Συν" is
+on its way to "Συντ", and ντ is one sound — so a name does not disappear halfway through
+being typed and come back a letter later. The Worker has the same function for the area
+in an address; `test/search.mjs` holds the two copies to the same tables.
+
+**A name is a place, not a pavement.** A stop name usually belongs to several stops:
+ΣΥΝΤΑΓΜΑ is eight, around the square and down both avenues. As a place to travel to they
+are one, so stops with the same name that are a short walk apart, one to the next
+(`JP_SAME_PLACE_M`, 400 m), are one row, at the nearest of them — and no row at all when
+the metro station or a stop on your board already has that name there. A different name
+nearby ("ΠΛ. ΣΥΝΤΑΓΜΑΤΟΣ") keeps its own row. The search under ⌕ does the opposite on
+purpose: there each stop is a board of its own arrivals, so each is listed, with its
+distance.
+
+**An address the way people type it** (v111). "Κηφισίας 100 Μαρούσι", "Λεωφ. Συγγρού
+45", "Αγίας Παρασκευής 40, Χαλάνδρι". Handed to the geocoder as typed, three things went
+wrong, each found by running twenty real Athens addresses through the Worker:
+
+- **The street-kind word.** People write Λεωφόρος; OpenStreetMap mostly tags the numbered
+  buildings without it, so asking with it found nothing — every avenue in the sample came
+  back empty. The name without it is asked first, the full name second.
+- **The area.** Words after the number say *where*. "Κηφισίας Μαρούσι" is the name of no
+  street.
+- **The area again, the other way.** Numbering restarts in each municipality, so Κηφισίας
+  100 exists in three of them, and the right number in the wrong one is worse than no
+  number: a confident answer that sends someone across Athens.
+
+So the number splits the query: before it is the street (after it, for "12 Φιλοτίμου"),
+after it is the area, and the area is a **constraint**, not a hint. It goes to Nominatim
+as `city=`, and rows outside it are dropped, compared by sound and stem so that "Μαρούσι"
+finds "Δήμος Αμαρουσίου". If the area has the street but not the number, you get the
+street there; only when the area has nothing at all do you get the address somewhere
+else. With no area typed and the same address in several suburbs, the nearest comes
+first. Structured requests are capped at `ADDR_TRIES` (6) per search across every
+spelling, because Nominatim allows one a second. Measured on the same twenty: 11 found to
+the number before, 15 after, every one in the area typed, none empty. The other five are
+numbers OpenStreetMap does not have, which is what the estimate below is for.
 
 **A street beats nothing.** v50 rejected any addressed result that had not resolved to a
 building, which turned "OSM has no number 12 on this road" into an empty list. That was a
@@ -746,6 +803,9 @@ Anchors are exempt. "My location", Home and Work are places *you* named rather t
 the search found, so they keep their row even when something else sits on the same spot —
 standing at a stop must not delete that stop from the list of places you can travel to.
 
+Stops from the stop index are a third kind, deduped by name and walking distance — see
+*A name is a place, not a pavement* under [Typing a destination](#typing-a-destination).
+
 ### Why it offered you a walk
 
 "Walk 34 minutes" is the one answer a rider cannot check against anything. It can mean the
@@ -829,7 +889,10 @@ The same query also returns **stops**. OASA has no stop-name search, so `/stops/
 geocodes the query (Nominatim — the path the address search already uses) and returns
 the stops around that place, ranked so a stop actually *named* like the query beats one
 that's merely nearby; stops already loaded around you match instantly with no request at
-all. Picking one opens a **card in the centre of the screen** with its live arrivals in
+all. Since v111 so does **every OASA stop by its own name**, from the stop index, before
+the server answers — a stop across town no longer depends on a geocoder knowing a place
+called that. Accents, case and Greeklish make no difference (see *By sound, not by
+letters* under [Typing a destination](#typing-a-destination)). Picking one opens a **card in the centre of the screen** with its live arrivals in
 the same style as the list. Hold the stop's name there for the pin/alert menu; hold an
 arrival row for the route preview.
 

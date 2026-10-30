@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v110";
+const APP_VERSION = "v111";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -709,6 +709,44 @@ function toGreek(input) {
 
 function isLatin(s) { return /[a-z]/i.test(s) && !/[\u0370-\u03ff]/.test(s); }
 
+/* ---- one spelling per sound ----------------------------------------
+ * "Μαρούσι", "ΜΑΡΟΥΣΙ", "marousi" and the "Αμαρουσίου" a geocoder writes
+ * in its address are one place, and comparing them letter by letter says
+ * they are four. So both sides are reduced to how they SOUND: accents and
+ * case gone, Greeklish read as Greek first, then every letter that sounds
+ * like "i" (ι η υ οι ει) is one letter, ο and ω are one, αι and ε are one,
+ * doubled letters are single. It is deliberately many-to-one; applied to
+ * both sides of a comparison that only ever makes more things match.
+ * The app's copy is `soundKey` in index.html — the same tables, kept in
+ * step by test/search.mjs. */
+const SOUND_PAIRS = [["ου", "u"], ["αυ", "av"], ["ευ", "ev"], ["αφ", "av"], ["εφ", "ev"],
+  ["οι", "i"], ["ει", "i"], ["υι", "i"], ["αι", "e"],
+  ["γγ", "ng"], ["γκ", "g"], ["μπ", "b"], ["ντ", "d"]];
+const SOUND_ONE = { α: "a", β: "v", γ: "g", δ: "d", ε: "e", ζ: "z", η: "i", θ: "th", ι: "i",
+  κ: "k", λ: "l", μ: "m", ν: "n", ξ: "ks", ο: "o", π: "p", ρ: "r", σ: "s", ς: "s", τ: "t",
+  υ: "i", φ: "f", χ: "h", ψ: "ps", ω: "o" };
+function soundKey(s) {
+  let g = String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/[a-z]/.test(g)) g = toGreek(g);
+  let out = "";
+  for (let i = 0; i < g.length; ) {
+    const p = SOUND_PAIRS.find(x => x[0] === g.slice(i, i + 2));
+    if (p) { out += p[1]; i += 2; continue; }
+    const c = g[i++];
+    out += SOUND_ONE[c] != null ? SOUND_ONE[c] : /[0-9]/.test(c) ? c : " ";
+  }
+  return out.replace(/([a-z])\1+/g, "$1").replace(/\s+/g, " ").trim();
+}
+/* Greeklish writes χ two ways that collide with other letters: "x" (ξ, or
+   χ in "Xalandri") and a word-initial "h" (η, or χ in "Halandri"). Rather
+   than guess, a latin query is compared under each reading. */
+function soundKeys(s) {
+  const t = String(s || "").toLowerCase();
+  if (!/[a-z]/.test(t)) return [soundKey(t)];
+  return [...new Set([t, t.replace(/x/g, "ch"), t.replace(/\bh/g, "ch"),
+    t.replace(/x/g, "ch").replace(/\bh/g, "ch")].map(soundKey))];
+}
+
 /* Greeklish is lossy: one latin spelling maps to several valid Greek ones
  * (i → ι/η/υ, o → ο/ω, e → ε/αι). We try the most likely spelling first and
  * fall back through the common alternates until Nominatim finds something. */
@@ -750,30 +788,70 @@ function nominatimSearchUrl(q, lang) {
  *
  * `bounded=1` is safe here in a way it is not for free-form search: an
  * address query that leaves Attica is wrong anyway, and the box is what
- * keeps a same-named street in Thessaloniki out of the list. */
-function nominatimAddressUrl(street, lang) {
+ * keeps a same-named street in Thessaloniki out of the list.
+ *
+ * `city` is the area the rider typed after the number, when there was
+ * one. Ten rows rather than six, because with no area to go on the right
+ * Κηφισίας 100 has to be picked out of several municipalities' worth. */
+function nominatimAddressUrl(street, lang, city) {
   const n = new URL(NOMINATIM + "search");
   n.searchParams.set("format", "jsonv2");
   n.searchParams.set("street", street);          // "12 Φιλοτίμου" — number first
+  if (city) n.searchParams.set("city", city);
   n.searchParams.set("countrycodes", "gr");
   n.searchParams.set("viewbox", VIEWBOX);
   n.searchParams.set("bounded", "1");
-  n.searchParams.set("limit", "6");
+  n.searchParams.set("limit", "10");
   n.searchParams.set("addressdetails", "1");
   n.searchParams.set("accept-language", lang);
   return n.toString();
 }
 
-/* "Φιλοτίμου 12" and "12 Φιλοτίμου" both mean the same building, and
- * Nominatim's structured `street` wants the number first. Pull the number
- * out wherever it sits and rebuild it in the order the API expects. */
+/* ---- reading an address the way people type it ----------------------
+ * "Κηφισίας 100 Μαρούσι", "Λεωφ. Συγγρού 45", "Αγίας Παρασκευής 40,
+ * Χαλάνδρι". Handed to the geocoder as typed, three things went wrong,
+ * each found by running twenty real Athens addresses through this file:
+ *
+ *   - The street-kind word. People write Λεωφόρος; OpenStreetMap mostly
+ *     tags the numbered buildings without it ("Συγγρού"), so asking with
+ *     it found nothing at all — every avenue in the sample came back empty.
+ *   - The area. Words after the number say where, they are not part of
+ *     the street, and "Κηφισίας Μαρούσι" is the name of no street.
+ *   - The area again, the other way. Numbering restarts in each
+ *     municipality, so Κηφισίας 100 exists in three of them, and the right
+ *     number in the wrong one is worse than the right street with no
+ *     number: it is a confident answer that sends someone across Athens.
+ *
+ * So the number splits the query: what comes before it is the street (or
+ * after it, for "12 Φιλοτίμου"), and what comes after it is the area. The
+ * area is a constraint, not a hint. Measured on the same twenty: 11 found
+ * to the number before, 15 after, every one in the area typed, none empty.
+ * The other five are numbers OpenStreetMap does not have. */
+const STREET_KIND = /^(λ[εέ][ωώοό]φ(?:[οό]ρ[οό][ςσ])?\.?|λ\.|[οό]δ(?:[οό][ςσ])?\.?|leoforos|leof\.?|odos)\s+/i;
+// structured requests per search, across every spelling — Nominatim allows one a second
+const ADDR_TRIES = 6;
 function splitAddress(q) {
   const s = String(q || "").trim();
   const m = s.match(HOUSE_NO);
   if (!m) return null;
-  const num = m[0].trim();
-  const name = s.replace(HOUSE_NO, " ").replace(/\s+/g, " ").trim();
-  return name ? { num, name, street: `${num} ${name}` } : null;
+  const num = m[0].replace(/[\s,]/g, "");
+  const before = s.slice(0, m.index).trim(), after = s.slice(m.index + m[0].length).trim();
+  // "Κηφισίας 100 Μαρούσι": street before, area after; "12 Φιλοτίμου": street after
+  const full = (before || after).replace(/,.*$/, "").replace(/\s+/g, " ").trim();
+  const area = before ? after.replace(/^[,\s]+/, "").replace(/\s+/g, " ").trim() : "";
+  const name = full.replace(STREET_KIND, "").trim() || full;
+  return name ? { num, name, full, area, street: `${num} ${name}` } : null;
+}
+/* Does a geocoder row lie in the area the rider typed? Compared by sound
+   and by stem — "Μαρούσι" has to find "Δήμος Αμαρουσίου", "Χαλάνδρι" has
+   to find "Χαλανδρίου" — and every word of the area has to be there, so
+   "Νέα Σμύρνη" is not satisfied by any old Νέα Something. */
+function inArea(row, area) {
+  const words = soundKeys(area).map(k => k.split(" ").filter(w => w.length >= 3));
+  if (!words.some(ws => ws.length)) return true;            // nothing to check against
+  const a = row && row.address ? Object.values(row.address).join(" ") : "";
+  const hay = soundKey(a + " " + ((row && row.display_name) || ""));
+  return words.some(ws => ws.length && ws.every(w => hay.includes(w.length >= 5 ? w.slice(0, -2) : w)));
 }
 
 /* ------------------------- address search --------------------------- *
@@ -805,7 +883,8 @@ const ORS_GEO_FULL = "https://api.openrouteservice.org/geocode/search";
  * Greek or latin letter suffix (12Α, 12A) or a range (12-14). A postcode
  * (5 digits) or a bus line ("608") is not one, and neither is a number
  * that is part of a name — "Πλατεία 25ης Μαρτίου". */
-const HOUSE_NO = /(^|\s)\d{1,3}([\-–]\d{1,3})?[A-Za-zΑ-Ωα-ω]?(\s|$)/;
+// a comma may follow it: "Αγίας Παρασκευής 40, Χαλάνδρι" was searched as a place name
+const HOUSE_NO = /(^|\s)\d{1,3}([\-–]\d{1,3})?[A-Za-zΑ-Ωα-ω]?(\s|,|$)/;
 function looksAddressed(q) {
   const s = String(q || "").trim();
   // a bare number on its own is not an address, it is someone still typing
@@ -1145,15 +1224,34 @@ async function handleGeocode(url, env) {
     || !!(r.address && r.address.house_number);
   const tag = rows => rows.map(r => ({ ...r, wantedNumber: wantsNumber }));
   let street = null;                       // best street-level answer, if any
+  /* See splitAddress. A typed area constrains every source below, not only
+     the one that can carry it as a parameter. What was found outside it is
+     kept aside: if nothing at all turns up inside — an area spelled in a
+     way the map does not know — that is still a better answer than none,
+     and every row's label names the neighbourhood it is really in. */
+  const addr = wantsNumber ? splitAddress(q) : null;
+  const inPlace = r => !addr || !addr.area || inArea(r, addr.area);
+  let elsewhere = null;
+  /* With no area typed, the same street name in two municipalities is
+     settled by the rider's position, which the app sends: "Αιόλου 8" means
+     the one in central Athens to someone standing there, and the geocoder
+     alone listed Palaio Faliro's first. Only for addresses — for a named
+     place the geocoder's own ranking of importance is the better guide. */
+  const nearest = rows => (!focus || !wantsNumber || (addr && addr.area)) ? rows
+    : rows.map(r => [r, hav(focus.lat, focus.lng, Number(r.lat), Number(r.lon))])
+      .sort((a, b) => (isFinite(a[1]) ? a[1] : 1e9) - (isFinite(b[1]) ? b[1] : 1e9))
+      .map(x => x[0]);
 
   if (env && env.ORS_KEY) {
     const tries = isLatin(q) ? [q, toGreek(q)] : [q];
     for (const cand of tries) {
       const rows = await orsGeocode(cand, lang, focus, env);
       if (!rows || !rows.length) continue;
-      const exact = wantsNumber ? rows.filter(hasNumber) : rows;
+      const here = rows.filter(inPlace);
+      const exact = wantsNumber ? here.filter(hasNumber) : here;
       if (exact.length) return json(tag(exact.map(r => ({ ...r, matched: cand }))));
-      if (!street) street = rows.map(r => ({ ...r, matched: cand }));
+      if (!street && here.length) street = here.map(r => ({ ...r, matched: cand }));
+      if (!elsewhere) elsewhere = rows.map(r => ({ ...r, matched: cand }));
     }
   }
 
@@ -1168,36 +1266,60 @@ async function handleGeocode(url, env) {
   /* A query naming a building gets the structured form first, in every
    * spelling. Free-form search ranks the street, or a shop on it, above
    * the address often enough that "some streets work and some don't" was
-   * the reported symptom — the difference was never the street. */
-  const addr = wantsNumber ? splitAddress(q) : null;
+   * the reported symptom — the difference was never the street.
+   *
+   * Per spelling: the short street name before the full one (numbered
+   * buildings are mostly tagged without "Λεωφόρος"), and with the area
+   * before without it. Capped, because a latin query has four spellings
+   * and Nominatim asks for one request a second. */
+  const keep = (data, cand) => {             // what a reply says, sorted into three piles
+    const here = data.filter(inPlace);
+    const hits = (wantsNumber ? here.filter(d => d.address && d.address.house_number) : here);
+    if (!street && here.length) street = osmRows(nearest(here), cand);
+    if (!elsewhere) {
+      const any = data.filter(d => d.address && d.address.house_number);
+      elsewhere = osmRows(any.length ? any : data, cand);
+    }
+    return hits.length ? osmRows(nearest(hits), cand) : null;
+  };
   if (addr) {
+    let asked = 0;
     for (const cand of geocodeCandidates(q)) {
       const c = splitAddress(cand) || addr;
-      const data = await getJSON(nominatimAddressUrl(c.street, lang), GEO_CACHE);
-      if (!Array.isArray(data) || !data.length) continue;
-      // a building is the answer; a street is the consolation, kept aside
-      const hits = data.filter(d => d.address && d.address.house_number);
-      if (hits.length) return json(tag(osmRows(hits, cand)));
-      if (!street) street = osmRows(data, cand);
+      const names = c.full !== c.name ? [c.name, c.full] : [c.name];
+      for (const nm of names) {
+        for (const city of c.area ? [c.area, null] : [null]) {
+          if (asked++ >= ADDR_TRIES) break;
+          const data = await getJSON(nominatimAddressUrl(`${c.num} ${nm}`, lang, city), GEO_CACHE);
+          if (!Array.isArray(data) || !data.length) continue;
+          // a building is the answer; a street is the consolation, kept aside
+          const got = keep(data, cand);
+          if (got) return json(tag(got));
+        }
+      }
     }
   }
 
-  for (const cand of geocodeCandidates(q)) {
+  /* Free-form last, and for an address in its cleanest form first: the
+     street without its kind-word, the number, the area. */
+  const loose = addr
+    ? [...new Set([`${addr.name} ${addr.num}${addr.area ? ", " + addr.area : ""}`,
+        ...geocodeCandidates(q)])].slice(0, 4)
+    : geocodeCandidates(q);
+  for (const cand of loose) {
     const data = await getJSON(nominatimSearchUrl(cand, lang), GEO_CACHE);
     if (!Array.isArray(data) || !data.length) continue;
-    const hits = wantsNumber ? data.filter(d => d.address && d.address.house_number) : data;
-    if (hits.length) return json(tag(osmRows(hits, cand)));
-    if (!street) street = osmRows(data, cand);
+    const got = keep(data, cand);
+    if (got) return json(tag(got));
   }
 
   /* No building anywhere. Before falling back to the whole road, try to
      place the number along it from whatever numbers the street does carry;
      rows that cannot be estimated stay as they were. The street, honestly
      labelled, still beats an empty list. */
-  if (!street) return json([]);
+  if (!street) return json(elsewhere ? tag(elsewhere) : []);
   if (wantsNumber) {
-    const a = splitAddress(q);
-    const want = a ? houseNum(a.num) : null;
+    const want = addr ? houseNum(addr.num) : null;
     if (want !== null) return json(tag(await fillHouseNumbers(street, want)));
   }
   return json(tag(street));

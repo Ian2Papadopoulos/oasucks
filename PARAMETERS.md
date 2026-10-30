@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v110 defaults** — if you edit the
+breaks if you change it. Values here are the **v111 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -503,6 +503,10 @@ it and still separates adjacent house numbers.
 Rows whose `kind` is `me` or `slot` are exempt — they are anchors you named, not results,
 and suppressing a stop because you are standing on it would remove it as a destination.
 
+Stops from the stop index are grouped by **name and walking distance** instead (see
+*Searching stops by name* below): one name is usually several stops, and position alone
+would list ΣΥΝΤΑΓΜΑ eight times.
+
 ### The splash
 
 `public/index.html` → `SPLASH`
@@ -625,7 +629,11 @@ limit and a ban. `/health?token=…` reports the circuit under `upstream`.
 | `ATTICA` | 23.40–24.10 E, 37.70–38.40 N | Bounding box on results. Same window as `VIEWBOX`, spelled as corners because Pelias wants corners. | |
 | focus rounding | **2 dp** (~1 km) | Precision of the position sent as `focus.point`. | It only nudges the ranking, so more precision buys nothing and costs cache hits. |
 | `GEO_CACHE` | **86 400 s** (24 h) | Edge-cache lifetime for a geocode answer, ORS and Nominatim alike. | |
-| `HOUSE_NO` | `\d{1,3}` + optional range/letter, standalone | What makes a query "an address" rather than a name, which decides `/geocode/search` over `/geocode/autocomplete`. Also requires three letters somewhere, so a line number is not an address. | Widen it and postcodes start routing to the address parser, which answers worse for them. |
+| `HOUSE_NO` | `\d{1,3}` + optional range/letter, standalone (a comma after it counts: "40, Χαλάνδρι") | What makes a query "an address" rather than a name, which decides `/geocode/search` over `/geocode/autocomplete`. Also requires three letters somewhere, so a line number is not an address. It is also where the query splits: the street before it, the area after. | Widen it and postcodes start routing to the address parser, which answers worse for them. |
+| `STREET_KIND` | Λεωφόρος, Λεωφ., Λ., Οδός, Οδ. (and leoforos, leof., odos) | Street-kind words taken off the front of the street name. The short name is asked first, the full one second. | OpenStreetMap mostly tags numbered buildings without the word: with it, every avenue in a twenty-address sample came back empty. |
+| `ADDR_TRIES` | **6** | Structured Nominatim requests per search, across every spelling and both forms of the name, in the typed area first and then anywhere. | Nominatim's policy is one request a second. Fewer loses the full-name or the anywhere retry; more makes a slow miss slower. |
+| Nominatim `limit` | **10** | Rows asked for per request. | Below about 8 the right municipality's row can be cut when three suburbs share a street. |
+| area words | sound key, words of **3+** letters; **5+** letters lose their last two | How the area typed after a number is checked against a row's address: every word must be there, compared by sound and stem, so "Μαρούσι" finds "Δήμος Αμαρουσίου" and "Χαλάνδρι" finds "Χαλανδρίου". | Drop the stemming and every genitive in an address misses. |
 
 Two geocoders sit behind `/geocode`. **OpenRouteService (Pelias) autocomplete**
 when `ORS_KEY` is set — it matches partial tokens, takes a focus point, and
@@ -646,6 +654,26 @@ daily quota while Nominatim's are free.
 The key goes in an `Authorization` header, never the query string, so the request
 URL is safe to use as a cache key. Putting it in the query would file the secret
 into Cloudflare's cache index for every search anyone ever runs.
+
+### Searching stops by name
+
+`public/index.html` → the stop-index block; `public/_headers`; `tools/build-stop-index.mjs`.
+
+| Parameter | Default | What it means | If you change it |
+|---|---|---|---|
+| `STOP_INDEX_URL` | `./stops-index.json?v=<hash>` | Where the app gets every OASA stop by name. The `v` is the file's own hash, written by the build tool. | Do not edit it by hand: `test/search.mjs` fails unless it matches the file. |
+| index `Cache-Control` | **604 800 s** (7 days) | How long a browser keeps the file (`_headers`). Safe because the URL changes with the content. | Shorter costs ~100 KB per visit for nothing. |
+| `JP_SAME_PLACE_M` | **400 m** | In the A→B picker, stops with the same name, each within this walk of the next, are one row — and no row when the station or a stop on the board already has that name within it. | Larger and same-named stops in neighbouring suburbs fuse; smaller and ΣΥΝΤΑΓΜΑ comes back as two or three rows. |
+| picker rows from the index | **4** groups, from the **60** best matches | | |
+| search rows from the index | **8** stops | Each listed separately: in the search a stop is its own board of arrivals. | |
+| shortest query | **2** sounds | Below that the index is not searched. | One letter matches most of Athens. |
+
+Matching is by **sound key**, the same function in the app (`soundKey`) and the Worker
+(where it checks the area of an address): accents and case gone, Greeklish read as Greek,
+ι η υ οι ει as one letter, ο ω as one, αι ε as one, doubles single. While typing, the last
+letter is also read as each pair it could be starting (`TYPING`), so "Συν" still finds
+Σύνταγμα (ντ is one sound). Ranking: the whole name, then the start of a word, then
+anywhere; nearer first among equals.
 
 ### Estimating a house number nobody mapped — `INTERP`
 
