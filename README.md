@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v109.**
+version: v110.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 1,022 assertions across twelve suites. The routing engine and the geocoder run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
+| `test/` | `npm test` — 1,104 assertions across thirteen suites. The routing engine, the geocoder and the upstream layer (`resilience.mjs`: breaker, budget, subrequest ceiling, last-good fallbacks) run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
 | `tools/checkup.mjs` | `npm run checkup` — asks the running app **and Cloudflare** how things are, and answers in plain words: what is fine, what to look at, what to fix, and what to do about each. Reads `/health` and `/alerts/why` and applies the thresholds that actually matter, so you do not have to hold the whole system in your head at 8am. Reads nothing, changes nothing; exits 1 if something needs fixing. |
 | `tools/browser.mjs` | Finds a browser to drive without downloading one. `playwright-core` ships no browsers on purpose, so a fresh machine used to be told to `npx playwright install` — fetching a second Chromium next to the one already in Program Files. This checks `CHROME_PATH`, then where Chrome, Chromium and Edge actually live on this platform, and only then gives up, with both ways out. Used by every test and tool that drives a browser. |
@@ -481,6 +481,68 @@ shared list, so no one can hide a healthy stop from everyone else.
 
 Field names in the API are inconsistent (mixed casing), so the parsing is defensive —
 if line-mapping fails it degrades to the route code and still shows the countdown.
+
+## Why the board answered 503, and what v110 changed
+
+Through v109 riders met *"the server answered with an error (503)"* more often the more
+of them there were — while OASA, most of the time, was answering fine. Four causes, all
+inside this Worker, and each one made the next worse.
+
+**1. The breaker and the budget refused what the edge cache was holding.** Both gates
+wrapped *every* OASA call, including the stop lists (edge-cached for an hour) and each
+stop's lines (a day) that the edge answers whether OASA is up or not. So past 150 live
+calls a minute in one isolate — eleven arrivals per board, about fourteen riders at
+fourteen corners — or for two minutes after the breaker tripped, a board at any corner
+without a saved copy came back **503**. Replayed against v109 with OASA healthy and the
+stop lists cached: 0 of 10 riders a minute got a 503, **6 of 20, 26 of 40**. That is the
+"worse as it grows" curve, and it is arithmetic, not weather.
+
+Now only **live** calls — arrivals and vehicle positions — are gated (`liveCall`).
+Reference data passes, and so does a live answer this isolate fetched seconds ago and the
+edge still holds (`edgeHeld`): the ninetieth rider at a busy stop costs OASA nothing, so
+there is nothing to refuse. What is still held back is filled from the corner's last good
+board, and a board with no arrivals at all says why rather than claiming the street is
+empty. Same replay: no 503s.
+
+**2. Our own subrequest limit was booked as OASA failing.** An invocation gets 50
+subrequests on the free plan, `fetch` and the Cache API together. A board planned up to
+48 of them, and since v86 the alert sweep and vehicle tracking rode on whichever request
+came first — usually a board: **77** in one invocation in the replay. The runtime refused
+the overflow with *"Too many subrequests"*, the breaker counted every refusal as an
+upstream failure, opened, and shut every rider on the isolate out for two minutes —
+while `/health` reported OASA down, which this README says means "nothing to fix".
+
+Now those refusals are counted on their own (`upstream.ownLimits` in `/health` and
+`/alerts/why`) and never touch the breaker; a non-zero count there is a bug in this file.
+Background work rides only on **light** requests — a board served from the cache, the
+bare `/health` an uptime monitor pings, `/reports`, `/notice`, `/pulse` — under its own
+meter, alerts first. A board plans 38 calls and can never ask for more than 48. A call
+that timed out is no longer retried into the same slow upstream: that turned an 8-second
+wait into 16 and spent a second subrequest on an answer that was not coming.
+
+**3. Going over 10 ms of CPU is a 503 too.** Cloudflare answers it with error 1102, which
+no code in the Worker can see — it shows only in the dashboard, under *Metrics → Errors →
+Invocation Statuses* as *Exceeded CPU Time Limits*. Three hot spots, measured in V8:
+`localeCompare` with options builds a collator **per comparison** (~11 µs, a few ms a
+board); the planner built a date formatter **per node it searched** (~100 µs each, 239 a
+plan); and the dead-stop index — every stop anyone had ever looked at, never pruned — was
+rewritten whole on **every board** (~4 ms at 8,000 stops, a little more every month, and
+a KV write each time against the free plan's 1,000 a day). One collator and one formatter
+now, built once; the shared index holds only dead stops and is written when that list
+changes.
+
+**4. `/api` passed OASA's 503 straight through**, and went round the breaker and the
+budget while it did. It reads through the same layer as everything else now, answers
+from its last copy (minutes aged) when OASA fails, and its errors say whose they are:
+**503** with `Retry-After` when this Worker is holding back, **502** when OASA failed.
+
+And the app: since v80 a `/nearby` 503 has carried `upstream` as an object, but the app
+compared it to the string `"down"` it was written against in v66, so it never recognised
+the definite answer — it walked the whole retry ladder, four requests into an outage,
+then blamed "the server". It reads both forms now.
+
+`test/resilience.mjs` pins every one of these against counting fakes for `fetch`, the
+edge cache and KV, so subrequests are added up the way the runtime adds them.
 
 ## Journey planning (A → B)
 
@@ -1077,6 +1139,18 @@ second harmless. `via` in the trace says which path served a run: `a rider's req
 Tracking rides along, being the other half of the same fault, guarded so it cannot take
 the alerts down with it.
 
+**Since v110 it rides only on light requests**, after they have their answer: a board
+served from the cache, the bare `/health`, `/reports`, `/notice`, `/pulse`, `/rules`,
+`/lines`, `/metro`, `/push/key`. "Whichever request comes first" was usually a board being
+built, and an invocation's fifty subrequests are shared by everything it does — the board
+and the sweep together came to 77, the runtime refused the overflow, and the breaker took
+the refusals for OASA failing (see [Why the board answered 503](#why-the-board-answered-503-and-what-v110-changed)).
+The sweep carries its own meter (`subMeter`); a stop it cannot afford is recorded as
+`NOT REACHED — the run used up its share of this invocation's subrequests`, next to the
+deadline's own note. Alerts go first and tracking gets what is left: a missed lead
+cannot be had back, a missed sample is one point fewer on a chart. An uptime monitor
+calling `/health` every minute is now the steadiest ride the sweep can get.
+
 #### Saying whose fault it is
 
 When the board is thin the rider's question is always "is it me?", and the honest answer
@@ -1240,7 +1314,7 @@ That also removes a request from every cold start.
 `/nearby` used to return `200` with an empty `stops` array — indistinguishable from a
 corner of Athens with no bus stops on it. The board then said "no arrivals in the next few
 minutes", a confident claim about the street made on no information whatsoever. It returns
-`503` with `upstream: "down"` now, uncached, and the app says **OASA is not responding**
+`503` with `upstream` saying why (`{ ok: false, reason: "down" }`), uncached, and the app says **OASA is not responding**
 and that the rider's connection is fine. That answer is also definite rather than a blip,
 so it shows after one retry instead of sitting on placeholders through the whole ladder.
 

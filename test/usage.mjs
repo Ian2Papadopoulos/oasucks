@@ -703,8 +703,9 @@ console.log("\n— what runAlerts does when the push fails —");
     ok("...and the line lookup behind it is exempt too",
       /fetchStopRoutes\(stopCode, ALERT_FETCH\)/.test(w));
     ok("...but the read path, which is what got us blocked, still is not",
-      /if \(upstream && !spared && circuitOpen\(\)\)/.test(w)
-      && /if \(upstream && !spared && !budgetAllows\(\)\)/.test(w),
+      /const gated = upstream && !spared && liveCall\(cacheTtl\)/.test(w)
+      && /if \(gated && !free && circuitOpen\(\)\)/.test(w)
+      && /if \(gated && !free && !budgetAllows\(\)\)/.test(w),
       "the breaker and the budget both step aside for alerts, and only for alerts");
     ok("...so it carries its own ceiling instead, under the subrequest cap",
       /ALERT_MAX_STOPS = 10/.test(w) && /T\.overCapacity/.test(w));
@@ -732,12 +733,13 @@ console.log("\n— a ceiling on what we ask of OASA —");
   const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
   ok("there is a budget, and it is a number you can find",
     /const UPSTREAM_BUDGET = \{ perMin: \d+ \}/.test(w));
-  ok("...checked before every upstream call on the read path",
-    /if \(upstream && !spared && !budgetAllows\(\)\)/.test(w));
+  ok("...checked before every live upstream call on the read path",
+    /if \(gated && !free && !budgetAllows\(\)\)/.test(w),
+    "reference data, and live answers the edge still holds, were never the load — see test/resilience.mjs");
   /* A cache hit never reached OASA. Charging it would shed traffic that
      costs them nothing, which is the opposite of the point. */
   ok("...and a cache hit gives its token back",
-    /if \(!spared && cached\) budgetRefund\(\)/.test(w),
+    /if \(gated && !free && cached\) budgetRefund\(\)/.test(w),
     "the budget measures what we ask of them, not what we serve");
   /* Refunding on `Age` alone meant that if that header were ever absent —
      and it is not guaranteed — every cache hit would be charged, inflating
@@ -1106,7 +1108,9 @@ console.log("\n— the alert sweep rides on a rider's request —");
     && /alertsOnTraffic\(env, ctx\)/.test(w.split("async fetch(req, env, ctx)")[1] || ""),
     "every rider opening the board is a fetch invocation, which is the context that works");
   ok("...not on the alert endpoints themselves",
-    /if \(!url\.pathname\.includes\("\/alerts\/"\)\) alertsOnTraffic/.test(w),
+    vm.runInContext(`!LIGHT_PATH.test("/alerts/run") && !LIGHT_PATH.test("/alerts/why")`, ctx)
+    && !/alertsOnTraffic\(env, ctx\)/.test((w.split("async function route(")[1] || "")
+      .split("\nasync function runAlertsViaRequest")[0]),
     "/alerts/run IS the sweep, and /alerts/why must report without starting one");
   ok("...at most once every 50 seconds, and never twice at once",
     /PIGGYBACK_EVERY_MS = 50000/.test(w) && /if \(piggybackBusy \|\| now - piggybackAt </.test(w));
@@ -1117,13 +1121,13 @@ console.log("\n— the alert sweep rides on a rider's request —");
     /via: "a rider's request"/.test(w));
   /* Tracking is the other half of the evidence, so it gets the same ride. */
   ok("tracking rides along, being the other half of the same fault",
-    /if \(await trackingActive\(env\)\) T\.tracked = await sampleVehicles\(env\)/.test(w));
+    /if \(await trackingActive\(env\)\) T\.tracked = await sampleVehicles\(env, M\)/.test(w));
   ok("...without being able to take the alerts down with it",
     /catch \(e\) \{ T\.trackError/.test(w));
   /* The cron stays. A fallback nobody exercises is not a fallback, and a
      deployment with no traffic still has alerts to send. */
   ok("the cron still runs it too, and a double run is harmless",
-    /if \(alertsDue\) await runAlertsViaRequest\(env, T\)/.test(w),
+    /if \(alertsDue\) await runAlertsViaRequest\(env, T, M\)/.test(w),
     "the sent: keys dedupe whichever gets there second");
 }
 
@@ -1139,10 +1143,10 @@ console.log("\n— the cron runs the alerts as a request —");
   ok("...admin-gated, because it sends real notifications",
     /\/alerts\/run"\)\) \{\s*\n\s*if \(!adminOK/.test(w));
   ok("...and the cron calls it instead of doing the work itself",
-    /if \(alertsDue\) await runAlertsViaRequest\(env, T\)/.test(w));
+    /if \(alertsDue\) await runAlertsViaRequest\(env, T, M\)/.test(w));
   ok("...falling back to in-process when it cannot, so the fallback is real",
     /T\.via = "in-process \(the self-call failed\)"/.test(w)
-    && /return runAlerts\(env, T\)/.test(w));
+    && /return runAlerts\(env, T, M\)/.test(w));
   ok("...and the trace says which path served it",
     /Object\.assign\(T, got, \{ via: "request" \}\)/.test(w));
   /* It learns its own name from real traffic: a scheduled invocation has

@@ -1157,7 +1157,7 @@
 
   <main id="list"><div class="msg" id="boot">Εντοπισμός κοντινών στάσεων…</div></main>
   <button class="wake" id="wake">↻ <span id="wake-t"></span></button>
-  <div class="foot"><span class="ver">v109</span></div>
+  <div class="foot"><span class="ver">v110</span></div>
 </div>
 
 <div class="sheet-bg" id="sheetbg"><div class="sheet">
@@ -3245,7 +3245,14 @@ async function loadStopsBatch(){
      wrong with their connection, and it will come back on its own. */
   if(r.status===503){
     const j0=safeJson(await r.text());
-    if(j0&&j0.upstream==="down") throw new Error("upstream-down");
+    /* The Worker has sent the state as an object ({ok, reason, detail})
+       ever since upstreamState(), and this still compared it with the
+       string it used to be — so the definite answer read as a blip: the
+       whole retry ladder, four requests into an outage, and then "the
+       server answered with an error (503)". Read it the way the status
+       strip already does. */
+    const why=sysFromResponse(j0);
+    if(why==="down"||why==="busy") throw new Error("upstream-"+why);
   }
   if(!r.ok){ downgradeMode(r.status); throw new Error("HTTP "+r.status); }
   const j=await r.json();
@@ -3351,11 +3358,12 @@ async function loadStops(attempt){
        reached us and told us so. One more try in case it was a single bad
        minute, then say it — sitting on placeholders for the full ladder
        only makes the app look broken for longer than it has to. */
-    const definite=String((e&&e.message)||"")==="upstream-down";
+    const em=String((e&&e.message)||"");
+    const definite=em==="upstream-down"||em==="upstream-busy";
     /* Say it on the first failure, not after the retry ladder. The bar
        costs nothing to be wrong about for two seconds, and a rider
        staring at placeholders has already started wondering. */
-    if(definite) showSys("down");
+    if(definite) showSys(em==="upstream-busy"?"busy":"down");
     if(n<LOAD_RETRY_MS.length && !(definite&&n>=1)){
       /* A location change beats a retry: retrying the place the rider has
          already left is work nobody wanted. */
@@ -3425,6 +3433,7 @@ let bootDone=false, bootFail=null;
 function loadFailMsg(e){
   const m=String((e&&e.message)||"");
   if(m==="upstream-down") return t("oasaDown");
+  if(m==="upstream-busy") return t("sysBusy");
   if(navigator.onLine===false) return t("offline");
   const code=(m.match(/\b(\d{3})\b/)||[])[1];
   return code ? t("errCode")(code) : t("netErr");
@@ -5991,7 +6000,7 @@ function openAbout(){
     <p style="margin-top:14px"><a href="./legal.html#terms">${esc(t("openTerms"))}</a>
       · <a href="./legal.html#privacy">${esc(t("openPrivacy"))}</a></p>
     <p><a href="mailto:oasax@proton.me?subject=Source">${esc(t("srcLink"))}</a></p>
-    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v109</p>
+    <p class="ver" style="letter-spacing:.1em;margin-top:10px">OASAx · v110</p>
     <p class="ver">${esc(t("mapsAttr"))}</p></div>`;
   $("#aboutbg").classList.add("on");
 }

@@ -67,9 +67,15 @@ const server = http.createServer((req, res) => {
     if (nearbyFails > 0) { nearbyFails--; res.writeHead(503); return res.end("{}"); }
     if (oasaStale) { return J({ origin: {}, radius: 600, generated: NOW - 260, hidden: 0,
       stops, reports: [], stale: true, upstream: "down" }); }
+    /* "string" is the contract the app was written against; "object" is
+       what the Worker has actually sent since upstreamState() — a 503 the
+       app could not recognise as definite, so it walked the whole retry
+       ladder and then blamed "the server". Both must read the same. */
     if (oasaDown) { res.writeHead(503, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ origin: {}, radius: 600, generated: NOW, hidden: 0,
-        stops: [], reports: [], upstream: "down" })); }
+        stops: [], reports: [],
+        upstream: oasaDown === "object"
+          ? { ok: false, reason: "down", detail: "The operation was aborted" } : "down" })); }
     return J({ origin: {}, radius: 600, generated: NOW, hidden: 0, stops, reports: [] });
   }
   if (u.pathname === "/plan") return J(JSON.parse(JSON.stringify(PLAN)));
@@ -370,9 +376,9 @@ console.log("\n— a bad minute must not take the app down —");
    itself timing out behind them — so the sweep came back with an empty
    list and a 200, and the board announced "no arrivals in the next few
    minutes": a confident claim about the street, made on no information. */
-console.log("\n— when OASA is the thing that is down —");
-{
-  oasaDown = true;
+for (const form of ["string", "object"]) {
+  console.log(`\n— when OASA is the thing that is down (upstream as ${form}) —`);
+  oasaDown = form;
   const v = await open({ geo: true });
   await v.page.waitForTimeout(2600);
   const txt = await v.page.evaluate(() =>

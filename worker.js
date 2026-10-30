@@ -42,7 +42,7 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v109";
+const APP_VERSION = "v110";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
 const UA = "StopArrivals/1.0 (personal transit PWA)";
@@ -92,6 +92,36 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, X-Admin-Token",
 };
+
+/* ---- which requests can carry background work ---------------------
+ * The alert sweep and vehicle tracking have to run inside SOME fetch
+ * invocation (see alertsOnTraffic), and an invocation's fifty subrequests
+ * are shared by everything it does: the request's own work and whatever
+ * it leaves running in waitUntil. The work used to ride on whichever
+ * request came along first, and that is usually a board being built —
+ * up to 44 calls of its own plus a sweep of up to 40, in one invocation.
+ * The runtime refused the overflow, the refusals were booked as OASA
+ * failing, and the breaker shut every rider out for two minutes.
+ *
+ * So the work rides only on requests that leave the budget free: a board
+ * served whole from the cache, and the small reads the app makes anyway.
+ * Same requests, same cadence; just not the expensive ones. */
+const LIGHT = new WeakSet();
+function light(res) { LIGHT.add(res); return res; }
+const LIGHT_PATH = /\/(reports|notice|pulse|metro|lines|push\/key|rules)$/;
+
+/* What is left of the subrequests one invocation may make. Counted by
+   hand, because the runtime does not say until it refuses — and only
+   fetch and the Cache API, which are what the free plan's 50 counts. */
+function subMeter(max) {
+  return { used: 0, max,
+    take(n) { this.used += n; },
+    has(n) { return this.used + n <= this.max; } };
+}
+// riding on a light request: its own few calls and fast retries fit beside it
+const PIGGYBACK_SUBREQUESTS = 40;
+// an invocation of its own — /alerts/run, the cron — less retry headroom
+const SWEEP_SUBREQUESTS = 44;
 
 /* ======================= abuse controls =========================== *
  * Per-IP, in-memory, fixed-window rate limiting. It lives in the
@@ -162,7 +192,8 @@ async function timedFetch(urlStr, cacheTtl, opts) {
   let lastErr;
   for (let attempt = 0; attempt < tries; attempt++) {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), ms);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctrl.abort(); }, ms);
     try {
       const res = await fetch(urlStr, {
         method: "GET",
@@ -178,6 +209,13 @@ async function timedFetch(urlStr, cacheTtl, opts) {
     } catch (e) {
       clearTimeout(timer);
       lastErr = e;
+      /* Only a connection that failed FAST earns a second go. A timeout
+         retried is the same request into the same slow upstream — it turned
+         an 8-second wait into sixteen — and a refusal from our own runtime
+         ("too many subrequests") refuses again. Either way the retry is one
+         more of the invocation's fifty subrequests, spent on an answer that
+         is not coming, and the fan-out paths run close to that ceiling. */
+      if (timedOut || LOCAL_FAIL.test(String((e && e.message) || e))) break;
       // A retry fired the instant the last one gave up is the same request
       // again into the same bad second. Short, bounded, no jitter needed.
       if (attempt < tries - 1) await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
@@ -210,6 +248,69 @@ async function proxy(targetUrl, cacheSeconds, skipCache) {
     },
   });
   if (up.ok && !skipCache) await cache.put(key, res.clone());
+  return res;
+}
+
+/* ---- /api: the browser's own road to OASA -------------------------
+ * For what /nearby does not batch: a stop the board did not cover, a far
+ * favourite, a route's shape. It used to be a bare pass-through, the one
+ * path that ignored everything the rest of the Worker had learned. It went
+ * round the breaker and the budget, so it kept calling an OASA that had
+ * stopped answering — the behaviour that gets an address range blocked —
+ * and it forwarded OASA's status verbatim, so OASA's 503 became ours.
+ *
+ * Now it reads through getJSONAged like everything else, keeps its own
+ * copy stamped with when OASA produced it, and answers from that copy —
+ * fresh while it is younger than the act's TTL, aged and labelled after —
+ * before it answers with an error. What error is left is honest about
+ * whose it is: 503 when this Worker is holding back (breaker open, budget
+ * spent), 502 when OASA failed, OASA's own 4xx when the question was bad. */
+const API_KEEP = "https://oasa-api/";
+const API_KEEP_S = 7 * 86400;          // reference data: a week-old stop list is still right
+async function proxyOasa(act, target, ttl, fresh, ctx) {
+  const cache = caches.default;
+  const key = new Request(target.replace(OASA, API_KEEP), { method: "GET" });
+  const nowS = () => Math.floor(Date.now() / 1000);
+  const answer = (data, ageS, stale) => {
+    // minutes are a countdown: take the copy's age out, as /nearby does
+    const res = json(act === "getStopArrivals" && Array.isArray(data) ? agedRaw(data, ageS) : data);
+    res.headers.set("Cache-Control",
+      fresh || stale ? "no-store" : `public, max-age=${Math.max(0, ttl - ageS)}`);
+    if (stale) res.headers.set("X-Stale-Seconds", String(ageS));
+    return res;
+  };
+  let kept = null;
+  if (!fresh) {
+    const hit = await cache.match(key).catch(() => null);
+    if (hit) {
+      const at = Number(hit.headers.get("X-Fetched-At") || 0);
+      const data = await hit.json().catch(() => undefined);
+      if (data !== undefined && at) {
+        const ageS = Math.max(0, nowS() - at);
+        if (ageS <= ttl) return answer(data, ageS, false);
+        kept = { data, ageS };
+      }
+    }
+  }
+  const got = await getJSONAged(target, fresh ? 0 : ttl);
+  if (got.ok) {
+    if (!fresh && ctx) {
+      ctx.waitUntil(cache.put(key, new Response(JSON.stringify(got.data), {
+        headers: { "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": `public, max-age=${liveCall(ttl) ? STALE_KEEP : API_KEEP_S}`,
+          "X-Fetched-At": String(nowS() - (got.ageS || 0)) },
+      })).catch(() => {}));
+    }
+    return answer(got.data, got.ageS || 0, false);
+  }
+  // the question was refused: no old answer can fix that, and it is not an outage
+  if (got.status >= 400 && got.status < 500 && got.status !== 429 && got.status !== 403) {
+    return json({ error: `upstream answered ${got.status}` }, got.status);
+  }
+  if (kept && (!liveCall(ttl) || kept.ageS <= STALE_KEEP)) return answer(kept.data, kept.ageS, true);
+  const res = json({ error: got.held ? "holding back from the upstream" : "upstream unavailable",
+    upstream: upstreamState() }, got.held ? 503 : 502);
+  if (got.held) res.headers.set("Retry-After", "30");
   return res;
 }
 
@@ -257,7 +358,13 @@ function circuitNote(ok, why) {
 function upstreamState() {
   const c = circuitState();
   const why = (c.lastFail && c.lastFail.why) || "";
-  if (!c.open && !/^HTTP (429|50[0-9])/.test(why)) return { ok: true };
+  /* A refusal only counts while the streak it belongs to is still running.
+     `lastFail` is never cleared — a success resets the count, not the
+     record — so one 503 at breakfast used to put "OASA is overloaded" on
+     every healthy board this isolate served for the rest of its life. */
+  const refusing = /^HTTP (429|50[0-9])/.test(why) && c.fails > 0
+    && c.lastFail.agoSec <= CIRCUIT.openMs / 1000;
+  if (!c.open && !refusing) return { ok: true };
   // OASA answering with a refusal is load; OASA not answering is an outage
   if (/^HTTP (429|503)/.test(why)) return { ok: false, reason: "busy", detail: why };
   if (/^HTTP 5/.test(why)) return { ok: false, reason: "busy", detail: why };
@@ -268,7 +375,35 @@ function circuitState() {
     openForSec: circuit.openedAt ? Math.round((Date.now() - circuit.openedAt) / 1000) : 0,
     lastFail: circuit.lastFail
       ? { agoSec: Math.round((Date.now() - circuit.lastFail.at) / 1000), why: circuit.lastFail.why }
+      : null,
+    ownLimits: localFail.count
+      ? { count: localFail.count, lastAgoSec: Math.round((Date.now() - localFail.last.at) / 1000),
+          why: localFail.last.why }
       : null };
+}
+
+/* ---- failures that are ours, not OASA's ---------------------------
+ * The runtime refuses a call when THIS invocation has used up what it is
+ * allowed: fifty subrequests on the free plan, fetch and the Cache API
+ * between them. That refusal arrives as a thrown error from fetch(),
+ * exactly where a timeout does — and it used to be booked as one.
+ *
+ * Which made the breaker an amplifier. One request that overran (a board
+ * fan-out with the alert sweep riding on the same invocation was enough)
+ * produced half a dozen "failures" in the same instant, the circuit
+ * opened, and for the next two minutes every rider on the isolate got a
+ * 503 for an upstream that was answering perfectly well. The operator was
+ * then told OASA was down, which DEPLOY.md says means "nothing to fix".
+ *
+ * So they are counted on their own, shown under `upstream.ownLimits` in
+ * /health and /alerts/why, and never touch the breaker. A non-zero count
+ * there means the Worker is asking too much of one invocation, which is
+ * a bug in this file, not weather upstream. */
+const LOCAL_FAIL = /too many subrequests|too many api requests|connection limit/i;
+const localFail = { count: 0, last: null };
+function noteLocalFail(why) {
+  localFail.count++;
+  localFail.last = { at: Date.now(), why: String(why || "unknown").slice(0, 160) };
 }
 
 /* `ignoreCircuit` is for callers whose volume cannot possibly be the
@@ -296,6 +431,11 @@ function circuitState() {
  * budget turns the failure mode inside out. Past the ceiling, riders get
  * slightly older numbers from the cache instead of the service getting
  * blocked, which is a trade worth making at any user count.
+ *
+ * It governs live calls only — arrivals and vehicle positions. Reference
+ * data is answered from the edge cache and was never the load; holding it
+ * back at the ceiling is what used to turn a busy minute into a 503 (see
+ * `liveCall`). What is shed is filled from the last good board instead.
  *
  * Honest limitation: this counts per ISOLATE, not globally — Workers run
  * in many places at once and there is no shared counter without a Durable
@@ -406,13 +546,62 @@ async function readUpstreamStat(env, hours) {
   } catch (_) { return null; }
 }
 
+/* ---- what the breaker and the budget are FOR ----------------------
+ * Both exist to stop the Worker hammering OASA, and both used to do it by
+ * refusing every OASA call — including the ones that never reach OASA.
+ * A stop list is cached at the edge for an hour and a stop's lines for a
+ * day, and the edge answers those whether OASA is up or not. Refusing
+ * them turned a spent budget or a tripped breaker into a board with no
+ * stops on it — a 503, at corners whose every answer was in the cache.
+ *
+ * So the gate is drawn by cache lifetime. A short cache, or none, means
+ * the answer is news — arrivals, vehicle positions — and asking for it is
+ * load on OASA: those are held back. A long one means reference data the
+ * edge almost always has: it goes through, and only a cache miss reaches
+ * OASA at all. While the breaker is open such a miss gets one short try
+ * instead of the usual fuse, because the origin it would reach is known
+ * to be failing and a rider is waiting on the answer. */
+const LIVE_TTL_MAX = 300;
+const OPEN_FUSE_MS = 2500;
+function liveCall(cacheTtl) { return !cacheTtl || cacheTtl <= LIVE_TTL_MAX; }
+
+/* Live answers this isolate fetched recently, by URL, with when the edge
+   cache's copy of each runs out. A busy stop is asked about by every rider
+   standing near it, and inside its cache lifetime every one of those asks
+   is answered by the edge, not OASA — so it is not load, and neither the
+   budget nor the breaker has any business refusing it. They used to: past
+   the ceiling, the ninetieth rider at Syntagma got nothing for a list the
+   edge was holding. One isolate lives in one colo, so "we fetched this
+   here 40 seconds ago" is a good guess at "the edge here still has it";
+   when the guess is wrong the call is charged after all. */
+const edgeHeld = new Map();
+function edgeHolds(url) { const t = edgeHeld.get(url); return !!t && t > Date.now(); }
+function noteEdge(url, ttl, ageS) {
+  if (!ttl) return;
+  if (edgeHeld.size > 4000) edgeHeld.clear();
+  edgeHeld.set(url, Date.now() + Math.max(0, ttl - (ageS || 0)) * 1000);
+}
+
+/* `ok` is "OASA answered, and it parsed" — distinct from `data`, because
+   OASA answers a stop with nothing due as a bare `null`, and "nothing is
+   coming" must not be mistaken for "we could not ask". `held` says the
+   call was never made, and why. */
 async function getJSONAged(urlStr, cacheTtl, opts) {
   const upstream = urlStr.startsWith(OASA);
   const spared = opts && opts.ignoreCircuit;
-  if (upstream && !spared && circuitOpen()) return { data: null, ageS: 0 };
-  if (upstream && !spared && !budgetAllows()) return { data: null, ageS: 0 };
+  const gated = upstream && !spared && liveCall(cacheTtl);
+  // the edge most likely has it: not load, so neither gate applies (see edgeHeld)
+  const free = gated && edgeHolds(urlStr);
+  if (gated && !free && circuitOpen()) return { data: null, ageS: 0, ok: false, held: "circuit" };
+  if (gated && !free && !budgetAllows()) return { data: null, ageS: 0, ok: false, held: "budget" };
+  const o = upstream && !spared && (!gated || free) && circuit.openedAt
+    ? { ...(opts || {}), tries: 1,
+        timeoutMs: Math.min((opts && opts.timeoutMs) || TIMEOUT_MS, OPEN_FUSE_MS) }
+    : opts;
+  let cached = false, status = 0;
   try {
-    const r = await timedFetch(urlStr, cacheTtl, opts);
+    const r = await timedFetch(urlStr, cacheTtl, o);
+    status = r.status;
     const ageS = Math.max(0, parseInt(r.headers.get("Age") || "0", 10) || 0);
     /* Two signals, because neither is guaranteed alone. `Age` is what the
        countdown correction needs and is what a cache SHOULD send;
@@ -420,18 +609,39 @@ async function getJSONAged(urlStr, cacheTtl, opts) {
        Age alone meant that if the header were ever absent, every cache hit
        would be charged to the budget — inflating it until the Worker shed
        traffic that was costing OASA nothing. */
-    const cached = ageS > 0 || /^(HIT|REVALIDATED)$/i.test(r.headers.get("CF-Cache-Status") || "");
+    cached = ageS > 0 || /^(HIT|REVALIDATED)$/i.test(r.headers.get("CF-Cache-Status") || "");
     if (upstream) {
       if (cached) { budget.hits++; if (ageS > 0) budget.aged++; } else budget.misses++;
-      if (!spared && cached) budgetRefund();
+      if (gated && !free && cached) budgetRefund();
+      if (free && !cached) budget.spent++;     // the guess was wrong: it was load after all
     }
-    if (!r.ok) { if (upstream) circuitNote(false, `HTTP ${r.status}`); return { data: null, ageS: 0 }; }
+    /* Only an answer OASA gave just now says anything about OASA now. A
+       cached one — refusal or success — is old news: letting a cache hit
+       close the breaker reopened the floodgates while OASA was still
+       down, and a refusal the edge kept would re-count as a fresh failure
+       every time anyone read it.
+       And a 4xx is about the question, not the server, with two
+       exceptions that mean "go away": 429, and 403, which is how a block
+       by address tends to arrive. Anyone can put a bad question to the
+       public /api proxy, so counting the rest would let anyone open the
+       breaker for everybody. */
+    if (!r.ok) {
+      if (upstream && !cached && (r.status >= 500 || r.status === 429 || r.status === 403)) {
+        circuitNote(false, `HTTP ${r.status}`);
+      }
+      return { data: null, ageS: 0, ok: false, status };
+    }
     const data = await r.json();
-    if (upstream) circuitNote(true);
-    return { data, ageS };
+    if (upstream && !cached) circuitNote(true);
+    if (gated) noteEdge(urlStr, cacheTtl, ageS);
+    return { data, ageS, ok: true, status };
   } catch (e) {
-    if (upstream) circuitNote(false, String((e && e.message) || e));
-    return { data: null, ageS: 0 };
+    const why = String((e && e.message) || e);
+    if (upstream) {
+      if (LOCAL_FAIL.test(why)) noteLocalFail(why);
+      else if (!cached) circuitNote(false, why);
+    }
+    return { data: null, ageS: 0, ok: false, status };
   }
 }
 /* Arrival minutes, with the cache's age taken out of them. Rounding is
@@ -1174,15 +1384,23 @@ async function writeRules(env, rules) {
 
 /* ====================== alert rule evaluation ===================== */
 
-function athensNow() {
-  const parts = new Intl.DateTimeFormat("en-GB", {
+/* Built once and reused. Constructing a DateTimeFormat with a time zone
+   costs ~100 µs — twenty times the formatting itself — and the planner
+   was building one per node it searched, thousands per journey, against a
+   10 ms CPU allowance per request. */
+let athensClock = null;
+function athensClockParts(ms) {
+  if (!athensClock) athensClock = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/Athens", weekday: "short",
     /* hourCycle, not hour12:false. With hour12:false several ICU builds
        call five past midnight "24:05", which made the minute-of-day 1445
        and put every window in the first hour of the day out of reach. */
     hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  }).formatToParts(new Date());
-  const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
+  });
+  return Object.fromEntries(athensClock.formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+}
+function athensNow() {
+  const p = athensClockParts(Date.now());
   const days = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return { day: days[p.weekday], minutes: (+p.hour) * 60 + (+p.minute) };
 }
@@ -1403,6 +1621,12 @@ async function arrivalsForAlert(stopCode) {
    the cap, and going over THROWS, which before v74 was a silent total
    failure. Raise this with the plan, not before. */
 const ALERT_MAX_STOPS = 10;
+/* What one stop can cost, counted the way the runtime counts — fetch and
+   the Cache API: the arrivals call and its stamp (or the stale read), the
+   line lookup, one push. The table above predates the stamp, and that put
+   is one per stop per run; the meter (subMeter) keeps the sum honest
+   instead of relying on it. */
+const ALERT_STOP_SUBREQUESTS = 4;
 /* The Worker's own public origin, learned from real traffic. A scheduled
    invocation has no Request, so it has no other way to know what it is
    called — and it needs to know, because of what the traces showed:
@@ -1428,7 +1652,9 @@ async function knownOrigin(env) {
   return null;
 }
 
-async function runAlerts(env, T = {}) {
+/* `M` is the subrequest meter of the invocation this runs in (subMeter).
+   Without one — the tests, a manual call — nothing is counted. */
+async function runAlerts(env, T = {}, M = null) {
   if (!pushReady(env)) { T.stopped = "push not configured"; return T; }
   const now = athensNow();
   /* How long since the last sweep of any kind. The symptom that made this
@@ -1481,7 +1707,17 @@ async function runAlerts(env, T = {}) {
       T.stops[stopCode] = "NOT REACHED — the run hit its deadline first";
       continue;
     }
+    /* The same honesty for the other ceiling. Going over it is not a
+       slower run, it is a thrown error on every call after the line —
+       and "not reached" needs a different fix from "OASA did not answer".
+       Room is kept for the whole stop: arrivals and their stamp, the
+       line lookup, one push. */
+    if (M && !M.has(ALERT_STOP_SUBREQUESTS)) {
+      T.stops[stopCode] = "NOT REACHED — the run used up its share of this invocation's subrequests";
+      continue;
+    }
     const got = await arrivalsForAlert(stopCode);
+    if (M) M.take(2);                         // the arrivals call, and its stamp or fallback
     /* Nothing throws on this path — a timeout, a non-200 and a parse
        failure all arrive as null — so this branch is a silent dead end
        unless it says so. A cron that cannot reach OASA and a cron that is
@@ -1516,6 +1752,7 @@ async function runAlerts(env, T = {}) {
            past every rule still waiting, including the one whose bus was
            pulling in. A miss here costs a fallback, not an alert. */
         try {
+          if (M) M.take(1);
           const r = await fetchStopRoutes(stopCode, ALERT_FETCH);
           lineOf = new Map(((r && r.routes) || []).map(x => [String(x.code), String(x.id)]));
         } catch (_) { lineOf = new Map(); }
@@ -1609,7 +1846,11 @@ async function runAlerts(env, T = {}) {
         try {
           if (!subRead) { sub = await env.ALERTS.get(`sub:${rule.sub}`, "json"); subRead = true; }
           if (!sub) note = { ok: false, why: `no sub:${rule.sub} in KV` };
-          if (sub) {
+          /* Unsent rather than thrown: the lead is not marked spent, so the
+             next sweep tries again inside the same lead. */
+          else if (M && !M.has(1)) note = { ok: false, why: "held — no subrequest left in this invocation" };
+          if (sub && !note) {
+            if (M) M.take(1);
             const sent = await sendPush(sub, {
               title: `${rule.lineId || "Λεωφορείο"} σε ${min}′`,
               body: `${rule.stopName || ""}${rule.routeName ? " · " + rule.routeName : ""} — άφιξη ~${etaClock}`,
@@ -1763,10 +2004,12 @@ async function initSchema(env) {
    app could not answer before: is this thing running, and has it ever
    delivered anything? */
 const USAGE_KINDS = new Set(["open", "open_app", "install", "cron", "alert"]);
+let athensDay = null;
 function dayKey(ms) {
   // Athens, so "yesterday" means what a person in Athens means by it
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens", year: "numeric",
-    month: "2-digit", day: "2-digit" }).format(new Date(ms));
+  if (!athensDay) athensDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Athens",
+    year: "numeric", month: "2-digit", day: "2-digit" });
+  return athensDay.format(new Date(ms));
 }
 async function bumpUsage(env, kinds) {
   if (!dbReady(env)) return false;
@@ -1853,7 +2096,9 @@ async function stopsForRoute(env, routeCode) {
   return stops;
 }
 
-async function sampleVehicles(env) {
+/* `M`, when given, is the subrequest meter of the invocation this borrows;
+   routes past what it allows wait for the next sample. */
+async function sampleVehicles(env, M) {
   if (!dbReady(env)) return { sampled: 0, events: 0 };
   await initSchema(env);
   const { results: routes } = await env.DB.prepare(
@@ -1861,9 +2106,13 @@ async function sampleVehicles(env) {
   if (!routes || !routes.length) return { sampled: 0, events: 0 };
 
   const now = Math.floor(Date.now() / 1000);
-  let events = 0;
+  let events = 0, sampled = 0;
 
   for (const r of routes) {
+    // the stop list (only when D1's copy is a week old) and the positions
+    if (M && !M.has(2)) break;
+    if (M) M.take(2);
+    sampled++;
     const stops = await stopsForRoute(env, r.route_code);
     if (!stops.length) continue;
     const buses = await getJSON(
@@ -1903,7 +2152,7 @@ async function sampleVehicles(env) {
     }
     if (batch.length) await env.DB.batch(batch);
   }
-  return { sampled: routes.length, events };
+  return { sampled, events };
 }
 
 /* --------------------------- analytics ----------------------------- */
@@ -2121,41 +2370,104 @@ function pickField(o, ...keys) {
   for (const k of keys) if (o && o[k] != null && o[k] !== "") return o[k];
   return null;
 }
+/* Line ids in the order people read them: 2, 10, 022, 608, X95.
+   One collator, built once. `localeCompare` with an options argument
+   builds a fresh one on EVERY comparison — measured at ~11 µs a call
+   against 0.2 µs for this — and it sat inside the sort that runs on each
+   of the twenty-odd route lists a board resolves. That alone was a third
+   of the free plan's 10 ms CPU allowance per request; a request that goes
+   over it is answered by Cloudflare with error 1102, which riders see as
+   a 503. Same ordering: localeCompare is defined as exactly this call. */
+const LINE_ORDER = new Intl.Collator(undefined, { numeric: true });
+const byLineId = (a, b) => LINE_ORDER.compare(String(a.id), String(b.id));
 
 /* Some stops are decommissioned or seasonal and no line serves them any more.
  * We only learn that by fetching a stop's route list, and doing that for every
  * marker would blow the 50-subrequest cap. So each request probes a few unknown
  * stops, remembers the answer, and filters out the ones known to be dead.
  * Knowledge is shared across users via KV and re-checked after two weeks, so a
- * seasonal stop comes back on its own. Without KV it still works per-isolate. */
+ * seasonal stop comes back on its own. Without KV it still works per-isolate.
+ *
+ * What is shared is the DEAD list, because that is what the board filters
+ * on. It used to be every stop anyone had ever looked at, never pruned, and
+ * rewritten whole on every board the Worker built: ~240 KB at 8,000 stops,
+ * ~4 ms of CPU to write and as much again to read on every fresh isolate,
+ * against a 10 ms allowance per request. That was the one cost in this file
+ * that grew with the app's age, and past the allowance Cloudflare answers
+ * with error 1102 — a 503 to the rider. It was also a KV write per board
+ * against the free plan's 1,000 a day, and once those are spent every write
+ * fails until midnight UTC: reports, alert rules and subscriptions with it.
+ *
+ * Live stops are cheap to re-learn — their route list sits in the edge
+ * cache for a day — so they stay in the isolate's memory. The shared key is
+ * written only when the dead list changes, at most every few minutes per
+ * isolate, merged with what other isolates have written meanwhile. */
 const STOPLINES_KEY = "stops:lines";
 const STOPLINES_TTL = 14 * 86400;
-let slMem = null, slDirty = false;
+const STOPLINES_SAVE_MS = 5 * 60 * 1000;
+let slMem = null, slDirty = false, slSavedAt = 0, slLoadedAt = 0;
 
 async function loadStopLines(env) {
   if (slMem) return slMem;
   slMem = new Map();
+  slLoadedAt = Date.now();
   if (env && env.ALERTS) {
     try {
       const o = await env.ALERTS.get(STOPLINES_KEY, "json");
-      if (o && typeof o === "object") for (const k in o) slMem.set(k, o[k]);
+      if (o && typeof o === "object") {
+        for (const k in o) slMem.set(k, o[k]);
+        // the old shape carried live stops too: write it back short, once
+        for (const k in o) if (o[k] && o[k].n !== 0) { slDirty = true; break; }
+      }
     } catch (_) { }
   }
   return slMem;
 }
 async function saveStopLines(env) {
-  if (!slDirty || !env || !env.ALERTS) return;
-  slDirty = false;
-  const o = {};
-  for (const [k, v] of slMem) o[k] = v;
-  try { await env.ALERTS.put(STOPLINES_KEY, JSON.stringify(o)); } catch (_) { }
+  if (!slDirty || !slMem || !env || !env.ALERTS) return;
+  const now = Date.now();
+  if (now - slSavedAt < STOPLINES_SAVE_MS) return;
+  slSavedAt = now; slDirty = false;
+  const nowS = Math.floor(now / 1000);
+  /* Merge, newest verdict per stop. A plain overwrite meant whichever
+     isolate wrote last silently dropped every other isolate's findings.
+     Not within a minute of loading it, though: KV serves a read from the
+     edge for that long, so a second read could only return what is already
+     in memory — and on the one-off rewrite of an old full index, parsing it
+     twice was most of what that request cost. */
+  let shared = null;
+  if (now - slLoadedAt > 60000) {
+    try { shared = await env.ALERTS.get(STOPLINES_KEY, "json"); } catch (_) { }
+  }
+  if (shared && typeof shared === "object") {
+    for (const k in shared) {
+      const v = shared[k], m = slMem.get(k);
+      if (v && (!m || (v.t || 0) > (m.t || 0))) slMem.set(k, v);
+    }
+  }
+  const out = {};
+  for (const [k, v] of slMem) {
+    if (v && v.n === 0 && nowS - (v.t || 0) <= STOPLINES_TTL) out[k] = v;
+  }
+  try { await env.ALERTS.put(STOPLINES_KEY, JSON.stringify(out)); }
+  catch (_) { slDirty = true; }                    // a later board tries again
 }
 function slGet(map, code, now) {
   const e = map.get(code);
   if (!e || (now - (e.t || 0)) > STOPLINES_TTL) return null;   // unknown or stale
   return e.n;                                                   // line count
 }
-function slSet(map, code, n, now) { map.set(code, { n, t: now }); slDirty = true; }
+/* Only the dead list is shared, so only a change to it is worth a write: a
+   stop that has just died, one that has come back, or a dead verdict being
+   re-confirmed late enough in its life that it needs a new date. Resolving
+   the same live stop on every board — which is most of what this sees —
+   used to mark the whole index dirty every time. */
+function slSet(map, code, n, now) {
+  const prev = map.get(code);
+  const wasDead = !!prev && prev.n === 0;
+  map.set(code, { n, t: now });
+  if ((n === 0) !== wasDead || (wasDead && now - (prev.t || 0) > STOPLINES_TTL / 2)) slDirty = true;
+}
 
 // Fetch a stop's routes; returns null if the call failed (so we don't record
 // a transient failure as "this stop is dead").
@@ -2173,9 +2485,24 @@ async function fetchStopRoutes(code, opts) {
     const key = String(id || rc);
     if (id && !seen.has(key)) { seen.add(key); lines.push({ id: String(id), el, en }); }
   }
-  lines.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
+  lines.sort(byLineId);
   return { routes, lines };
 }
+
+/* How many OASA calls one board may plan for. The ceiling is the free
+   plan's 50 subrequests per invocation, and it is shared: the Cache API
+   counts against the same 50 as fetch, and this request spends up to four
+   of them on its own cache (a read, a fallback read, two writes). A call
+   that fails fast is retried once, which is another. The old figure, 44,
+   planned the fan-out right up to the ceiling — so one retry, or anything
+   else sharing the invocation, made the runtime refuse the rest with "too
+   many subrequests", and the breaker booked every refusal as OASA failing.
+   Only the probe for dead map stops gives way; the list never does.
+   What the list cannot do without — its stop lists, lines, arrivals and
+   far favourites — is held under NEARBY_CEILING, so with the cache's four
+   a board never asks for more than 48. */
+const NEARBY_FANOUT = 38;
+const NEARBY_CEILING = 44;
 
 async function handleNearby(url, env, ctx) {
   const lat = parseFloat(url.searchParams.get("lat"));
@@ -2201,8 +2528,15 @@ async function handleNearby(url, env, ctx) {
      personal list into that key would fragment the cache per user and cost
      far more than it saves. So the cached body stays public, and the
      favourites are resolved per request and merged on the way out. */
+  /* Each far favourite costs two calls, and they are the one part of a
+     board that is not bounded by the fan-out plan below — so at the
+     widest radius, the largest list and eight favourites a board could
+     plan 57 calls against a ceiling of 50. Trimmed to what fits under
+     NEARBY_CEILING; the app sends at most six, which fit at any radius. */
+  const favRoom = NEARBY_CEILING - samplePts(lat, lng, radius).length - limit - withRoutes;
   const favCodes = String(url.searchParams.get("favs") || "")
-    .split(",").map(x => x.trim()).filter(Boolean).slice(0, 8);
+    .split(",").map(x => x.trim()).filter(Boolean)
+    .slice(0, Math.max(0, Math.min(8, Math.floor(favRoom / 2))));
 
   // ~110m cache granularity, so a whole street corner shares one response
   const ck = `https://nearby/?lat=${lat.toFixed(3)}&lng=${lng.toFixed(3)}&r=${radius}&l=${limit}&m=${markers}`;
@@ -2225,13 +2559,29 @@ async function handleNearby(url, env, ctx) {
   const wantFresh = url.searchParams.get("fresh") === "1";
   const hit = wantFresh ? null : await cache.match(new Request(ck));
   if (hit) {
-    if (!favCodes.length) return withCors(hit);
+    // one cache read and nothing else: room for background work (see LIGHT)
+    if (!favCodes.length) return light(withCors(hit));
     let body = null;
     try { body = await hit.json(); } catch (_) { }
     if (!body) return withCors(hit);
     body.favs = await farFavourites(favCodes, body.stops, lat, lng);
     return json(body);
   }
+
+  /* Before admitting defeat, offer the last good sweep for this corner.
+     A board from four minutes ago is worth a great deal more than an
+     error: the stops have not moved, the lines have not changed, and the
+     app already knows how to show its own age in red. */
+  const lastGood = async () => {
+    const old = await cache.match(new Request(ckStale)).catch(() => null);
+    if (!old) return null;
+    let body = null;
+    try { body = await old.json(); } catch (_) { }
+    if (!body || !Array.isArray(body.stops) || !body.stops.length) return null;
+    body.stale = true; body.upstream = upstreamState();
+    if (favCodes.length) body.favs = await farFavourites(favCodes, body.stops, lat, lng);
+    return json(body);
+  };
 
   const lists = await Promise.all(samplePts(lat, lng, radius).map(p =>
     getJSON(`${OASA}?act=getClosestStops&p1=${p[0]}&p2=${p[1]}`, ACT_TTL.getClosestStops)));
@@ -2241,24 +2591,15 @@ async function handleNearby(url, env, ctx) {
      at the client looking identical, as an empty list with a 200 on it.
      The app then said "no arrivals in the next few minutes", which is a
      confident statement about the street, made on no information at all.
-
-     Before admitting defeat, offer the last good sweep for this corner.
-     A board from four minutes ago is worth a great deal more than an
-     error: the stops have not moved, the lines have not changed, and the
-     app already knows how to show its own age in red. */
+     Stop lists are edge-cached for an hour and pass the breaker, so this
+     is now what it says: nothing cached, and nobody answering. */
   if (!lists.some(Array.isArray)) {
-    const old = await cache.match(new Request(ckStale));
-    if (old) {
-      let body = null;
-      try { body = await old.json(); } catch (_) { }
-      if (body && Array.isArray(body.stops) && body.stops.length) {
-        body.stale = true; body.upstream = upstreamState();
-        if (favCodes.length) body.favs = await farFavourites(favCodes, body.stops, lat, lng);
-        return json(body);
-      }
-    }
-    return json({ origin: { lat, lng }, radius, generated: Math.floor(Date.now() / 1000),
+    const old = await lastGood();
+    if (old) return old;
+    const down = json({ origin: { lat, lng }, radius, generated: Math.floor(Date.now() / 1000),
       hidden: 0, stops: [], reports: [], upstream: upstreamState() }, 503);
+    down.headers.set("Retry-After", "30");
+    return down;
   }
 
   const seen = {};
@@ -2292,7 +2633,7 @@ async function handleNearby(url, env, ctx) {
   const known = await loadStopLines(env);
   // stop-lists + arrivals, plus up to two calls for each far favourite
   const used = samplePts(lat, lng, radius).length + limit + favCodes.length * 2;
-  let probeBudget = Math.max(0, 44 - used - withRoutes);
+  let probeBudget = Math.max(0, NEARBY_FANOUT - used - withRoutes);
 
   const mustLoad = stops.slice(0, withRoutes);
   await pool(mustLoad.map(s => async () => {
@@ -2333,10 +2674,12 @@ async function handleNearby(url, env, ctx) {
      of the minutes rather than passing the staleness on: the cache saves
      the request either way, and the number on screen should mean what it
      says. */
-  let oldestS = 0;
+  let oldestS = 0, arrOk = 0, arrHeld = 0;
+  const arrWant = Math.min(limit, stops.length);
   await pool(stops.slice(0, limit).map(s => async () => {
     const got = await getJSONAged(
       `${OASA}?act=getStopArrivals&p1=${encodeURIComponent(s.code)}`, ACT_TTL.getStopArrivals);
+    if (got.ok) arrOk++; else if (got.held) arrHeld++;
     if (got.ageS > oldestS) oldestS = got.ageS;
     s.arrivals = ageArrivals((Array.isArray(got.data) ? got.data : [])
       .map(a => ({
@@ -2351,6 +2694,17 @@ async function handleNearby(url, env, ctx) {
 
   for (const s of stops) { delete s.resolved; delete s.lineCount; }
 
+  /* Not one stop's arrivals came back — every call held by the breaker or
+     the budget, or failed. The stop list is fine (it came from the cache),
+     but a board of empty rows is the "no arrivals in the next few minutes"
+     lie again, so the last good board wins when there is one, and when
+     there is not, the board at least says why it is empty. */
+  const noArrivals = arrWant > 0 && arrOk === 0;
+  if (noArrivals) {
+    const old = await lastGood();
+    if (old) return old;
+  }
+
   // Piggy-back the active community flags so the app can badge and
   // annotate rows without a second request. Public view only — the
   // response is edge-cached and shared, so no `mine` marking here.
@@ -2361,24 +2715,36 @@ async function handleNearby(url, env, ctx) {
     } catch (_) { }
   }
 
+  let upstream = upstreamState();
+  if (noArrivals && upstream.ok) {
+    upstream = { ok: false, reason: arrHeld ? "busy" : "down",
+      detail: `no arrivals could be fetched for any of ${arrWant} stops` };
+  }
   const res = new Response(JSON.stringify({
     origin: { lat, lng }, radius, generated: now, hidden, stops, reports,
     /* Not only on the 503 path. A board can come back half-filled — some
        stops answered, some timed out — and that is the case where the
        rider most needs telling, because the numbers look fine and are
        simply missing the bus they were waiting for. */
-    upstream: upstreamState(),
+    upstream,
   }), {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": `public, max-age=${ACT_TTL.getStopArrivals}`,
+      "Cache-Control": noArrivals ? "no-store" : `public, max-age=${ACT_TTL.getStopArrivals}`,
       ...CORS,
     },
   });
-  await cache.put(new Request(ck), res.clone());
-  if (ctx) ctx.waitUntil(cache.put(new Request(ckStale), new Response(await res.clone().text(), {
-    headers: { "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": `public, max-age=${STALE_KEEP}`, ...CORS } })));
+  /* What gets kept is decided by how complete the board is. An empty one
+     is not cached at all — the next rider should ask again, not inherit
+     it for ninety seconds. A half-filled one is shared as usual but never
+     becomes the corner's last good board: that copy is what the rider gets
+     when OASA goes quiet, and it must not be replaced by a worse one. */
+  if (!noArrivals) await cache.put(new Request(ck), res.clone());
+  if (ctx && arrOk === arrWant) {
+    ctx.waitUntil(cache.put(new Request(ckStale), new Response(await res.clone().text(), {
+      headers: { "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": `public, max-age=${STALE_KEEP}`, ...CORS } })));
+  }
   if (!favCodes.length) return res;
   // the shared body goes in the cache; the personal one goes back to you
   const body = JSON.parse(await res.clone().text());
@@ -2857,17 +3223,27 @@ function bandValue(table, minutes, fallback) {
 }
 // Athens is the only timezone this app has ever cared about.
 function athensParts(ms) {
-  const f = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/Athens", hourCycle: "h23",       // see athensNow
-    weekday: "short", hour: "2-digit", minute: "2-digit",
-  }).formatToParts(new Date(ms));
-  const g = t => (f.find(x => x.type === t) || {}).value;
-  const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[g("weekday")] ?? 1;
-  return { day: wd, min: (+g("hour")) * 60 + (+g("minute")) };
+  const p = athensClockParts(ms);                       // see athensNow
+  const wd = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[p.weekday] ?? 1;
+  return { day: wd, min: (+p.hour) * 60 + (+p.minute) };
 }
+/* The search asks this for every node it settles, and a journey settles
+   thousands of them inside the same few dozen minutes. The answer only
+   changes on the minute — Athens is a whole number of hours off UTC, so
+   its minutes start when UTC's do — so it is worked out once per minute
+   and frozen, since every node after the first shares the object. */
+const clockMemo = new Map();
 function clockAt(baseMs, offsetMin) {
-  const p = athensParts(baseMs + offsetMin * 60000);
-  return { dayType: p.day === 0 ? "sun" : p.day === 6 ? "sat" : "wd", day: p.day, min: p.min };
+  const minute = Math.floor((baseMs + offsetMin * 60000) / 60000);
+  let c = clockMemo.get(minute);
+  if (!c) {
+    const p = athensParts(minute * 60000);
+    c = Object.freeze({ dayType: p.day === 0 ? "sun" : p.day === 6 ? "sat" : "wd",
+      day: p.day, min: p.min });
+    if (clockMemo.size > 5000) clockMemo.clear();
+    clockMemo.set(minute, c);
+  }
+  return c;
 }
 
 function walkMinutes(metres) { return (metres * detourFor(metres)) / PLAN.walkSpeed; }
@@ -3781,7 +4157,16 @@ async function applySchedule(env, crons) {
 
 // The whole line catalogue, trimmed to what the picker needs and cached
 // for a day at the edge — it changes about once a timetable season.
-async function handleLines() {
+/* The ASSEMBLED list is cached too, not only OASA's answer: parsing and
+   sorting every line in Athens on every request was CPU spent rebuilding
+   the same response, on a plan that allows 10 ms of it. An empty list —
+   OASA failed — is never cached, here or in the browser: it used to be
+   served with a day's max-age, which is a day of "no lines" for one blip. */
+async function handleLines(ctx) {
+  const cache = caches.default;
+  const ck = new Request("https://lines/v1");
+  const hit = await cache.match(ck).catch(() => null);
+  if (hit) return withCors(hit);
   const raw = await getJSON(`${OASA}?act=webGetLines`, ACT_TTL.webGetLines);
   const lines = (Array.isArray(raw) ? raw : []).map(l => ({
     code: String(pickField(l, "LineCode", "line_code") || ""),
@@ -3789,14 +4174,16 @@ async function handleLines() {
     el: pickField(l, "LineDescr", "line_descr") || "",
     en: pickField(l, "LineDescrEng", "line_descr_eng") || "",
   })).filter(l => l.code && l.id);
-  lines.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
-  return new Response(JSON.stringify(lines), {
+  lines.sort(byLineId);
+  const res = new Response(JSON.stringify(lines), {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": `public, max-age=${ACT_TTL.webGetLines}`,
+      "Cache-Control": lines.length ? `public, max-age=${ACT_TTL.webGetLines}` : "no-store",
       ...CORS,
     },
   });
+  if (lines.length && ctx) ctx.waitUntil(cache.put(ck, res.clone()).catch(() => {}));
+  return res;
 }
 
 /* Live positions around a point. "Every bus in Athens" would be one
@@ -4071,6 +4458,16 @@ export default {
       return json({ error: "server error" }, 500);
     }
     if (res && res.status >= 500) noteServerError(env, ctx, res.status, safePath(req));
+    /* After the answer, and only on a request that left its subrequests
+       free — see LIGHT. Not on a failure: a request that just 5xx'd is
+       not one to hang more work on. */
+    else if (res && ctx && (LIGHT.has(res)
+        || LIGHT_PATH.test(safePath(req).replace(/\/+$/, "")))) {
+      /* The isolate serving riders is the one whose cache figures matter,
+         and it is almost never the one a checkup lands on. */
+      flushBudgetSoon(env, ctx);
+      alertsOnTraffic(env, ctx);
+    }
     return res;
   },
 
@@ -4115,12 +4512,11 @@ async function route(req, env, ctx) {
     }
     const url = new URL(req.url);
     noteSelfOrigin(url, env, ctx);
-    /* The isolate serving riders is the one whose cache figures matter, and
-       it is almost never the one a checkup lands on. Let it write them down. */
-    flushBudgetSoon(env, ctx);
-    /* Not on the alert endpoints themselves: /alerts/run IS the sweep, and
-       /alerts/why must be able to report on a run without starting one. */
-    if (!url.pathname.includes("/alerts/")) alertsOnTraffic(env, ctx);
+    /* The cache counters and the alert sweep are written down and run from
+       `fetch`, after the answer and only on light requests (see LIGHT) —
+       never here, where they shared a board's subrequests. Never on the
+       alert endpoints either: /alerts/run IS the sweep, and /alerts/why
+       must be able to report on a run without starting one. */
     const p = url.pathname.replace(/\/+$/, "");
     const ip = clientIp(req);
 
@@ -4137,7 +4533,7 @@ async function route(req, env, ctx) {
         const v = url.searchParams.get(k);
         if (v != null) up.searchParams.set(k, v);
       }
-      return proxy(up.toString(), fresh ? 0 : (ACT_TTL[act] || OASA_CACHE), fresh);
+      return proxyOasa(act, up.toString(), ACT_TTL[act] || OASA_CACHE, fresh, ctx);
     }
 
     /* The hand-refresh flag costs nothing upstream in the ordinary case,
@@ -4404,7 +4800,7 @@ async function route(req, env, ctx) {
       const T = { via: "fetch" };
       runBusy = true;
       const job = (async () => {
-        try { await runAlerts(env, T); }
+        try { await runAlerts(env, T, subMeter(SWEEP_SUBREQUESTS)); }
         catch (e) { T.threw = String((e && e.stack) || e).slice(0, 400); }
         finally { runBusy = false; }
         await setMeta(env, "cron_trace",
@@ -4605,7 +5001,10 @@ async function route(req, env, ctx) {
       const full = adminOK(req, env);
       const nowS = Math.floor(Date.now() / 1000);
       const out = { ok: true, version: APP_VERSION, time: nowS };
-      if (!full) return json(out);
+      /* The bare ping is light, and an uptime monitor calling it every
+         minute is the steadiest ride the alert sweep can get (see LIGHT).
+         The admin view is not: it is a dozen queries of its own. */
+      if (!full) return light(json(out));
 
       /* Opt-in, because it spends a real call on a slow upstream: the one
          question /health could not answer was "is OASA talking to us",
@@ -4785,7 +5184,7 @@ async function route(req, env, ctx) {
       return res;
     }
 
-    if (p.endsWith("/lines")) return handleLines();
+    if (p.endsWith("/lines")) return handleLines(ctx);
 
     if (p.endsWith("/live")) {
       if (!rateLimit(ip, "live", 30, 60)) return tooMany();
@@ -4988,19 +5387,20 @@ async function route(req, env, ctx) {
    dependency. */
 const SELF_POKE_COOLDOWN_MS = 30 * 60 * 1000;
 let selfPokeBlockedUntil = 0, selfPokeWhy = "";
-async function runAlertsViaRequest(env, T) {
+async function runAlertsViaRequest(env, T, M) {
   if (Date.now() < selfPokeBlockedUntil) {
     T.via = `in-process (self-call held off after ${selfPokeWhy})`;
-    return runAlerts(env, T);
+    return runAlerts(env, T, M);
   }
   const origin = await knownOrigin(env);
   const token = env.ADMIN_TOKEN;
   if (!origin || !token) {
     T.via = origin ? "in-process (no ADMIN_TOKEN to call ourselves with)"
                    : "in-process (this origin has had no traffic yet)";
-    return runAlerts(env, T);
+    return runAlerts(env, T, M);
   }
   try {
+    if (M) M.take(1);
     const r = await timedFetch(`${origin}/alerts/run`, 0,
       { timeoutMs: 8000, tries: 1, headers: { "X-Admin-Token": token } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -5012,7 +5412,7 @@ async function runAlertsViaRequest(env, T) {
     selfPokeBlockedUntil = Date.now() + SELF_POKE_COOLDOWN_MS;
     T.viaError = selfPokeWhy;
     T.via = "in-process (the self-call failed)";
-    return runAlerts(env, T);
+    return runAlerts(env, T, M);
   }
 }
 
@@ -5059,18 +5459,23 @@ function alertsOnTraffic(env, ctx) {
   piggybackBusy = true;
   ctx.waitUntil((async () => {
     const T = { via: "a rider's request" };
+    /* Its own ceiling inside an invocation it borrowed. The host is a
+       light request (see LIGHT), which is not the same as a free one. */
+    const M = subMeter(PIGGYBACK_SUBREQUESTS);
     try {
-      /* Tracking stopped for the same reason and gets the same ride. It is
-         cheap — at most TRACK.maxRoutes calls, and only when routes are
-         actually being tracked — and it is the other half of the evidence
-         that put this function here. */
-      try {
-        if (await trackingActive(env)) T.tracked = await sampleVehicles(env);
-      } catch (e) { T.trackError = String((e && e.message) || e).slice(0, 160); }
       /* One small KV read a minute, cached in the isolate. Most requests
-         cost nothing here because most minutes have no window open. */
+         cost nothing here because most minutes have no window open.
+         Alerts go first: a missed lead cannot be had back, while a missed
+         tracking sample is one point fewer on a chart. */
       T.due = await anyWindowOpen(env);
-      if (T.due) await runAlerts(env, T);
+      if (T.due) await runAlerts(env, T, M);
+      /* Tracking stopped for the same reason and gets the same ride, on
+         whatever subrequests the sweep left — at most TRACK.maxRoutes
+         routes, and only when routes are actually being tracked. It is the
+         other half of the evidence that put this function here. */
+      try {
+        if (await trackingActive(env)) T.tracked = await sampleVehicles(env, M);
+      } catch (e) { T.trackError = String((e && e.message) || e).slice(0, 160); }
     } catch (e) {
       T.threw = String((e && e.stack) || e).slice(0, 400);
     } finally {
@@ -5107,9 +5512,7 @@ async function whereAmI() {
 async function cronRun(event, env, T) {
     const now = athensNow();
     const daily = (() => {
-      const h = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Europe/Athens", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-      }).formatToParts(new Date()).reduce((o, p) => (o[p.type] = p.value, o), {});
+      const h = athensClockParts(Date.now());
       return h.hour === "04" && +h.minute < 2;
     })();
 
@@ -5133,12 +5536,15 @@ async function cronRun(event, env, T) {
     T.due = alertsDue;
     // only on a minute that has work, so it costs nothing the rest of the time
     if (alertsDue) T.from = await whereAmI();
-    if (alertsDue) await runAlertsViaRequest(env, T);
+    /* One meter for the whole cron minute: the sweep and the tracking
+       after it share the invocation's fifty. */
+    const M = subMeter(SWEEP_SUBREQUESTS);
+    if (alertsDue) await runAlertsViaRequest(env, T, M);
     /* Past the alerts on purpose. These are housekeeping, and a failure
        in either of them must not take the alerts down with it — which,
        in the original order, is exactly what it would have done. */
     try {
-      if (await trackingActive(env)) await sampleVehicles(env);
+      if (await trackingActive(env)) await sampleVehicles(env, M);
     } catch (e) { T.trackingError = String((e && e.message) || e).slice(0, 200); }
     /* This isolate's share of the cache figures. Rate-limited inside, so
        calling it every minute costs a comparison on all but one of them. */

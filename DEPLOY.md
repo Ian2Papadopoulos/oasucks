@@ -292,7 +292,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v109",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v110",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -619,16 +619,22 @@ curl.exe -i "https://oasax.com/health?token=$env:ADMIN_TOKEN&probe=1"
 | What you see | What it means |
 |---|---|
 | `/health` not 200 | Cloudflare or your Worker. Check Redirect Rules and WAF first, not the code. |
-| `/health` fine, `/nearby` returns `503` with `"upstream":"down"` | OASA is not answering the Worker. Nothing to fix. |
+| `/health` fine, `/nearby` returns `503` with `"upstream":{"ok":false,…}` | OASA is not answering the Worker **and** nothing for that corner was cached. Since v110 that is the only way `/nearby` says 503. Nothing to fix. |
 | `/nearby` returns `200` with a non-empty `stops` array | The backend is healthy; the problem is on the device. |
 | `probe=1` shows `oasa.ok: false` | Same as the 503, stated directly, with the time it waited. |
+| `/health?token=…` shows `upstream.ownLimits` with a count | **Not OASA.** The Worker ran out of its own subrequests in one invocation ("Too many subrequests"). That is a bug in `worker.js` — report it with the `why`. It no longer trips the breaker, but the request that hit it lost data. |
+| Riders report 503s, but `/nearby` and `/health` look fine | Look at the dashboard: Worker → **Metrics → Errors → Invocation Statuses**. *Exceeded CPU Time Limits* is Cloudflare's error 1102, which riders see as a 503 and which no code in the Worker can observe — the free plan allows 10 ms of CPU per request. *Exceeded Memory* is the same page for memory. |
 
 `probe=1` is opt-in because it spends a real call on a slow upstream. Without it `/health`
 stays instant, which is the point of a health check.
 
-**A 502 from `/api`** with `{"error":"upstream timeout"}` is the same diagnosis from the
-raw proxy: OASA took longer than 8 seconds, twice. It is the clearest single signal that
-the fault is upstream and not yours.
+**A 502 from `/api`** with `{"error":"upstream unavailable"}` is the same diagnosis from
+the raw proxy: OASA failed or took longer than 8 seconds, and there was no earlier answer
+to fall back on — `/api` keeps one (minutes aged, `X-Stale-Seconds` on the response) and
+uses it before it gives up. It is the clearest single signal that the fault is upstream and
+not yours. **A 503 from `/api`**, with `Retry-After`, is the Worker holding back on purpose:
+the breaker is open or the minute's budget is spent. Since v110 OASA's own 503s are never
+passed through as ours.
 
 ### An alert didn't arrive
 

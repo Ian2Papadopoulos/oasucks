@@ -873,7 +873,8 @@ console.log("\n— it says whose fault it is —");
 {
   const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
   ok("the Worker sends the state on every sweep, not only on a 503",
-    /upstream: upstreamState\(\),/.test(w),
+    /let upstream = upstreamState\(\);/.test(w)
+    && /generated: now, hidden, stops, reports,[\s\S]{0,400}?\n    upstream,\n/.test(w),
     "a half-filled board is the case where the rider most needs telling");
   ok("...and separates 'not answering' from 'answering with a refusal'",
     /reason: "busy"/.test(w) && /reason: "down"/.test(w));

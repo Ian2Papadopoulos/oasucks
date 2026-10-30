@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v109 defaults** — if you edit the
+breaks if you change it. Values here are the **v110 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -162,9 +162,12 @@ failure. Raise this with the plan, not before.
 
 | Parameter | Default | What it means |
 |---|---|---|
-| (the fetch TTL) | `ACT_TTL.getStopArrivals` = **50 s** | The alert path shares the rider path's edge entry instead of bypassing it (`0`). At a stop somebody is watching, the alert costs OASA nothing. |
-| `ALERT_FETCH.timeoutMs` | **12 000 ms** | Longer than a rider's 8 s: the cron has a whole minute and nobody watching, and its failure costs the bus. |
-| `ALERT_FETCH.tries` | **3** | With a 300/600 ms backoff, so a retry is not the same request into the same bad second. |
+| `ALERT_ARRIVALS_TTL` | **45 s** | The alert path shares the rider path's edge entry instead of bypassing it (`0`). At a stop somebody is watching, the alert costs OASA nothing. |
+| `ALERT_FETCH.timeoutMs` | **9 000 ms** | Longer than a rider's 8 s: the cron has a whole minute and nobody watching, and its failure costs the bus. |
+| `ALERT_FETCH.tries` | **2** | With a 300 ms pause. Since v110 a second try is only made when the first **failed fast** (a dropped connection) — never after a timeout, which is the same request into the same slow upstream, and never after the runtime's own "too many subrequests". |
+| `ALERT_STOP_SUBREQUESTS` | **4** | What one stop can cost the way the runtime counts: arrivals and their stamp (or the stale read), the line lookup, one push. A stop is only started if the run's meter has this much left; otherwise it is recorded as `NOT REACHED — … subrequests`. |
+| `SWEEP_SUBREQUESTS` | **44** | The meter for a sweep in an invocation of its own (`/alerts/run`, the cron), shared with the tracking that follows it. Below 50 to leave room for fast-fail retries. |
+| `PIGGYBACK_SUBREQUESTS` | **40** | The meter for a sweep riding on a rider's light request (see `LIGHT_PATH`): the host's own few calls fit beside it. |
 | `ALERT_STALE_S` | **150 s** | How old a stamped copy may be before the fallback refuses it. Minutes are aged by the elapsed time; the correction assumes the bus kept moving as predicted, and that assumption decays. |
 | `ALERT_DEADLINE_MS` | **25 000 ms** | Stop *starting* new stop fetches past this point in a run, so one unreachable stop cannot eat the minute. |
 
@@ -274,11 +277,16 @@ on launch rather than ignored.
 | `nearby` `markers` | **60** (client sends 120) | Stops returned for the map. |
 | `OASA_CACHE` | **12 s** | Default edge cache for live OASA calls. |
 | `GEO_CACHE` | **86 400 s** (1 day) | Geocoding cache. |
-| `TIMEOUT_MS` | **8 000 ms** | Upstream request timeout. |
-| `STOPLINES_TTL` | **14 days** | How long "this stop serves N lines" is remembered, so dead stops stay hidden. |
+| `TIMEOUT_MS` | **8 000 ms** | Upstream request timeout. Not retried after it fires (v110): it used to be two 8 s waits. |
+| `STOPLINES_TTL` | **14 days** | How long "this stop serves N lines" is remembered, so dead stops stay hidden. Only **dead** stops are shared through KV since v110; live ones are kept in the isolate, because their route list is in the edge cache for a day anyway. |
+| `STOPLINES_SAVE_MS` | **5 min** | Least time between two writes of the dead-stop index from one isolate, and it is only written when the dead list changed. It used to be rewritten whole on every board — ~4 ms of CPU at 8,000 stops and a KV write each time. |
+| `NEARBY_FANOUT` | **38** | OASA calls a board plans for, probes for dead map stops included. Only the probes give way. |
+| `NEARBY_CEILING` | **44** | What a board cannot do without — stop lists, the list's lines and arrivals, far favourites — never exceeds this. Favourites past it are trimmed (the app sends at most six, which fit at any radius). With the board's own four cache calls, the most it can ask for is 48 of 50. |
 | `ACT_TTL` | see source | Per-endpoint cache: 12 s for live data, 1 day for route/stop geometry. |
 
-**Subrequest budget.** Cloudflare allows 50 per request on the free plan. A full
+**Subrequest budget.** Cloudflare allows 50 per request on the free plan, and **the Cache
+API counts against the same 50 as `fetch`** — every `cache.match` and `cache.put` is one.
+Anything left running in `waitUntil` spends the same budget as the answer did. A full
 scan is `5 stop-lists + 14 route lookups + 20 vehicle calls = 39`. `/nearby` is
 `9 + 10 + 10 + probes ≤ 44`. Raise `maxRoutes` or `stopProbe` much and you will
 hit the ceiling.
@@ -527,7 +535,10 @@ for an hour or a day, which makes them the whole of the upstream load.
 | `CONFIG.listPool` | 14 | **11** | Stops that get an arrivals call per sweep. |
 | `ACT_TTL.getStopArrivals` | 12 s | **90 s** | Above the refresh interval on purpose, so two people at the same stop cost one call rather than two. Raised from 50 in v98, and only safe because of v79: the age of a cached answer is subtracted from the minutes before anyone sees them, so a 90-second cache shows the same countdown a 50-second one did. |
 | `ALERT_ARRIVALS_TTL` | — | **45 s** | The alert path keeps the shorter cache. It is ten stops a minute for the whole service, so its upstream cost is a rounding error, and a three-minute lead is where staleness actually hurts. |
-| `UPSTREAM_BUDGET.perMin` | — | **150** | A hard ceiling on calls to OASA per minute, per isolate. Past it, riders get slightly older numbers from the cache instead of the service getting blocked. |
+| `UPSTREAM_BUDGET.perMin` | — | **150** | A hard ceiling on **live** calls to OASA per minute, per isolate. Past it, riders get the corner's last good board instead of the service getting blocked. Reference data (stop lists, route lists — anything cached past `LIVE_TTL_MAX`) is not counted: the edge answers it, and holding it back is what turned a busy minute into a 503 until v110. Nor is a live call this isolate made within its cache lifetime (`edgeHeld`): the edge has it, so it costs OASA nothing. |
+| `LIVE_TTL_MAX` | — | **300 s** | Where "live" ends. A call cached this long or less is news and goes through the breaker and the budget; one cached longer is reference data and does not. |
+| `OPEN_FUSE_MS` | — | **2 500 ms** | While the breaker is open, a reference-data miss (or a live call the edge should still hold) gets one try this long instead of the usual 8 s, because the origin it would reach is known to be failing. |
+| `API_KEEP_S` | — | **7 days** | How long `/api` keeps its last answer for reference data, to serve when OASA fails. Live answers are kept `STALE_KEEP`. |
 | `CIRCUIT.openAfter` | — | **6** | Consecutive upstream failures before the Worker stops calling. |
 | `CIRCUIT.openMs` | — | **120 s** | How long it stays shut, after which one request is let through to look. |
 | `STALE_KEEP` | — | **900 s** | How long a good sweep stays worth showing once the upstream goes quiet. |
@@ -547,6 +558,15 @@ nothing and the caller falls back to cache and stale — riders get slightly old
 instead of the service getting blocked, which is a trade worth making at any user count.
 A cache hit **gives its token back** (`budgetRefund`, driven by the response's `Age`
 header), because the budget measures what we ask of OASA, not what we serve.
+
+**Until v110 that promise was not kept.** The budget — and the breaker — refused *every*
+OASA call past the ceiling, including stop lists and route lists sitting in the edge
+cache, and no caller fell back to anything: a board whose stop lists were refused had
+nothing to show and answered 503. Replayed with OASA healthy, that was 6 riders in 20 a
+minute, and 26 in 40. Both gates now apply to live calls only (`LIVE_TTL_MAX`), let
+through a live answer the edge still holds (`edgeHeld`), and a board whose arrivals were
+all held back is served from the corner's last good board. See README → *Why the board
+answered 503*.
 
 Two honest limitations:
 
@@ -654,7 +674,10 @@ screen.
 ## What actually costs money
 
 Cloudflare's free tier gives 100 000 requests/day and **1 000 KV writes/day** — the
-KV write ceiling is what breaks first, and only reports write to KV.
+KV write ceiling is what breaks first, and only reports write to KV. (Until v110 the
+dead-stop index was rewritten on every board, which could spend the whole day's allowance
+on its own — and once it is spent, every KV write fails until midnight UTC: reports, alert
+rules and push subscriptions included.)
 
 ### Measured, not estimated
 
