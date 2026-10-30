@@ -1139,7 +1139,8 @@ console.log("\n— the cron runs the alerts as a request —");
 {
   const w = readFileSync(path.join(REPO, "worker.js"), "utf8");
   ok("there is an endpoint that runs the alerts on the fetch path",
-    /p\.endsWith\("\/alerts\/run"\)/.test(w) && /const T = \{ via: "fetch" \}/.test(w));
+    /p\.endsWith\("\/alerts\/run"\)/.test(w)
+    && /const T = \{ via: "fetch", ranIn: placementOf\(req\) \}/.test(w));
   ok("...admin-gated, because it sends real notifications",
     /\/alerts\/run"\)\) \{\s*\n\s*if \(!adminOK/.test(w));
   ok("...and the cron calls it instead of doing the work itself",

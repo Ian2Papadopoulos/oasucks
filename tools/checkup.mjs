@@ -86,6 +86,42 @@ if (!up.open) {
     + "It clears itself; check again in ten minutes.");
 }
 
+/* ---- where the Worker runs ---- *
+   OASA only answers addresses it places in Greece, so a Worker Cloudflare
+   runs anywhere else gets nothing from it: the cron always, riders whenever
+   their request lands abroad. Cloudflare's two Greek locations are Athens
+   and Thessaloniki. See DEPLOY.md, "Running next to OASA". */
+const GREEK = new Set(["ATH", "SKG"]);
+const ran = health.ranIn || {};
+if (ran.colo && GREEK.has(ran.colo)) {
+  say("OK", `This request ran in ${ran.colo}, where OASA answers.`,
+    ran.placement ? `Placed by Cloudflare: ${ran.placement}.` : undefined);
+} else if (ran.colo) {
+  say("FIX", `This request ran in ${ran.colo}, outside Greece, where OASA does not answer.`,
+    ran.placement
+      ? `Placement is on (${ran.placement}) and put the Worker outside Greece. Undo it: `
+        + "DEPLOY.md, \"Running next to OASA\"."
+      : "Every rider whose request lands there gets nothing. Turn on [placement] in "
+        + "wrangler.toml: DEPLOY.md, \"Running next to OASA\".");
+}
+const places = Object.entries(health.oasaByLocation24h || {})
+  .filter(([, v]) => v && v.ok + v.failed > 0);
+/* "Mostly failing" needs a few calls behind it: one timeout is weather. */
+const refused = places.filter(([, v]) => v.failed >= 5 && v.failed > v.ok);
+const tally = ([c, v]) => `${c}: ${v.failed} of ${v.ok + v.failed} calls failed`;
+if (refused.length && refused.every(([c]) => !GREEK.has(c))) {
+  say("LOOK", `In the last 24 hours OASA refused the Worker outside Greece (${refused.map(tally).join("; ")}).`,
+    "That is OASA's address filter, not an outage. With placement on, these stop; the "
+    + "figures cover a whole day, so old ones linger after the change.");
+} else if (refused.length) {
+  say("FIX", `In the last 24 hours most calls to OASA failed, in Greece too (${refused.map(tally).join("; ")}).`,
+    "So OASA itself was failing, not only refusing addresses abroad. Nothing to fix on "
+    + "this side; check again later.");
+} else if (places.length) {
+  say("OK", `OASA answered the Worker wherever it ran in the last 24 hours: `
+    + places.map(([c, v]) => `${c} (${v.ok + v.failed} calls)`).join(", ") + ".");
+}
+
 /* ---- the sharing that keeps us off their bad side ---- *
    This is the one number the whole load story rests on. */
 const b = health.budget || {};

@@ -14,7 +14,7 @@ the steps below are the two that need your login, plus checks.
 
 ```powershell
 npm install          # once — playwright-core and wrangler are dev dependencies
-npm test             # 1,188 assertions
+npm test             # 1,221 assertions
 npm run sim:boot     # the first ten seconds of a cold start, replayed
 ```
 
@@ -292,7 +292,7 @@ there is nothing to configure and no certificate to buy.
 ```powershell
 curl https://oasax.com/health
 ```
-You want `{"ok":true,"version":"v111",...}` — the same version your Worker reports. A
+You want `{"ok":true,"version":"v112",...}` — the same version your Worker reports. A
 registrar parking page or a certificate error means step 1 or 2 has not finished yet.
 Then open `https://oasax.com` on your phone and check the board fills.
 
@@ -601,6 +601,59 @@ curl.exe "https://oasax.com/stats/usage?token=$env:ADMIN_TOKEN&days=30"
 Comparing the two is what separates users from bots: scanners generate requests and never
 send an `open`.
 
+### Running next to OASA
+
+OASA only answers addresses it places in Greece. Cloudflare runs your Worker wherever a
+request arrives: Athens for most riders in Greece, but somewhere else for a roaming phone,
+for an outside pinger, or for a route that happens to land in Frankfurt — and from there
+OASA answers nothing. The cron is worse off still: Cloudflare runs scheduled jobs wherever
+it has spare machines, which is why it has not reached OASA since 27 August 2026.
+
+So `wrangler.toml` pins the Worker to Athens (v112):
+
+```toml
+[placement]
+region = "azure:greececentral"
+```
+
+That asks Cloudflare to run every request in its data centre nearest Microsoft's cloud
+region in Athens — its own Athens site. It is free, and riders already served from Athens
+notice nothing.
+
+**Check it took.** Deploy, wait a few minutes, then:
+
+```powershell
+curl.exe https://oasax.com/health
+```
+
+`ranIn.colo` should be `ATH` (Thessaloniki, `SKG`, is fine too), and `ranIn.placement`
+says how Cloudflare placed the request. Ask once more from outside Greece — a phone on a
+VPN is enough — and it should still say `ATH`. The admin view adds two things:
+`/health?token=…&where=1` shows `egress`, the address OASA actually sees, and every
+`/health?token=…` shows `oasaByLocation24h`: what OASA answered at each location in the
+last day. `npm run checkup` reads both and says in words whether anything ran outside
+Greece. The cron's sweep, handed to `/alerts/run`, records where that request ran as
+`ranIn` in `/alerts/why`.
+
+**If the deploy refuses the region**, Cloudflare does not know that name. Replace the
+`region` line with
+
+```toml
+hostname = "telematics.oasa.gr"
+```
+
+which has Cloudflare time the route to OASA from its locations and run the Worker at the
+fastest. A location OASA refuses cannot be the fastest.
+
+**If `ranIn` shows a location outside Greece** after the change, placement is making
+things worse: every request now runs where OASA does not answer. Undo it straight away —
+delete the `[placement]` block and deploy again, or in the dashboard set Workers →
+oasa-stop → Settings → Placement back to Default — and tell Claude what `ranIn` said.
+
+**What it does not move.** Placement moves requests, not the cron. The cron hands its
+OASA calls to a request (`/alerts/run`, or your outside pinger's call to it), and that
+request is what runs in Athens.
+
 ### The board is empty, or stuck on loading
 
 The app's own screen answers most of this now: it distinguishes "still waiting", "nothing
@@ -621,6 +674,7 @@ curl.exe -i "https://oasax.com/health?token=$env:ADMIN_TOKEN&probe=1"
 | `/health` not 200 | Cloudflare or your Worker. Check Redirect Rules and WAF first, not the code. |
 | `/health` fine, `/nearby` returns `503` with `"upstream":{"ok":false,…}` | OASA is not answering the Worker **and** nothing for that corner was cached. Since v110 that is the only way `/nearby` says 503. Nothing to fix. |
 | `/nearby` returns `200` with a non-empty `stops` array | The backend is healthy; the problem is on the device. |
+| Boards work for some riders and not others, or only from Greece | The Worker ran outside Greece for those requests, where OASA does not answer. `ranIn` in `/health` says where; see *Running next to OASA*. |
 | `probe=1` shows `oasa.ok: false` | Same as the 503, stated directly, with the time it waited. |
 | `/health?token=…` shows `upstream.ownLimits` with a count | **Not OASA.** The Worker ran out of its own subrequests in one invocation ("Too many subrequests"). That is a bug in `worker.js` — report it with the `why`. It no longer trips the breaker, but the request that hit it lost data. |
 | Riders report 503s, but `/nearby` and `/health` look fine | Look at the dashboard: Worker → **Metrics → Errors → Invocation Statuses**. *Exceeded CPU Time Limits* is Cloudflare's error 1102, which riders see as a 503 and which no code in the Worker can observe — the free plan allows 10 ms of CPU per request. *Exceeded Memory* is the same page for memory. |
@@ -774,7 +828,8 @@ use — but a 06:40 alert with nobody awake has nothing to ride on.
 
 The fix is an external pinger calling `/alerts/run` once a minute, which turns the trigger
 into the inbound request that works. Any free cron service does it — cron-job.org,
-UptimeRobot, a GitHub Action.
+UptimeRobot, a GitHub Action. Where the pinger itself is does not matter since v112: its
+request runs in Athens like every other (see *Running next to OASA*).
 
 Give it its **own key**, not the admin one:
 

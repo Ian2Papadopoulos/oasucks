@@ -7,6 +7,16 @@ compatibility_date = "2025-01-01"
 [assets]
 directory = "./public"
 
+# Run the Worker in Athens, next to OASA, wherever a request arrives.
+# OASA only answers addresses it places in Greece, so a request Cloudflare
+# runs in Frankfurt or Virginia (a roaming phone, an outside pinger) gets
+# nothing from it. This asks for the Cloudflare data centre nearest
+# Microsoft's cloud region in Athens. Placement moves requests, not the
+# cron itself. How to check it took, and how to undo it:
+# DEPLOY.md, "Running next to OASA".
+[placement]
+region = "azure:greececentral"
+
 # Paces push alerts and line tracking — the live arrivals shown in the
 # app do NOT depend on this; they're fetched on demand at any hour.
 # Cloudflare evaluates crons in UTC: per-minute while Athens is awake

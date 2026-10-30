@@ -42,10 +42,14 @@
  * them the app still works fully, alerts just report "not configured".
  */
 
-const APP_VERSION = "v111";
+const APP_VERSION = "v112";
 const OASA = "https://telematics.oasa.gr/api/";
 const NOMINATIM = "https://nominatim.openstreetmap.org/";
-const UA = "StopArrivals/1.0 (personal transit PWA)";
+/* Names the app and where to find it, on every outside call: OASA,
+   Nominatim, ORS. Nominatim's usage policy asks for exactly this, and the
+   request to OASA for official access promises them they can tell this
+   traffic apart from anyone else's. */
+const UA = "OASAx/1.0 (+https://oasax.com)";
 /* Paths no version of this app has ever served, walked by credential
    scanners. Anchored on a path segment so it can never catch a real
    route: every alternative is either a dotfile or an exact filename. */
@@ -345,7 +349,9 @@ function circuitOpen() {
    and need different responses, and a breaker that records only a tally
    turns every one of them into the same shrug. */
 function circuitNote(ok, why) {
-  if (ok) { circuit.fails = 0; circuit.openedAt = 0; return; }
+  // every answer OASA gave just now, counted by where we asked from (isolateColo)
+  if (ok) { budget.ok++; circuit.fails = 0; circuit.openedAt = 0; return; }
+  budget.failed++;
   circuit.fails++;
   circuit.lastFail = { at: Date.now(), why: String(why || "unknown").slice(0, 160) };
   if (circuit.fails >= CIRCUIT.openAfter && !circuit.openedAt) circuit.openedAt = Date.now();
@@ -447,8 +453,8 @@ function noteLocalFail(why) {
  * breaker: ten calls a minute cannot be the problem, and losing them costs
  * a rider the bus. */
 const UPSTREAM_BUDGET = { perMin: 150 };
-const budget = { windowStart: 0, spent: 0, shed: 0, hits: 0, misses: 0, aged: 0,
-  flushedAt: 0, flushed: { hits: 0, misses: 0, aged: 0, shed: 0 } };
+const budget = { windowStart: 0, spent: 0, shed: 0, hits: 0, misses: 0, aged: 0, ok: 0, failed: 0,
+  flushedAt: 0, flushed: { hits: 0, misses: 0, aged: 0, shed: 0, ok: 0, failed: 0 } };
 const ISOLATE_START = Date.now();
 function budgetAllows() {
   const now = Date.now();
@@ -500,20 +506,26 @@ async function flushBudget(env) {
   if (now - budget.flushedAt < BUDGET_FLUSH_MS) return;
   const f = budget.flushed;
   const d = { hits: budget.hits - f.hits, misses: budget.misses - f.misses,
-    aged: budget.aged - f.aged, shed: budget.shed - f.shed };
+    aged: budget.aged - f.aged, shed: budget.shed - f.shed,
+    ok: budget.ok - f.ok, failed: budget.failed - f.failed };
   /* Claim the window before the write, so a slow or failing insert cannot
      have every request behind it try again. Nothing is lost if it does
      fail: the snapshot only advances on success, so the unwritten counts
      ride along with the next flush. */
   budget.flushedAt = now;
-  if (!(d.hits || d.misses || d.aged || d.shed)) return;
+  if (!(d.hits || d.misses || d.aged || d.shed || d.ok || d.failed)) return;
   try {
     await initSchema(env);
-    await env.DB.prepare(
+    const ts = Math.floor(now / 1000);
+    const writes = [env.DB.prepare(
       "INSERT INTO upstream_stat(ts,hits,misses,aged,shed) VALUES(?,?,?,?,?)")
-      .bind(Math.floor(now / 1000), d.hits, d.misses, d.aged, d.shed).run();
+      .bind(ts, d.hits, d.misses, d.aged, d.shed)];
+    if (d.ok || d.failed) writes.push(env.DB.prepare(
+      "INSERT INTO upstream_where(ts,colo,ok,failed) VALUES(?,?,?,?)")
+      .bind(ts, isolateColo || "?", d.ok, d.failed));
+    await env.DB.batch(writes);
     budget.flushed = { hits: budget.hits, misses: budget.misses,
-      aged: budget.aged, shed: budget.shed };
+      aged: budget.aged, shed: budget.shed, ok: budget.ok, failed: budget.failed };
   } catch (_) { /* a counter must never break the request it is counting */ }
 }
 /* Cheap enough to sit on the hot path: everything but the 5-minute case
@@ -543,6 +555,49 @@ async function readUpstreamStat(env, hours) {
       cachedShare: seen ? Math.round((hits / seen) * 100) + "%" : "no calls",
       hitsCarryingAge: hits ? Math.round((aged / hits) * 100) + "%" : "n/a",
       note: "every isolate, rolling 24h — the figures above are one isolate's and reset constantly" };
+  } catch (_) { return null; }
+}
+
+/* ---- where the asking happens --------------------------------------
+ * OASA answers only addresses it places in Greece. From Cloudflare's
+ * Athens location it answers; from Virginia the connection never even
+ * opens — which is why the cron, which Cloudflare runs wherever it has
+ * spare machines, failed every time while riders' requests did not. So the
+ * place a request runs decides whether OASA can be reached at all, and the
+ * [placement] setting in wrangler.toml exists to pin it to Athens.
+ *
+ * Whether that holds is measured, not assumed: every isolate learns its
+ * location from the first request it serves, and the answers OASA gave are
+ * flushed with the other counters, by location. With placement on,
+ * Cloudflare names where it ran the request in `cf-placement` ("remote-ATH"
+ * — sent there; "local-ATH" — ran where it arrived); without it, the
+ * location is the one the request arrived at. An isolate never moves, so
+ * its first answer is its answer. */
+let isolateColo = null;
+function placementOf(req) {
+  const p = (req && req.headers.get("cf-placement")) || "";
+  const m = p.match(/\b([A-Z]{3})\s*$/);
+  return { colo: m ? m[1] : ((req && req.cf && req.cf.colo) || null), placement: p || null };
+}
+function noteColo(req) { if (!isolateColo) isolateColo = placementOf(req).colo; }
+/* What OASA said to each location in the last `hours`: every isolate's
+   flushed rows plus this one's unflushed counts, keyed by location. */
+async function readUpstreamWhere(env, hours) {
+  if (!dbReady(env)) return null;
+  try {
+    await initSchema(env);
+    const since = Math.floor(Date.now() / 1000) - hours * 3600;
+    const r = await env.DB.prepare(
+      "SELECT colo, SUM(ok) ok, SUM(failed) failed FROM upstream_where WHERE ts > ? GROUP BY colo")
+      .bind(since).all();
+    const out = {};
+    for (const x of (r && r.results) || []) out[x.colo || "?"] = { ok: x.ok || 0, failed: x.failed || 0 };
+    const dOk = budget.ok - budget.flushed.ok, dFailed = budget.failed - budget.flushed.failed;
+    if (dOk || dFailed) {
+      const o = out[isolateColo || "?"] || (out[isolateColo || "?"] = { ok: 0, failed: 0 });
+      o.ok += dOk; o.failed += dFailed;
+    }
+    return out;
   } catch (_) { return null; }
 }
 
@@ -2078,6 +2133,10 @@ async function initSchema(env) {
     `CREATE TABLE IF NOT EXISTS upstream_stat(ts INTEGER, hits INTEGER, misses INTEGER,
        aged INTEGER, shed INTEGER)`,
     `CREATE INDEX IF NOT EXISTS ix_us_ts ON upstream_stat(ts)`,
+    // The same flush, by the Cloudflare location that asked — see isolateColo.
+    `CREATE TABLE IF NOT EXISTS upstream_where(ts INTEGER, colo TEXT, ok INTEGER,
+       failed INTEGER)`,
+    `CREATE INDEX IF NOT EXISTS ix_uw_ts ON upstream_where(ts)`,
     // Append-only history of every community report ever filed (the KV
     // side only keeps ACTIVE flags). This is what future statistics —
     // "which line gets the most breakdown reports" — will read from.
@@ -2457,6 +2516,8 @@ async function pruneOld(env) {
   // Only the last 24h is ever read; a week is kept in case a question
   // turns up that wants yesterday's answer next to today's.
   await env.DB.prepare("DELETE FROM upstream_stat WHERE ts < ?")
+    .bind(now - 7 * 86400).run();
+  await env.DB.prepare("DELETE FROM upstream_where WHERE ts < ?")
     .bind(now - 7 * 86400).run();
 }
 
@@ -4572,6 +4633,7 @@ export default {
      out. Now every 5xx — ours by return or ours by exception — is counted
      and, past the cooldown, sent to the operator's phone. */
   async fetch(req, env, ctx) {
+    noteColo(req);
     let res;
     try {
       res = await route(req, env, ctx);
@@ -4919,7 +4981,8 @@ async function route(req, env, ctx) {
        * from /alerts/why. Add ?wait=1 to block and get it inline, which is
        * what a human testing by hand wants and no scheduler ever does. */
       if (runBusy) return json({ ok: true, started: false, note: "a sweep is already running" });
-      const T = { via: "fetch" };
+      // where this sweep's OASA calls go out from: the cron's own location is in `from`
+      const T = { via: "fetch", ranIn: placementOf(req) };
       runBusy = true;
       const job = (async () => {
         try { await runAlerts(env, T, subMeter(SWEEP_SUBREQUESTS)); }
@@ -5122,11 +5185,16 @@ async function route(req, env, ctx) {
     if (p.endsWith("/health")) {
       const full = adminOK(req, env);
       const nowS = Math.floor(Date.now() / 1000);
-      const out = { ok: true, version: APP_VERSION, time: nowS };
+      /* `ranIn` is free and public: the Cloudflare location that ran this
+         request, which is the first thing to look at when OASA answers
+         some riders and not others (DEPLOY.md, "Running next to OASA"). */
+      const out = { ok: true, version: APP_VERSION, time: nowS, ranIn: placementOf(req) };
       /* The bare ping is light, and an uptime monitor calling it every
          minute is the steadiest ride the alert sweep can get (see LIGHT).
          The admin view is not: it is a dozen queries of its own. */
       if (!full) return light(json(out));
+      // the egress address OASA actually sees, for one tiny call when asked
+      if (url.searchParams.get("where") === "1") out.egress = await whereAmI();
 
       /* Opt-in, because it spends a real call on a slow upstream: the one
          question /health could not answer was "is OASA talking to us",
@@ -5185,6 +5253,13 @@ async function route(req, env, ctx) {
         try {
           const day = await readUpstreamStat(env, 24);
           if (day) out.budget.last24h = day;
+        } catch (_) { }
+        /* What OASA answered, location by location: a location where most
+           calls fail while Athens is fine is OASA's address filter, not an
+           outage, and the placement setting is what fixes it. */
+        try {
+          const where = await readUpstreamWhere(env, 24);
+          if (where) out.oasaByLocation24h = where;
         } catch (_) { }
         try {
           const cronLast = Number(await getMeta(env, "cron_last")) || 0;
@@ -5658,6 +5733,7 @@ async function cronRun(event, env, T) {
     T.due = alertsDue;
     // only on a minute that has work, so it costs nothing the rest of the time
     if (alertsDue) T.from = await whereAmI();
+    if (!isolateColo && T.from && T.from.colo) isolateColo = T.from.colo;
     /* One meter for the whole cron minute: the sweep and the tracking
        after it share the invocation's fifty. */
     const M = subMeter(SWEEP_SUBREQUESTS);

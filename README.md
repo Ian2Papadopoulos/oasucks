@@ -3,7 +3,7 @@
 A clean, fast web/mobile view of live bus & trolley arrivals for the stops nearest you,
 built on the unofficial OASA telematics API. One Cloudflare Worker serves the whole
 app and proxies the API. Installs on Android and iOS like a native app. **Current
-version: v111.**
+version: v112.**
 
 **The top bar** is four buttons — [search ⌕](#search--lines-and-stops), `A→B`, live
 reports (the orange dot), and ☰, which opens **Settings** directly (your alerts, language,
@@ -37,7 +37,7 @@ See [Live reports](#live-reports) for the exact rules.
 | `public/legal.html` | Terms + privacy, as served in the app (Settings → FAQ → Terms & privacy). **Bilingual**: it reads the same `lang` setting the app writes, so nobody who set the app to Greek lands on an English wall of terms. `?lang=` overrides it for a shared link, and a button switches the page without rewriting the app's setting. |
 | `LICENSE`, `PRIVACY.md`, `TERMS.md` | AGPL-3.0 and the documents the hosted service runs under — see [Legal](#legal). |
 | `PARAMETERS.md` | **Every tunable number in one table** — radii, lifetimes, rate limits, cost dials. |
-| `test/` | `npm test` — 1,188 assertions across fourteen suites. The routing engine, the geocoder and the upstream layer (`resilience.mjs`: breaker, budget, subrequest ceiling, last-good fallbacks) run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. `search.mjs` does both: it holds the app's and the Worker's sound keys to the same tables, checks the stop index and the tool that builds it, then finds stops by name in a real browser. |
+| `test/` | `npm test` — 1,221 assertions across fifteen suites. The routing engine, the geocoder and the upstream layer (`resilience.mjs`: breaker, budget, subrequest ceiling, last-good fallbacks) run in a `vm` against fixtures (no network, no quota); the report suite reads the source; the tile, journey, brand, legal, install, usage, origin, fixes and ui suites drive a real browser via Playwright. `search.mjs` does both: it holds the app's and the Worker's sound keys to the same tables, checks the stop index and the tool that builds it, then finds stops by name in a real browser. `placement.mjs` checks where the Worker runs: the `[placement]` setting, the location every request and every OASA answer is counted under, and what `npm run checkup` makes of it. |
 | `public/stops-index.json` | Every OASA stop — code, name, position — for searching by name on the phone. Built from OASA's GTFS by `tools/build-stop-index.mjs`; see [Typing a destination](#typing-a-destination). |
 | `tools/build-stop-index.mjs` | Rebuilds `stops-index.json` from OASA's `osy_gtfs.zip` and stamps the new file's hash into the app's URL for it. See `DEPLOY.md` → *Refreshing the stop index*. |
 | `public/_headers` | Security headers for the static files (HSTS, nosniff, frame-deny, referrer and permissions policy), applied by Cloudflare's asset server. |
@@ -119,9 +119,16 @@ it.
 
 ## The one thing you must understand
 
-The OASA API (`http://telematics.oasa.gr/api/`) is **HTTP-only and sends no CORS
-headers**. A browser on an HTTPS page therefore *cannot call it directly* — it fails
-on mixed-content + CORS. So every web client needs a small proxy in front of it.
+The OASA API (`https://telematics.oasa.gr/api/`) **sends no CORS headers**, so a browser
+*cannot call it directly*. It also **answers only addresses it places in Greece**: tried
+from the US, from Cloudflare's Virginia site and from a cloud machine alike, the
+connection is never answered at all. So every web client needs a small proxy in front of
+it, and the proxy has to run in Greece. This one is the Worker, pinned to Athens by
+`[placement]` in `wrangler.toml` since v112 — see `DEPLOY.md`, *Running next to OASA*.
+
+The filter looks recent. The cron, which Cloudflare runs wherever it has spare machines,
+collected vehicle positions every day until 27 August 2026 and none since — the day
+OASA's whole telematics system went offline. It came back answering Greece only.
 
 The app auto-detects its backend at startup:
 

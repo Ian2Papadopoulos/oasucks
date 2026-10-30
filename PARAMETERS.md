@@ -1,7 +1,7 @@
 # Tunable parameters
 
 Every arbitrary number in the app, in one place, with where it lives and what
-breaks if you change it. Values here are the **v111 defaults** — if you edit the
+breaks if you change it. Values here are the **v112 defaults** — if you edit the
 source, edit this table too.
 
 Two files hold almost everything: **`public/index.html`** (the app) and
@@ -546,6 +546,9 @@ for an hour or a day, which makes them the whole of the upstream load.
 | `CIRCUIT.openAfter` | — | **6** | Consecutive upstream failures before the Worker stops calling. |
 | `CIRCUIT.openMs` | — | **120 s** | How long it stays shut, after which one request is let through to look. |
 | `STALE_KEEP` | — | **900 s** | How long a good sweep stays worth showing once the upstream goes quiet. |
+| `[placement] region` (wrangler.toml) | — | **`azure:greececentral`** | Runs every request in Cloudflare's data centre nearest Athens, because OASA answers only addresses in Greece (v112). If Cloudflare rejects the name, `hostname = "telematics.oasa.gr"` instead. How to check it took, and how to undo it: `DEPLOY.md`, *Running next to OASA*. |
+| `upstream_where` | — | **5 min** flush, **7 days** kept | What OASA answered (fresh answers and failures, never edge hits), by the Cloudflare location that asked. Flushed with `upstream_stat`; read as `oasaByLocation24h` in the admin `/health`. |
+| checkup "refused at a location" | — | **≥ 5** failed calls, more failed than answered, in 24 h | One timeout is weather. Refusals only outside Greece read as OASA's address filter (LOOK); in Greece too, as OASA failing (FIX). |
 
 Together the first three take one rider with the app open from roughly **28 upstream calls
 a minute to about 6**. Tune them back if OASA ever stops minding.
